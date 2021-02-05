@@ -15,7 +15,7 @@ from sklearn.metrics import accuracy_score
 from joblib import dump, load
 import pandas as pd
 import warnings
-os.chdir('/Volumes/yaochen/Active/CENTRAL_CODE/ChenLab_Sleep_Scoring/')
+os.chdir('/Users/annzhou/research/neuroscience/ChenLab_Sleep_Scoring/')
 import SWS_utils
 from SW_Cursor import Cursor
 
@@ -43,10 +43,11 @@ def load_data_for_sw(filename_sw):
     epochlen = int(d['epochlen'])
     fsd = int(d['fsd'])
     emg_flag = int(d['emg'])
+    vid_flag = int(d['vid'])
 
-    start_swscoring(filename_sw, extracted_dir, epochlen, fsd, emg_flag)
+    start_swscoring(filename_sw, extracted_dir, epochlen, fsd, emg_flag, vid_flag)
 
-def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag):
+def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_flag):
 	print('this code is supressing warnings')
 	warnings.filterwarnings("ignore")
 
@@ -77,8 +78,10 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag):
 		nearest_epoch = math.floor(seg_len/epochlen)
 		new_length = int(nearest_epoch*epochlen*fsd)
 		this_eeg = this_eeg[0:new_length]
-		this_video = glob.glob(os.path.join(video_dir, '*_'+str(int(a)-1)+'.mp4'))[0]
-		print('using ' + this_video + ' for the video')
+		if vid_flag:
+			this_video = glob.glob(os.path.join(video_dir, '*_'+str(int(a)-1)+'.mp4'))[0]
+			print('using ' + this_video + ' for the video')
+		print('no video available')
 
 		os.chdir(extracted_dir)
 		print('Generating EMG vectors...')
@@ -186,15 +189,17 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag):
 			s = np.arange(1,np.size(State)-1)
 			first_state = int(input('Enter the first state: '))
 			State[0] = first_state
-		cap = cv2.VideoCapture(this_video)
-		fps = cap.get(cv2.CAP_PROP_FPS)
+		if vid_flag:
+			cap = cv2.VideoCapture(this_video)
+			fps = cap.get(cv2.CAP_PROP_FPS)
 		for i in s[:-3]:
 			# input('press enter or quit')
 			print(f'here. index: {i}')
 			start = int(i * fsd * epochlen)
 			end = int(start + fsd * 3 * epochlen)
-			vid_start = int(i * fps * epochlen)
-			vid_end = int(vid_start + fps * 3 * epochlen)
+			if vid_flag:
+				vid_start = int(i * fps * epochlen)
+				vid_end = int(vid_start + fps * 3 * epochlen)
 			SWS_utils.update_raw_trace(line1, line2, line3, line4, marker, fig, fig2, start, end, 
 				this_eeg, delt_pad, thet_pad, emg_flag, this_emg, realtime)
 			color_dict = {'0': 'white',
@@ -213,7 +218,10 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag):
 				print(f'button: {button}')
 				if not button:
 					print('you clicked')
-					SWS_utils.pull_up_movie(vid_start, vid_end, this_video, epochlen)
+					if vid_flag:
+						SWS_utils.pull_up_movie(vid_start, vid_end, this_video, epochlen)
+					else:
+						print('...but you do not have videos available')
 			global key_stroke
 			State[i] = key_stroke
 			fig2.canvas.flush_events()
