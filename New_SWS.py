@@ -26,6 +26,10 @@ def on_press(event):
 	if event.key in ['1','2','3']:
 		key_stroke = int(event.key)
 		print(f'scored: {event.key}')
+	elif event.key == 'q':
+		print('QUIT')
+		plt.close('all')
+		sys.exit()
 	else:
 		key_stroke = np.float('nan')
 		print('I did not understand that keystroke, I will go back to it at the end')
@@ -48,6 +52,7 @@ def load_data_for_sw(filename_sw):
     start_swscoring(filename_sw, extracted_dir, epochlen, fsd, emg_flag, vid_flag)
 
 def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_flag):
+	# mostly for deprecated packages
 	print('this code is supressing warnings')
 	warnings.filterwarnings("ignore")
 
@@ -66,7 +71,7 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 	downsampEEG = np.load(os.path.join(extracted_dir,'downsampEEG_Acq'+str(a)+'.npy'))
 	if emg_flag:
 		downsampEMG = np.load(os.path.join(extracted_dir,'downsampEMG_Acq'+str(a)+'.npy'))
-	acq_len = np.size(downsampEEG)/fsd
+	acq_len = np.size(downsampEEG)/fsd # fs: sampling rate, fsd: downsampled sampling rate
 	hour_segs = math.ceil(acq_len/3600)
 	print('This acquisition has ' +str(hour_segs)+ ' segments.')
 
@@ -77,11 +82,12 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 		seg_len = np.size(this_eeg)/fsd
 		nearest_epoch = math.floor(seg_len/epochlen)
 		new_length = int(nearest_epoch*epochlen*fsd)
-		this_eeg = this_eeg[0:new_length]
+		this_eeg = this_eeg[0:new_length] # chop off the remainder
 		if vid_flag:
 			this_video = glob.glob(os.path.join(video_dir, '*_'+str(int(a)-1)+'.mp4'))[0]
 			print('using ' + this_video + ' for the video')
-		print('no video available')
+		else:
+			print('no video available')
 
 		os.chdir(extracted_dir)
 		print('Generating EMG vectors...')
@@ -92,29 +98,29 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 		print('Generating EEG vectors...')
 		EEGamp, EEGmax, EEGmean = SWS_utils.generate_signal(this_eeg, epochlen, fsd)
 
-		print('Extracting delta bandpower...')
+		print('Extracting delta bandpower...') # non RAM (slow wave) sleep value | per epoch
 		EEGdelta, idx_delta = SWS_utils.bandPower(0.5, 4, this_eeg, epochlen, fsd)
 
-		print('Extracting theta bandpower...')
+		print('Extracting theta bandpower...') # awake / RAM sleep
 		EEGtheta, idx_theta = SWS_utils.bandPower(4, 8, this_eeg, epochlen, fsd)
 
-		print('Extracting alpha bandpower...')
+		print('Extracting alpha bandpower...') # awake / RAM; not use a lot
 		EEGalpha, idx_alpha = SWS_utils.bandPower(8, 12, this_eeg, epochlen, fsd)
 
-		print('Extracting beta bandpower...')
+		print('Extracting beta bandpower...') # awake; not use a lot
 		EEGbeta, idx_beta = SWS_utils.bandPower(12, 30, this_eeg, epochlen, fsd)
 
-		print('Extracting gamma bandpower...')
+		print('Extracting gamma bandpower...') # only awake
 		EEGgamma, idx_gamma = SWS_utils.bandPower(30, 80, this_eeg, epochlen, fsd)
 
-		print('Extracting narrow-band theta bandpower...')
+		print('Extracting narrow-band theta bandpower...') # broad-band theta
 		EEG_broadtheta, idx_broadtheta = SWS_utils.bandPower(2, 16, this_eeg, epochlen, fsd)
 
 		print('Boom. Boom. FIYA POWER...')
 		EEGfire, idx_fire = SWS_utils.bandPower(4, 20, this_eeg, epochlen, fsd)
 
-		EEGnb = EEGtheta / EEG_broadtheta
-		delt_thet = EEGdelta / EEGtheta
+		EEGnb = EEGtheta / EEG_broadtheta # narrow-band theta
+		delt_thet = EEGdelta / EEGtheta # ratio; esp. important
 
 		EEGdelta = SWS_utils.normalize(EEGdelta)
 		EEGalpha = SWS_utils.normalize(EEGalpha)
@@ -125,6 +131,7 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 		EEGfire = SWS_utils.normalize(EEGfire)
 		delt_thet = SWS_utils.normalize(delt_thet)
 
+		# frame shifting
 		delta_post, delta_pre = SWS_utils.post_pre(EEGdelta, EEGdelta)
 		theta_post, theta_pre = SWS_utils.post_pre(EEGtheta, EEGtheta)
 		delta_post2, delta_pre2 = SWS_utils.post_pre(delta_post, delta_pre)
@@ -169,6 +176,7 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 		fig.tight_layout()
 		fig2.tight_layout()
 		try:
+			# if some portion of the file has been previously scored
 			State = np.load(os.path.join(extracted_dir, 'StatesAcq' + str(a) + '_hr' + str(h)+'.npy'))
 			wrong, = np.where(np.isnan(State))
 			State[wrong] = 0
@@ -177,18 +185,21 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 						'1':'green',
 						'2': 'blue',
 						'3': 'red'}
+			# rendering what has been previously scored
 			for count,color in enumerate(State[:-1]):
 				start = int(count * fsd * epochlen)
 				rect = patch.Rectangle((realtime[start+(epochlen*fsd)],0),
 					(epochlen), 1, color = color_dict[str(int(color))])
 				ax6.add_patch(rect)
-				fig2.show()
+			fig2.show()
 
 		except FileNotFoundError:
+			# if the file is a brand new one for scoring
 			State = np.zeros(int(np.size(this_eeg)/fsd/epochlen))
 			s = np.arange(1,np.size(State)-1)
 			first_state = int(input('Enter the first state: '))
 			State[0] = first_state
+
 		if vid_flag:
 			cap = cv2.VideoCapture(this_video)
 			fps = cap.get(cv2.CAP_PROP_FPS)

@@ -17,17 +17,20 @@ from pylab import *
 from matplotlib import *
 
 
-def generate_signal(downsamp_signal, epochlen, fs):
+def generate_signal(downsamp_signal, epochlen, fs): # fs is fsd here
+    # mean of 4 seconds
     normmean = np.mean(downsamp_signal)
     normstd = np.std(downsamp_signal)
-    binl = epochlen * fs  # bin size in array slots
+    binl = epochlen * fs  # bin size in array slots | number of points in an epoch
     sig_amp = np.zeros(int(np.size(downsamp_signal) / (epochlen * fs)))
     sig_mean = np.zeros(int(np.size(downsamp_signal) / (epochlen  * fs)))
     for i in np.arange(np.size(sig_amp)):
         sig_amp[i] = np.var(downsamp_signal[epochlen  * fs * (i):(epochlen  * fs * (i + 1))])
         sig_mean[i] = np.mean(np.abs(downsamp_signal[epochlen  * fs * (i):(epochlen  * fs * (i + 1))]))
-    sig_amp = (sig_amp - normmean) / normstd
+    sig_amp = (sig_amp - normmean) / normstd # normalization
+    # we do not normalize mean (for some reason)
 
+    # AnnC: for weird reason they are not in the same loop...; can potentially combine
     sig_max = np.zeros(int(np.size(downsamp_signal) / (epochlen  * fs)))
     for i in np.arange(np.size(sig_max)):
         sig_max[i] = np.max(downsamp_signal[epochlen  * fs * (i):(epochlen  * fs * (i + 1))])
@@ -36,10 +39,10 @@ def generate_signal(downsamp_signal, epochlen, fs):
     return sig_amp, sig_max, sig_mean
 
 def bandPower(low, high, downsamp_EEG, epochlen, fsd):
-	win = epochlen * fsd
+	win = epochlen * fsd # window == bin
 	EEG = np.zeros(int(np.size(downsamp_EEG)/(epochlen*fsd)))
-	EEGreshape = np.reshape(downsamp_EEG,(-1,fsd*epochlen))
-	freqs, psd = signal.welch(EEGreshape, fsd, nperseg=win, scaling='density')
+	EEGreshape = np.reshape(downsamp_EEG,(-1,fsd*epochlen)) # funky
+	freqs, psd = signal.welch(EEGreshape, fsd, nperseg=win, scaling='density') # for each freq, have a power value
 	idx_min = np.argmax(freqs > low) - 1
 	idx_max = np.argmax(freqs > high) - 1
 	idx = np.zeros(dtype=bool, shape=freqs.shape)
@@ -57,6 +60,8 @@ def post_pre(post, pre):
 	pre = np.append(0, pre)
 	pre = pre[0:-1]
 	return post, pre
+
+### functions used in the Hengen code
 
 def fix_states(states, alter_nums = False):
 	if alter_nums == True:
