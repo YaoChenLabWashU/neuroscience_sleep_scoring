@@ -17,11 +17,11 @@ from pylab import *
 from matplotlib import *
 
 
-def generate_signal(downsamp_signal, epochlen, fs): # fs is fsd here
+def generate_signal(downsamp_signal, epochlen, fs): # fs = fsd here
     # mean of 4 seconds
     normmean = np.mean(downsamp_signal)
     normstd = np.std(downsamp_signal)
-    binl = epochlen * fs  # bin size in array slots | number of points in an epoch
+    binl = epochlen * fs  # bin size in array slots | number of points in an epoch; a bin == an epoch
     sig_amp = np.zeros(int(np.size(downsamp_signal) / (epochlen * fs)))
     sig_mean = np.zeros(int(np.size(downsamp_signal) / (epochlen  * fs)))
     for i in np.arange(np.size(sig_amp)):
@@ -30,7 +30,7 @@ def generate_signal(downsamp_signal, epochlen, fs): # fs is fsd here
     sig_amp = (sig_amp - normmean) / normstd # normalization
     # we do not normalize mean (for some reason)
 
-    # AnnC: for weird reason they are not in the same loop...; can potentially combine
+    # TODO: for weird reason they are not in the same loop...; can potentially combine
     sig_max = np.zeros(int(np.size(downsamp_signal) / (epochlen  * fs)))
     for i in np.arange(np.size(sig_max)):
         sig_max[i] = np.max(downsamp_signal[epochlen  * fs * (i):(epochlen  * fs * (i + 1))])

@@ -72,17 +72,18 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 	if emg_flag:
 		downsampEMG = np.load(os.path.join(extracted_dir,'downsampEMG_Acq'+str(a)+'.npy'))
 	acq_len = np.size(downsampEEG)/fsd # fs: sampling rate, fsd: downsampled sampling rate
-	hour_segs = math.ceil(acq_len/3600)
+	hour_segs = math.ceil(acq_len/3600) # acq_len in seconds, convert to hours
 	print('This acquisition has ' +str(hour_segs)+ ' segments.')
 
 	for h in np.arange(hour_segs):
 		this_eeg = np.load(os.path.join(extracted_dir, 'downsampEEG_Acq'+str(a) + '_hr' + str(h)+ '.npy'))
 		if int(d['emg']) == 1:
 			this_emg = np.load(os.path.join(extracted_dir,'downsampEMG_Acq'+str(a) + '_hr' + str(h)+ '.npy'))
+		# chop off the remainder that does not fit into the 4s epoch
 		seg_len = np.size(this_eeg)/fsd
 		nearest_epoch = math.floor(seg_len/epochlen)
 		new_length = int(nearest_epoch*epochlen*fsd)
-		this_eeg = this_eeg[0:new_length] # chop off the remainder
+		this_eeg = this_eeg[0:new_length]
 		if vid_flag:
 			this_video = glob.glob(os.path.join(video_dir, '*_'+str(int(a)-1)+'.mp4'))[0]
 			print('using ' + this_video + ' for the video')
