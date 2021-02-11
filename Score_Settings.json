@@ -2,6 +2,7 @@
  "model_dir" : "",
  "video_dir" : "/Users/annzhou/research/neuroscience/jaLC_FLiPAKAREEGEMG004/",
  "animal" : "jaLC_FLiPAKAREEGEMG004",
+ "mod_name" : "rat_mouse",
  "epochlen" : 4,
  "fs" : 400,
  "fsd": 200,

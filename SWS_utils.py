@@ -38,6 +38,14 @@ def generate_signal(downsamp_signal, epochlen, fs): # fs = fsd here
     
     return sig_amp, sig_max, sig_mean
 
+def generate_EMG(EMGamp):
+    fse = int(np.size(EMGamp) / 900)
+    EMG_idx = np.arange(0, 900 * fse + fse, fse)
+    EMG = np.zeros(900)
+    for i in np.arange(np.size(EMG)):
+        EMG[i] = np.average(EMGamp[EMG_idx[i]:EMG_idx[i + 1]])
+    return EMG
+
 def bandPower(low, high, downsamp_EEG, epochlen, fsd):
 	win = epochlen * fsd # window == bin
 	EEG = np.zeros(int(np.size(downsamp_EEG)/(epochlen*fsd)))
@@ -86,7 +94,7 @@ def random_forest_classifier(features, target):
     clf.fit(features, target)
     return clf
 
-def plot_spectrogram(ax, a, eegdat, fsd):
+def plot_spectrogram(ax, eegdat, fsd):
     ax.set_title('Spectrogram w/ EMG')
     window_length = 5 # n seconds in windowing segments
     noverlap = 4.9 # step size in sec
@@ -215,7 +223,7 @@ def plot_predicted(ax, Predict_y, clf, Features):
     confidence = np.max(predictions, 1)
     ax.plot(confidence, color = 'k')
 
-def create_prediction_figure(rawdat_dir, hr, Predict_y, clf, Features, fs, eeg, med=False, video_key=False):
+def create_prediction_figure(hr, Predict_y, clf, Features, fs, eeg):
     plt.ion()
     fig, (ax1, ax2, ax3) = plt.subplots(nrows = 3, ncols = 1, figsize = (11, 6))
     plot_spectrogram(ax1, hr, eeg, fs)

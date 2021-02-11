@@ -43,15 +43,17 @@ def load_data_for_sw(filename_sw):
            d = json.load(f)
 
     extracted_dir = str(d['savedir'])
-    model_dir = str(d['model_dir'])
     epochlen = int(d['epochlen'])
     fsd = int(d['fsd'])
     emg_flag = int(d['emg'])
     vid_flag = int(d['vid'])
+	model_dir = str(d['model_dir'])
+	animal = str(d['animal'])
+	mod_name = str(d['mod_name'])
 
-    start_swscoring(filename_sw, extracted_dir, epochlen, fsd, emg_flag, vid_flag)
+    start_swscoring(filename_sw, extracted_dir, epochlen, fsd, emg_flag, vid_flag, animal, model_dir, mod_name)
 
-def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_flag):
+def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_flag, animal, model_dir, mod_name):
 	# mostly for deprecated packages
 	print('this code is supressing warnings')
 	warnings.filterwarnings("ignore")
@@ -94,8 +96,10 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 		print('Generating EMG vectors...')
 		if emg_flag:
 			EMGamp, EMGmax, EMGmean = SWS_utils.generate_signal(this_emg, epochlen, fsd)
+			EMG = SWS_utils.generate_EMG(EMGamp)
 		else:
 			EMGamp = False
+
 		print('Generating EEG vectors...')
 		EEGamp, EEGmax, EEGmean = SWS_utils.generate_signal(this_eeg, epochlen, fsd)
 
@@ -142,6 +146,58 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 		nb_post, nb_pre = SWS_utils.post_pre(EEGnb, EEGnb)
 
 ###--------------------------------This is where the model stuff will go--------------------###
+
+		animal_name = np.full(np.size(delta_pre), animal)
+		# Note: The second parameter depends on the actual animal name. For example, if the animal is "KNR00004", we
+		# should use "animal[3:]" for "00004"; if the animal is "jaLC_FLiPAKAREEGEMG004", we should use "animal[19:]"
+		# for "004".
+		animal_num = np.full(np.shape(animal_name), int(animal[19:]))
+
+		model = input('Use a random forest? y/n: ') == 'y'
+
+		if model:
+			final_features = ['Animal_Name', 'animal_num', 'Time_Interval', 'State', 'delta_pre', 'delta_pre2',
+							  'delta_pre3', 'delta_post', 'delta_post2', 'delta_post3', 'EEGdelta', 'theta_pre',
+							  'theta_pre2', 'theta_pre3',
+							  'theta_post', 'theta_post2', 'theta_post3', 'EEGtheta', 'EEGalpha', 'EEGbeta',
+							  'EEGgamma', 'EEGnarrow', 'nb_pre', 'delta/theta', 'EEGfire', 'EEGamp', 'EEGmax',
+							  'EEGmean', 'EMG', 'Motion']
+
+			# TODO: take into consideration if there is not a model initially
+			# loading different models
+			os.chdir(model_dir)
+			if emg_flag:
+				clf = load(mod_name + '_EMG.joblib')
+			else:
+				clf = load(mod_name + '_no_EMG.joblib')
+
+			# feature list
+			FeatureList = []
+			nans = np.full(np.shape(animal_name), np.nan)
+			if emg_flag:
+				FeatureList = [animal_num, delta_pre, delta_pre2, delta_pre3, delta_post, delta_post2, delta_post3,
+							   EEGdelta,
+							   theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2, theta_post3,
+							   EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, delt_thet, EEGfire, EEGamp, EEGmax,
+							   EEGmean, nans]
+			else:
+				FeatureList = [animal_num, delta_pre, delta_pre2, delta_pre3, delta_post, delta_post2, delta_post3,
+							   EEGdelta,
+							   theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2, theta_post3,
+							   EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, delt_thet, EEGfire, EEGamp, EEGmax,
+							   EEGmean, EMG]
+
+			FeatureList_smoothed = []
+			for f in FeatureList:
+				FeatureList_smoothed.append(signal.medfilt(f, 5))
+			Features = np.column_stack((FeatureList_smoothed))
+			Features = np.nan_to_num(Features)
+
+			Predict_y = clf.predict(Features)
+			Predict_y = SWS_utils.fix_states(Predict_y)
+			SWS_utils.create_prediction_figure(Predict_y, clf, Features, fsd, downdatlfp)
+
+
 
 		fig, (ax1, ax2, ax3, ax4) = plt.subplots(nrows = 4, ncols = 1, figsize = (11,6))
 		fig2, ax5, ax6 = SWS_utils.create_scoring_figure(extracted_dir, a, eeg=this_eeg, fsd=fsd)
