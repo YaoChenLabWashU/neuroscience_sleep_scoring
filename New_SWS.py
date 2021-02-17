@@ -96,7 +96,6 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 		print('Generating EMG vectors...')
 		if emg_flag:
 			EMGamp, EMGmax, EMGmean = SWS_utils.generate_signal(this_emg, epochlen, fsd)
-			EMG = SWS_utils.generate_EMG(EMGamp)
 		else:
 			EMGamp = False
 
@@ -179,13 +178,13 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 							   EEGdelta,
 							   theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2, theta_post3,
 							   EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, delt_thet, EEGfire, EEGamp, EEGmax,
-							   EEGmean, nans]
+							   EEGmean, EMGamp]
 			else:
 				FeatureList = [animal_num, delta_pre, delta_pre2, delta_pre3, delta_post, delta_post2, delta_post3,
 							   EEGdelta,
 							   theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2, theta_post3,
 							   EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, delt_thet, EEGfire, EEGamp, EEGmax,
-							   EEGmean, EMG]
+							   EEGmean, nans]
 
 			FeatureList_smoothed = []
 			for f in FeatureList:
@@ -195,7 +194,7 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 
 			Predict_y = clf.predict(Features)
 			Predict_y = SWS_utils.fix_states(Predict_y)
-			SWS_utils.create_prediction_figure(Predict_y, clf, Features, fsd, downdatlfp)
+			SWS_utils.create_prediction_figure(Predict_y, clf, Features, fsd, this_eeg)
 
 
 

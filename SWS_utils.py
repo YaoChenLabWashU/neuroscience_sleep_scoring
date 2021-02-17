@@ -38,14 +38,6 @@ def generate_signal(downsamp_signal, epochlen, fs): # fs = fsd here
     
     return sig_amp, sig_max, sig_mean
 
-def generate_EMG(EMGamp):
-    fse = int(np.size(EMGamp) / 900)
-    EMG_idx = np.arange(0, 900 * fse + fse, fse)
-    EMG = np.zeros(900)
-    for i in np.arange(np.size(EMG)):
-        EMG[i] = np.average(EMGamp[EMG_idx[i]:EMG_idx[i + 1]])
-    return EMG
-
 def bandPower(low, high, downsamp_EEG, epochlen, fsd):
 	win = epochlen * fsd # window == bin
 	EEG = np.zeros(int(np.size(downsamp_EEG)/(epochlen*fsd)))
