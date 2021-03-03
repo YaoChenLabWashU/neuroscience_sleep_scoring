@@ -17,6 +17,7 @@ import pandas as pd
 import warnings
 os.chdir('/Users/annzhou/research/neuroscience/ChenLab_Sleep_Scoring/')
 import SWS_utils
+import train_model
 from SW_Cursor import Cursor
 
 key_stroke = 0
@@ -35,23 +36,113 @@ def on_press(event):
 		print('I did not understand that keystroke, I will go back to it at the end')
 
 
-def load_data_for_sw(filename_sw):
-    '''
-     load_data_for_sw(filename_sw)
-    '''
-    with open(filename_sw, 'r') as f:
-           d = json.load(f)
+def manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg, vid_flag, this_video, h):
+	# Manually score the entire file.
+	fig, (ax1, ax2, ax3, ax4) = plt.subplots(nrows=4, ncols=1, figsize=(11, 6))
+	fig2, ax5, ax6 = SWS_utils.create_scoring_figure(extracted_dir, a, eeg=this_eeg, fsd=fsd)
+	# cursor = Cursor(ax5, ax6, ax7)
+	cID2 = fig.canvas.mpl_connect('key_press_event', on_press)
+	cID3 = fig2.canvas.mpl_connect('key_press_event', on_press)
+	i = 0
+	start = int(i * fsd * epochlen)
+	end = int(start + fsd * 3 * epochlen)
+	realtime = np.arange(np.size(this_eeg)) / fsd
+	LFP_ylim = 5
+	delt = np.load(os.path.join(extracted_dir, 'delt' + str(a) + '_hr' + str(h) + '.npy'))
+	thet = np.load(os.path.join(extracted_dir, 'thet' + str(a) + '_hr' + str(h) + '.npy'))
 
-    extracted_dir = str(d['savedir'])
-    epochlen = int(d['epochlen'])
-    fsd = int(d['fsd'])
-    emg_flag = int(d['emg'])
-    vid_flag = int(d['vid'])
-	model_dir = str(d['model_dir'])
-	animal = str(d['animal'])
-	mod_name = str(d['mod_name'])
+	no_delt_start, = np.where(realtime < delt[1][0])
+	no_delt_end, = np.where(realtime > delt[1][-1])
+	delt_pad = np.pad(delt[0], (np.size(no_delt_start), np.size(no_delt_end)), 'constant',
+					  constant_values=(0, 0))
 
-    start_swscoring(filename_sw, extracted_dir, epochlen, fsd, emg_flag, vid_flag, animal, model_dir, mod_name)
+	no_thet_start, = np.where(realtime < thet[1][0])
+	no_thet_end, = np.where(realtime > thet[1][-1])
+	thet_pad = np.pad(thet[0], (np.size(no_thet_start), np.size(no_thet_end)), 'constant',
+					  constant_values=(0, 0))
+
+	assert np.size(delt_pad) == np.size(this_eeg) == np.size(thet_pad)
+
+	line1, line2, line3, line4 = SWS_utils.pull_up_raw_trace(ax1, ax2, ax3, ax4,
+															 emg_flag, start, end, realtime, this_eeg, fsd,
+															 LFP_ylim, delt_pad,
+															 thet_pad, epochlen, this_emg)
+	marker = SWS_utils.make_marker(ax5, end, realtime, fsd, epochlen)
+	fig.show()
+	fig2.show()
+	fig.tight_layout()
+	fig2.tight_layout()
+	try:
+		# if some portion of the file has been previously scored
+		State = np.load(os.path.join(extracted_dir, 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'))
+		wrong, = np.where(np.isnan(State))
+		State[wrong] = 0
+		s, = np.where(State == 0)
+		color_dict = {'0': 'white',
+					  '1': 'green',
+					  '2': 'blue',
+					  '3': 'red'}
+		# rendering what has been previously scored
+		for count, color in enumerate(State[:-1]):
+			start = int(count * fsd * epochlen)
+			rect = patch.Rectangle((realtime[start + (epochlen * fsd)], 0),
+								   (epochlen), 1, color=color_dict[str(int(color))])
+			ax6.add_patch(rect)
+		fig2.show()
+
+	except FileNotFoundError:
+		# if the file is a brand new one for scoring
+		State = np.zeros(int(np.size(this_eeg) / fsd / epochlen))
+		s = np.arange(1, np.size(State) - 1)
+		first_state = int(input('Enter the first state: '))
+		State[0] = first_state
+
+	if vid_flag:
+		cap = cv2.VideoCapture(this_video)
+		fps = cap.get(cv2.CAP_PROP_FPS)
+	for i in s[:-3]:
+		# input('press enter or quit')
+		print(f'here. index: {i}')
+		start = int(i * fsd * epochlen)
+		end = int(start + fsd * 3 * epochlen)
+		if vid_flag:
+			vid_start = int(i * fps * epochlen)
+			vid_end = int(vid_start + fps * 3 * epochlen)
+		SWS_utils.update_raw_trace(line1, line2, line3, line4, marker, fig, fig2, start, end,
+								   this_eeg, delt_pad, thet_pad, emg_flag, this_emg, realtime)
+		color_dict = {'0': 'white',
+					  '1': 'green',
+					  '2': 'blue',
+					  '3': 'red'}
+		rect = patch.Rectangle((realtime[start], 0),
+							   (epochlen), 1, color=color_dict[str(int(State[i - 1]))])
+		ax6.add_patch(rect)
+		fig.show()
+		fig2.show()
+		button = False
+		while not button:
+			button = fig2.waitforbuttonpress()
+			print('here1')
+			print(f'button: {button}')
+			if not button:
+				print('you clicked')
+				if vid_flag:
+					SWS_utils.pull_up_movie(vid_start, vid_end, this_video, epochlen)
+				else:
+					print('...but you do not have videos available')
+		global key_stroke
+		State[i] = key_stroke
+		fig2.canvas.flush_events()
+		fig.canvas.flush_events()
+		np.save(os.path.join(extracted_dir, 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'), State)
+
+	print('DONE SCORING')
+	plt.close('all')
+	last_state = int(input('Enter the last state: '))
+	State[-2:] = last_state
+	np.save(os.path.join(extracted_dir, 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'), State)
+	return State
+
 
 def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_flag, animal, model_dir, mod_name):
 	# mostly for deprecated packages
@@ -81,6 +172,8 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 		this_eeg = np.load(os.path.join(extracted_dir, 'downsampEEG_Acq'+str(a) + '_hr' + str(h)+ '.npy'))
 		if int(d['emg']) == 1:
 			this_emg = np.load(os.path.join(extracted_dir,'downsampEMG_Acq'+str(a) + '_hr' + str(h)+ '.npy'))
+		else:
+			this_emg = None
 		# chop off the remainder that does not fit into the 4s epoch
 		seg_len = np.size(this_eeg)/fsd
 		nearest_epoch = math.floor(seg_len/epochlen)
@@ -90,6 +183,7 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 			this_video = glob.glob(os.path.join(video_dir, '*_'+str(int(a)-1)+'.mp4'))[0]
 			print('using ' + this_video + ' for the video')
 		else:
+			this_video = None
 			print('no video available')
 
 		os.chdir(extracted_dir)
@@ -155,20 +249,19 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 		model = input('Use a random forest? y/n: ') == 'y'
 
 		if model:
-			final_features = ['Animal_Name', 'animal_num', 'Time_Interval', 'State', 'delta_pre', 'delta_pre2',
-							  'delta_pre3', 'delta_post', 'delta_post2', 'delta_post3', 'EEGdelta', 'theta_pre',
-							  'theta_pre2', 'theta_pre3',
-							  'theta_post', 'theta_post2', 'theta_post3', 'EEGtheta', 'EEGalpha', 'EEGbeta',
-							  'EEGgamma', 'EEGnarrow', 'nb_pre', 'delta/theta', 'EEGfire', 'EEGamp', 'EEGmax',
-							  'EEGmean', 'EMG', 'Motion']
-
 			# TODO: take into consideration if there is not a model initially
 			# loading different models
+
 			os.chdir(model_dir)
-			if emg_flag:
-				clf = load(mod_name + '_EMG.joblib')
-			else:
-				clf = load(mod_name + '_no_EMG.joblib')
+			try:
+				if emg_flag:
+					clf = load(mod_name + '_EMG.joblib')
+				else:
+					clf = load(mod_name + '_no_EMG.joblib')
+			except FileNotFoundError:
+				print("You don't have a model to work with.")
+				print("Run \"python train_model.py\" before scoring to obtain your very first model.")
+				return
 
 			# feature list
 			FeatureList = []
@@ -196,109 +289,65 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 			Predict_y = SWS_utils.fix_states(Predict_y)
 			SWS_utils.create_prediction_figure(Predict_y, clf, Features, fsd, this_eeg)
 
+			satisfaction = input('Satisfied?: y/n ') == 'y'
+			plt.close('all')
+
+			if satisfaction:
+				# Store the result.
+				np.save(os.path.join(extracted_dir, 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'), Predict_y)
+			else:
+				State = manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg, vid_flag, this_video, h)
+				# Feed the data to retrain a model.
+				# Using EMG data by default. (No video for now)
+				final_features = ['Animal_Name', 'animal_num', 'State', 'delta_pre', 'delta_pre2',
+								  'delta_pre3', 'delta_post', 'delta_post2', 'delta_post3', 'EEGdelta', 'theta_pre',
+								  'theta_pre2', 'theta_pre3',
+								  'theta_post', 'theta_post2', 'theta_post3', 'EEGtheta', 'EEGalpha', 'EEGbeta',
+								  'EEGgamma', 'EEGnarrow', 'nb_pre', 'delta/theta', 'EEGfire', 'EEGamp', 'EEGmax',
+								  'EEGmean', 'EMG']
+				data = np.vstack(
+					[animal_name, animal_num, State, delta_pre, delta_pre2, delta_pre3, delta_post,
+					 delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
+					 theta_post3,
+					 EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, delt_thet, EEGfire, EEGamp, EEGmax,
+					 EEGmean])
+
+				if np.size(np.where(pd.isnull(EMGamp))[0]) > 0:
+					EMGamp[np.isnan(EMGamp)] = 0
+				data = np.vstack([data, EMGamp])
+
+				df_additions = pd.DataFrame(columns=final_features, data=data.T)
+				Sleep_Model = SWS_utils.update_sleep_model(model_dir, mod_name, df_additions)
+				jobname, x_features = SWS_utils.load_joblib(final_features, emg_flag, mod_name)
+				Sleep_Model = Sleep_Model.drop(index=np.where(Sleep_Model['EMG'].isin(['nan']))[0])
+				SWS_utils.retrain_model(Sleep_Model, x_features, model_dir, jobname)
+		else:
+			manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg, vid_flag, this_video, h)
 
 
-		fig, (ax1, ax2, ax3, ax4) = plt.subplots(nrows = 4, ncols = 1, figsize = (11,6))
-		fig2, ax5, ax6 = SWS_utils.create_scoring_figure(extracted_dir, a, eeg=this_eeg, fsd=fsd)
-		# cursor = Cursor(ax5, ax6, ax7)
-		cID2 = fig.canvas.mpl_connect('key_press_event', on_press)
-		cID3 = fig2.canvas.mpl_connect('key_press_event', on_press)
-		i = 0
-		start = int(i * fsd * epochlen)
-		end = int(start + fsd * 3 * epochlen)
-		realtime = np.arange(np.size(this_eeg))/fsd
-		LFP_ylim = 5
-		delt = np.load(os.path.join(extracted_dir,'delt' + str(a) + '_hr' + str(h)+ '.npy'))
-		thet = np.load(os.path.join(extracted_dir,'thet' + str(a) + '_hr' + str(h)+ '.npy'))
+def load_data_for_sw(filename_sw):
+	with open(filename_sw, 'r') as f:
+		d = json.load(f)
 
-		no_delt_start, = np.where(realtime<delt[1][0])
-		no_delt_end, = np.where(realtime>delt[1][-1])
-		delt_pad = np.pad(delt[0], (np.size(no_delt_start), np.size(no_delt_end)), 'constant', 
-		    constant_values=(0,0))
+	extracted_dir = str(d['savedir'])
+	epochlen = int(d['epochlen'])
+	fsd = int(d['fsd'])
+	emg_flag = int(d['emg'])
+	vid_flag = int(d['vid'])
+	model_dir = str(d['model_dir'])
+	animal = str(d['animal'])
+	mod_name = str(d['mod_name'])
 
-		no_thet_start, = np.where(realtime<thet[1][0])
-		no_thet_end, = np.where(realtime>thet[1][-1])
-		thet_pad = np.pad(thet[0], (np.size(no_thet_start), np.size(no_thet_end)), 'constant', 
-		    constant_values=(0,0))
+	start_swscoring(filename_sw, extracted_dir, epochlen, fsd, emg_flag, vid_flag, animal, model_dir, mod_name)
 
-		assert np.size(delt_pad) == np.size(this_eeg) == np.size(thet_pad)
 
-		line1, line2, line3, line4 = SWS_utils.pull_up_raw_trace(ax1, ax2, ax3,ax4, 
-			emg_flag, start, end, realtime, this_eeg, fsd, LFP_ylim, delt_pad, 
-			thet_pad, epochlen, this_emg)
-		marker = SWS_utils.make_marker(ax5, end, realtime, fsd, epochlen)
-		fig.show()
-		fig2.show()
-		fig.tight_layout()
-		fig2.tight_layout()
-		try:
-			# if some portion of the file has been previously scored
-			State = np.load(os.path.join(extracted_dir, 'StatesAcq' + str(a) + '_hr' + str(h)+'.npy'))
-			wrong, = np.where(np.isnan(State))
-			State[wrong] = 0
-			s, = np.where(State == 0)
-			color_dict = {'0': 'white',
-						'1':'green',
-						'2': 'blue',
-						'3': 'red'}
-			# rendering what has been previously scored
-			for count,color in enumerate(State[:-1]):
-				start = int(count * fsd * epochlen)
-				rect = patch.Rectangle((realtime[start+(epochlen*fsd)],0),
-					(epochlen), 1, color = color_dict[str(int(color))])
-				ax6.add_patch(rect)
-			fig2.show()
 
-		except FileNotFoundError:
-			# if the file is a brand new one for scoring
-			State = np.zeros(int(np.size(this_eeg)/fsd/epochlen))
-			s = np.arange(1,np.size(State)-1)
-			first_state = int(input('Enter the first state: '))
-			State[0] = first_state
 
-		if vid_flag:
-			cap = cv2.VideoCapture(this_video)
-			fps = cap.get(cv2.CAP_PROP_FPS)
-		for i in s[:-3]:
-			# input('press enter or quit')
-			print(f'here. index: {i}')
-			start = int(i * fsd * epochlen)
-			end = int(start + fsd * 3 * epochlen)
-			if vid_flag:
-				vid_start = int(i * fps * epochlen)
-				vid_end = int(vid_start + fps * 3 * epochlen)
-			SWS_utils.update_raw_trace(line1, line2, line3, line4, marker, fig, fig2, start, end, 
-				this_eeg, delt_pad, thet_pad, emg_flag, this_emg, realtime)
-			color_dict = {'0': 'white',
-						'1':'green',
-						'2': 'blue',
-						'3': 'red'}
-			rect = patch.Rectangle((realtime[start],0),
-				(epochlen), 1, color = color_dict[str(int(State[i-1]))])
-			ax6.add_patch(rect)
-			fig.show()
-			fig2.show()
-			button = False
-			while not button:
-				button = fig2.waitforbuttonpress()
-				print('here1')
-				print(f'button: {button}')
-				if not button:
-					print('you clicked')
-					if vid_flag:
-						SWS_utils.pull_up_movie(vid_start, vid_end, this_video, epochlen)
-					else:
-						print('...but you do not have videos available')
-			global key_stroke
-			State[i] = key_stroke
-			fig2.canvas.flush_events()
-			fig.canvas.flush_events()
-			np.save(os.path.join(extracted_dir, 'StatesAcq' + str(a) + '_hr' + str(h)+'.npy'), State)
-		print('DONE SCORING')
-		plt.close('all')
-		last_state = int(input('Enter the last state: '))
-		State[-2:] = last_state
-		np.save(os.path.join(extracted_dir, 'StatesAcq' + str(a) + '_hr' + str(h)+'.npy'), State)
+
+
+
+
+
 
 		
 

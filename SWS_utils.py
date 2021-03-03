@@ -6,9 +6,10 @@ import scipy.signal as signal
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import matplotlib.patches as patch
-import copy
+import copy as cp
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
+from sklearn import preprocessing
 from joblib import dump, load
 import pandas as pd
 import cv2
@@ -83,6 +84,7 @@ def fix_states(states, alter_nums = False):
 
 def random_forest_classifier(features, target):
     clf = RandomForestClassifier(n_estimators=300)
+    # clf.fit(preprocessing.LabelEncoder().fit_transform(features), target)
     clf.fit(features, target)
     return clf
 
@@ -215,13 +217,65 @@ def plot_predicted(ax, Predict_y, clf, Features):
     confidence = np.max(predictions, 1)
     ax.plot(confidence, color = 'k')
 
-def create_prediction_figure(hr, Predict_y, clf, Features, fs, eeg):
+def create_prediction_figure(Predict_y, clf, Features, fs, eeg):
     plt.ion()
     fig, (ax1, ax2, ax3) = plt.subplots(nrows = 3, ncols = 1, figsize = (11, 6))
-    plot_spectrogram(ax1, hr, eeg, fs)
+    plot_spectrogram(ax1, eeg, fs)
     plot_predicted(ax2, Predict_y, clf, Features)
     fig.tight_layout()
     return fig, ax1, ax2, ax3
+
+def update_sleep_model(model_dir, mod_name, df_additions):
+    try:
+        Sleep_Model = np.load(file = model_dir + mod_name + '_model.pkl', allow_pickle = True)
+        Sleep_Model = Sleep_Model.append(df_additions, ignore_index = True)
+    except FileNotFoundError:
+        print('no model created...I will save this one')
+        df_additions.to_pickle(model_dir + mod_name + '_model.pkl')
+        Sleep_Model = df_additions
+    Sleep_Model.to_pickle(model_dir + mod_name + '_model.pkl')
+    return Sleep_Model
+
+def load_joblib(FeatureList, emg_flag, mod_name):
+    x_features = cp.deepcopy(FeatureList)
+    [x_features.remove(i) for i in ['Animal_Name', 'State']]
+    jobname =''
+
+    if emg_flag:
+        jobname = mod_name + '_EMG.joblib'
+        print("EMG flag on")
+    else:
+        x_features.remove('EMG')
+        jobname = mod_name + '_no_EMG.joblib'
+        print('Just so you know...this model has no EMG')
+    return jobname, x_features
+
+def retrain_model(Sleep_Model, x_features, model_dir, jobname):
+    print("Retrain model")
+    prop = 1 / 2
+    model_inputs = Sleep_Model[x_features][0:int((max(Sleep_Model.index) + 1) * prop)].apply(pd.to_numeric)
+    train_x = model_inputs.values
+    model_input_states = Sleep_Model['State'][0:int((max(Sleep_Model.index) + 1) * prop)].apply(pd.to_numeric)
+    train_y = model_input_states.values
+
+    model_test = Sleep_Model[x_features][int((max(Sleep_Model.index) + 1) * prop):].apply(pd.to_numeric)
+    test_x = model_test.values
+    model_test_states = Sleep_Model['State'][int((max(Sleep_Model.index) + 1) * prop):].apply(pd.to_numeric)
+    test_y = model_test_states.values
+
+    print('Calculating tree...')
+    clf = random_forest_classifier(train_x, train_y)
+    print("Train Accuracy :: ", accuracy_score(train_y, clf.predict(train_x)))
+    print("Test Accuracy :: ", accuracy_score(test_y, clf.predict(test_x)))
+
+    Satisfaction = input('Satisfied?: ')
+    if Satisfaction == 'y':
+        # clf = random_forest_classifier(Sleep_Model[x_features].apply(pd.to_numeric).values,
+        #                                Sleep_Model['State'].apply(pd.to_numeric).values)
+        # print("Train Accuracy :: ", accuracy_score(Sleep_Model['State'].apply(pd.to_numeric).values,
+        #                                            clf.predict(Sleep_Model[x_features].apply(pd.to_numeric).values)))
+        dump(clf, model_dir + jobname)
+
 
 def pull_up_movie(start, end, vid_file, epochlen):
     cap = cv2.VideoCapture(vid_file)
@@ -334,7 +388,7 @@ def create_scoring_figure(extracted_dir, a, eeg, fsd):
     ax3 = fig.add_subplot(spec[2])
 
     #fig, (ax1, ax2) = plt.subplots(nrows = 2, ncols = 1, figsize = (11, 6))
-    plot_spectrogram(ax1, a, eeg, fsd)
+    plot_spectrogram(ax1, eeg, fsd)
     ax2.set_ylim(0.3, 1)
     ax2.set_xlim(0, int(np.size(eeg)/fsd))
     ax3.set_xlim([0,1])
