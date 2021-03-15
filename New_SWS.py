@@ -144,6 +144,37 @@ def manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg
 	return State
 
 
+def update_model(animal_name, animal_num, State, delta_pre, delta_pre2, delta_pre3, delta_post,
+		 delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
+		 theta_post3,
+		 EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, delt_thet, EEGfire, EEGamp, EEGmax,
+		 EEGmean, EMGamp, model_dir, mod_name, emg_flag):
+	# Feed the data to retrain a model.
+	# Using EMG data by default. (No video for now)
+	final_features = ['Animal_Name', 'animal_num', 'State', 'delta_pre', 'delta_pre2',
+					  'delta_pre3', 'delta_post', 'delta_post2', 'delta_post3', 'EEGdelta', 'theta_pre',
+					  'theta_pre2', 'theta_pre3',
+					  'theta_post', 'theta_post2', 'theta_post3', 'EEGtheta', 'EEGalpha', 'EEGbeta',
+					  'EEGgamma', 'EEGnarrow', 'nb_pre', 'delta/theta', 'EEGfire', 'EEGamp', 'EEGmax',
+					  'EEGmean', 'EMG']
+	data = np.vstack(
+		[animal_name, animal_num, State, delta_pre, delta_pre2, delta_pre3, delta_post,
+		 delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
+		 theta_post3,
+		 EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, delt_thet, EEGfire, EEGamp, EEGmax,
+		 EEGmean])
+
+	if np.size(np.where(pd.isnull(EMGamp))[0]) > 0:
+		EMGamp[np.isnan(EMGamp)] = 0
+	data = np.vstack([data, EMGamp])
+
+	df_additions = pd.DataFrame(columns=final_features, data=data.T)
+	Sleep_Model = SWS_utils.update_sleep_model(model_dir, mod_name, df_additions)
+	jobname, x_features = SWS_utils.load_joblib(final_features, emg_flag, mod_name)
+	Sleep_Model = Sleep_Model.drop(index=np.where(Sleep_Model['EMG'].isin(['nan']))[0])
+	SWS_utils.retrain_model(Sleep_Model, x_features, model_dir, jobname)
+
+
 def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_flag, animal, model_dir, mod_name):
 	# mostly for deprecated packages
 	print('this code is supressing warnings')
@@ -294,31 +325,97 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 				# Store the result.
 				np.save(os.path.join(extracted_dir, 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'), Predict_y)
 			else:
-				State = manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg, vid_flag, this_video, h)
-				# Feed the data to retrain a model.
-				# Using EMG data by default. (No video for now)
-				final_features = ['Animal_Name', 'animal_num', 'State', 'delta_pre', 'delta_pre2',
-								  'delta_pre3', 'delta_post', 'delta_post2', 'delta_post3', 'EEGdelta', 'theta_pre',
-								  'theta_pre2', 'theta_pre3',
-								  'theta_post', 'theta_post2', 'theta_post3', 'EEGtheta', 'EEGalpha', 'EEGbeta',
-								  'EEGgamma', 'EEGnarrow', 'nb_pre', 'delta/theta', 'EEGfire', 'EEGamp', 'EEGmax',
-								  'EEGmean', 'EMG']
-				data = np.vstack(
-					[animal_name, animal_num, State, delta_pre, delta_pre2, delta_pre3, delta_post,
-					 delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
-					 theta_post3,
-					 EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, delt_thet, EEGfire, EEGamp, EEGmax,
-					 EEGmean])
+				fix = input('Do you want to fix a few states?: y/n ') == 'y'
+				if fix:
+					start = 0
+					end = int(fsd * 3 * epochlen)
+					realtime = np.arange(np.size(this_eeg)) / fsd
+					LFP_ylim = 5
 
-				if np.size(np.where(pd.isnull(EMGamp))[0]) > 0:
-					EMGamp[np.isnan(EMGamp)] = 0
-				data = np.vstack([data, EMGamp])
+					print('loading delta and theta...')
+					delt = np.load(os.path.join(extracted_dir, 'delt' + str(a) + '_hr' + str(h) + '.npy'))
+					thet = np.load(os.path.join(extracted_dir, 'thet' + str(a) + '_hr' + str(h) + '.npy'))
 
-				df_additions = pd.DataFrame(columns=final_features, data=data.T)
-				Sleep_Model = SWS_utils.update_sleep_model(model_dir, mod_name, df_additions)
-				jobname, x_features = SWS_utils.load_joblib(final_features, emg_flag, mod_name)
-				Sleep_Model = Sleep_Model.drop(index=np.where(Sleep_Model['EMG'].isin(['nan']))[0])
-				SWS_utils.retrain_model(Sleep_Model, x_features, model_dir, jobname)
+					no_delt_start, = np.where(realtime < delt[1][0])
+					no_delt_end, = np.where(realtime > delt[1][-1])
+					delt_pad = np.pad(delt[0], (np.size(no_delt_start), np.size(no_delt_end)), 'constant',
+									  constant_values=(0, 0))
+
+					no_thet_start, = np.where(realtime < thet[1][0])
+					no_thet_end, = np.where(realtime > thet[1][-1])
+					thet_pad = np.pad(thet[0], (np.size(no_thet_start), np.size(no_thet_end)), 'constant',
+									  constant_values=(0, 0))
+
+					fig2, (ax4, ax5, ax6, ax7) = plt.subplots(nrows=4, ncols=1, figsize=(11, 6))
+					line1, line2, line3, line4 = SWS_utils.pull_up_raw_trace(ax4, ax5, ax6, ax7, emg_flag, start, end, realtime,
+																	 this_eeg, fsd, LFP_ylim, delt_pad, thet_pad,
+																	 epochlen, this_emg)
+					fig, ax1, ax2, ax3 = SWS_utils.create_prediction_figure(Predict_y, clf, Features, fsd, this_eeg)
+
+					plt.ion()
+					State = copy.deepcopy(Predict_y)
+					# State[State == 0] = 1
+					# State[State == 2] = 2
+					# State[State == 5] = 3
+					cursor = Cursor(ax1, ax2, ax3)
+
+					cID = fig.canvas.mpl_connect('button_press_event', cursor.on_click)
+					cID2 = fig.canvas.mpl_connect('axes_enter_event', cursor.in_axes)
+					cID3 = fig.canvas.mpl_connect('key_press_event', cursor.on_press)
+
+					plt.show()
+					DONE = False
+					while not DONE:
+						plt.waitforbuttonpress()
+						if cursor.change_bins:
+							bins = np.sort(cursor.bins)
+							start_bin = cursor.bins[0]
+							end_bin = cursor.bins[1]
+							print(f'changing bins: {start_bin} to {end_bin}')
+							SWS_utils.clear_bins(bins, ax2)
+							fig.canvas.draw()
+							# new_state = int(input('What state should these be?: '))
+							try:
+								new_state = int(input('What state should these be?: '))
+							except:
+								new_state = int(input('What state should these be?: '))
+							SWS_utils.correct_bins(start_bin, end_bin, ax2, new_state)
+							fig.canvas.draw()
+							State[start_bin:end_bin] = new_state
+							cursor.bins = []
+							cursor.change_bins = False
+						if cursor.movie_mode and cursor.movie_bin > 0:
+							if vid_flag:
+								start = int(cursor.movie_bin * 60 * fsd)
+								end = int(((cursor.movie_bin * 60) + 12) * fsd)
+								SWS_utils.update_raw_trace(line1, line2, line3, line4, 0, fig, None, start, end, this_eeg,
+														  delt_pad, thet_pad, emg_flag, this_emg, realtime)
+								fig2.canvas.draw()
+								fig2.tight_layout()
+								SWS_utils.pull_up_movie(start, end, this_video, epochlen)
+								cursor.movie_bin = 0
+							else:
+								print("you don't have video, sorry")
+						if cursor.DONE:
+							DONE = True
+
+					print('successfully left GUI')
+					cv2.destroyAllWindows()
+					plt.close('all')
+					np.save(os.path.join(extracted_dir, 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'), State)
+					update_model(animal_name, animal_num, State, delta_pre, delta_pre2, delta_pre3, delta_post,
+								 delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
+								 theta_post3, EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, delt_thet, EEGfire, EEGamp, EEGmax,
+								 EEGmean, EMGamp, model_dir, mod_name, emg_flag)
+
+				else:
+					print("Manually score the whole thing and update model.")
+					State = manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg, vid_flag, this_video, h)
+					update_model(animal_name, animal_num, State, delta_pre, delta_pre2, delta_pre3, delta_post,
+								 delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
+								 theta_post3, EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, delt_thet, EEGfire, EEGamp, EEGmax,
+								 EEGmean, EMGamp, model_dir, mod_name, emg_flag)
+
 		else:
 			manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg, vid_flag, this_video, h)
 
