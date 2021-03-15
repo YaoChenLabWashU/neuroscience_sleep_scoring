@@ -199,18 +199,17 @@ def my_specgram(x, ax, NFFT=400, Fs=200, Fc=0, detrend=mlab.detrend_none,
 def plot_predicted(ax, Predict_y, clf, Features):
     ax.set_title('Predicted States')
     for state in np.arange(np.size(Predict_y)):
-        if Predict_y[state] == 0:
+        if Predict_y[state] == 1:
             rect7 = patch.Rectangle((state, 0), 3.8, height = 1, color = 'green')
             ax.add_patch(rect7)
         elif Predict_y[state] == 2:
             rect7 = patch.Rectangle((state, 0), 3.8, height = 1, color = 'blue')
             ax.add_patch(rect7)
-        elif Predict_y[state] == 5:
+        elif Predict_y[state] == 3:
             rect7 = patch.Rectangle((state, 0), 3.8, height = 1, color = 'red')
             ax.add_patch(rect7)
-        elif Predict_y[state] == 4:
-            rect7 = patch.Rectangle((state, 0), 3.8, height = 1, color = '#a8a485')
-            ax.add_patch(rect7)
+        else:
+            print("Model predicted an unknown state.")
     ax.set_ylim(0.3, 1)
     ax.set_xlim(0, 900)
     predictions = clf.predict_proba(Features)
@@ -270,10 +269,10 @@ def retrain_model(Sleep_Model, x_features, model_dir, jobname):
 
     Satisfaction = input('Satisfied?: ')
     if Satisfaction == 'y':
-        # clf = random_forest_classifier(Sleep_Model[x_features].apply(pd.to_numeric).values,
-        #                                Sleep_Model['State'].apply(pd.to_numeric).values)
-        # print("Train Accuracy :: ", accuracy_score(Sleep_Model['State'].apply(pd.to_numeric).values,
-        #                                            clf.predict(Sleep_Model[x_features].apply(pd.to_numeric).values)))
+        clf = random_forest_classifier(Sleep_Model[x_features].apply(pd.to_numeric).values,
+                                       Sleep_Model['State'].apply(pd.to_numeric).values)
+        print("Train Accuracy :: ", accuracy_score(Sleep_Model['State'].apply(pd.to_numeric).values,
+                                                   clf.predict(Sleep_Model[x_features].apply(pd.to_numeric).values)))
         dump(clf, model_dir + jobname)
 
 

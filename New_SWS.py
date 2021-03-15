@@ -249,9 +249,7 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 		model = input('Use a random forest? y/n: ') == 'y'
 
 		if model:
-			# TODO: take into consideration if there is not a model initially
 			# loading different models
-
 			os.chdir(model_dir)
 			try:
 				if emg_flag:
