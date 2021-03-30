@@ -196,7 +196,7 @@ def my_specgram(x, ax, NFFT=400, Fs=200, Fc=0, detrend=mlab.detrend_none,
 
     return Pxx, freqs, bins, im
 
-def plot_predicted(ax, Predict_y, clf, Features):
+def plot_predicted(ax, Predict_y, is_predicted, clf, Features):
     ax.set_title('Predicted States')
     for state in np.arange(np.size(Predict_y)):
         if Predict_y[state] == 1:
@@ -212,15 +212,18 @@ def plot_predicted(ax, Predict_y, clf, Features):
             print("Model predicted an unknown state.")
     ax.set_ylim(0.3, 1)
     ax.set_xlim(0, 900)
-    predictions = clf.predict_proba(Features)
-    confidence = np.max(predictions, 1)
+    if is_predicted:
+        predictions = clf.predict_proba(Features)
+        confidence = np.max(predictions, 1)
+    else:
+        confidence = np.ones(np.size(Predict_y))
     ax.plot(confidence, color = 'k')
 
-def create_prediction_figure(Predict_y, clf, Features, fs, eeg):
+def create_prediction_figure(Predict_y, is_predicted, clf, Features, fs, eeg):
     plt.ion()
     fig, (ax1, ax2, ax3) = plt.subplots(nrows = 3, ncols = 1, figsize = (11, 6))
     plot_spectrogram(ax1, eeg, fs)
-    plot_predicted(ax2, Predict_y, clf, Features)
+    plot_predicted(ax2, Predict_y, is_predicted, clf, Features)
     fig.tight_layout()
     return fig, ax1, ax2, ax3
 
