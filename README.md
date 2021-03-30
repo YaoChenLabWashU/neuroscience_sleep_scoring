@@ -215,13 +215,26 @@ Score_Settings.json:<br>
  "model_dir" : "/home/jaLC_FLiPAKAREEGEMG004/model/"<br>
  "video_dir" : "/home/jaLC_FLiPAKAREEGEMG004/"<br>
  "savedir": "/home/jaLC_FLiPAKAREEGEMG004/jaLC_FLiPAKAREEGEMG004_data/extracted_data/"<br>
-
+ 
 #### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-#### Step 5: Score!
+#### Step 5: Train the first model
 #### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
 
-If there is no model yet, run `python train_model.py`.
-Otherwise to start scoring, run `python New_SWS.py`.
+If you do not plan to use the model or you already have a model trained, skip to step 6.
+
+Before training the first model, go to `train_model.py` and update `raw_data` under `train_first_model` function according to what you have. <br>
+For instance, if you have scored states from acquisition1hour0, acquisition2hour0 and acquisition4hour0, your `raw_data` should look like:<br>
+> raw_data = {<br>
+> &nbsp;&nbsp;&nbsp;&nbsp;1:0,<br>
+> &nbsp;&nbsp;&nbsp;&nbsp;2:0,<br>
+> &nbsp;&nbsp;&nbsp;&nbsp;4:0<br>
+> }<br>
+
+#### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#### Step 6: Score!
+#### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+Run `python New_SWS.py`.
 
 When in the manual scoring mode, you can exit by typing `q`.
 When in the fixing mode, you can exit by typing`d`.
