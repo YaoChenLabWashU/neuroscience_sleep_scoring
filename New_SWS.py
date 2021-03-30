@@ -239,14 +239,18 @@ def display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, h, emg_fl
 			cursor.change_bins = False
 		if cursor.movie_mode and cursor.movie_bin > 0:
 			if vid_flag:
-				start = int(cursor.movie_bin * 60 * fsd)
-				end = int(((cursor.movie_bin * 60) + 12) * fsd)
-				SWS_utils.update_raw_trace(line1, line2, line3, line4, 0, fig, None, start, end, this_eeg,
-										   delt_pad, thet_pad, emg_flag, this_emg, realtime)
-				fig2.canvas.draw()
-				fig2.tight_layout()
-				SWS_utils.pull_up_movie(start, end, this_video, epochlen)
-				cursor.movie_bin = 0
+				print("Sorry, this function has not been developed yet.")
+				# start = int(cursor.movie_bin * 60 * fsd)
+				# end = int(((cursor.movie_bin * 60) + 12) * fsd)
+				# # end = int(((cursor.movie_bin * 60) + 2) * fsd)
+				# marker = SWS_utils.make_marker(ax5, end, realtime, fsd, epochlen)
+				# SWS_utils.update_raw_trace(line1, line2, line3, line4, marker, fig, fig2, start, end, this_eeg,
+				# 						   delt_pad, thet_pad, emg_flag, this_emg, realtime)
+				# fig2.canvas.draw()
+				# fig2.tight_layout()
+				# # fig2.show()
+				# SWS_utils.pull_up_movie(start, end, this_video, epochlen)
+				# cursor.movie_bin = 0
 			else:
 				print("you don't have video, sorry")
 		if cursor.DONE:
