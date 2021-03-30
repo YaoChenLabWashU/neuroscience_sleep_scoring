@@ -190,16 +190,42 @@ for i in *.avi; do ffmpeg -i "$i" "${i%.*}.mp4"; done
 ffmpeg -i yourfile.avi newfilename.mp4
 
 
-## - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  -##
-### Step 4: Score!
-## - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  -##
-ipython
+#### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#### Step 4: Set up the file directory
+#### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
 
-import os
-os.chdir('/Users/annzhou/research/neuroscience/')
-import ChenLab_Sleep_Scoring as slp
-filename_sw = '/Users/annzhou/research/neuroscience/ChenLab_Sleep_Scoring/Score_Settings.json'
-slp.load_data_for_sw(filename_sw)
+The basic principle here is that your `Score_Settings.json` must correspond to your directory structure.
+
+An example below:
+
+Directory:<br>
+home/<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ChenLab_Sleep_Scoring<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;jaLC_FLiPAKAREEGEMG004/ (all your data goes here)<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;jaLC_FLiPAKAREEGEMG004_data/<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;extracted_data/<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(The result, for instance StateAcq1_hr0.npy, can be found here.) <br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;model/ (all model stuff goes here) <br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;initial_data/ (place all initial data for training the first model under this directory) <br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(You can find the model here.) <br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;jaLC_FLiPAKAREEGEMG004_0.mp4 (all movie files are listed here (not in any subdirectory)) <br>
+
+Score_Settings.json:<br>
+"rawdat_dir" : "/home/jaLC_FLiPAKAREEGEMG004/jaLC_FLiPAKAREEGEMG004_data/"<br>
+ "model_dir" : "/home/jaLC_FLiPAKAREEGEMG004/model/"<br>
+ "video_dir" : "/home/jaLC_FLiPAKAREEGEMG004/"<br>
+ "savedir": "/home/jaLC_FLiPAKAREEGEMG004/jaLC_FLiPAKAREEGEMG004_data/extracted_data/"<br>
+
+#### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+#### Step 5: Score!
+#### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+If there is no model yet, run `python train_model.py`.
+Otherwise to start scoring, run `python New_SWS.py`.
+
+When in the manual scoring mode, you can exit by typing `q`.
+When in the fixing mode, you can exit by typing`d`.
+(Note that in both cases, you need to be focused on the scoring window before typing `q` or `d`).
 
 ##Scoring
 # 1 = Awake (Green)
