@@ -15,7 +15,6 @@ from sklearn.metrics import accuracy_score
 from joblib import dump, load
 import pandas as pd
 import warnings
-os.chdir('/Users/annzhou/research/neuroscience/ChenLab_Sleep_Scoring/')
 import SWS_utils
 import train_model
 from SW_Cursor import Cursor
@@ -487,3 +486,8 @@ def load_data_for_sw(filename_sw):
 	mod_name = str(d['mod_name'])
 
 	start_swscoring(filename_sw, extracted_dir, epochlen, fsd, emg_flag, vid_flag, animal, model_dir, mod_name)
+
+
+if __name__ == "__main__":
+	filename_sw = '/Users/annzhou/research/neuroscience/ChenLab_Sleep_Scoring/Score_Settings.json'
+	load_data_for_sw(filename_sw)
