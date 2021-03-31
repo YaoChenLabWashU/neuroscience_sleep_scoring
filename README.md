@@ -201,18 +201,18 @@ An example below:
 Directory:<br>
 home/<br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ChenLab_Sleep_Scoring<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;model/ (all model stuff goes here) <br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;initial_data/ (place all initial data for training the first model under this directory) <br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(You should put the model here. / You can find the model here.) <br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;jaLC_FLiPAKAREEGEMG004/ (all your data goes here)<br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;jaLC_FLiPAKAREEGEMG004_data/<br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;extracted_data/<br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(The result, for instance StateAcq1_hr0.npy, can be found here.) <br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;model/ (all model stuff goes here) <br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;initial_data/ (place all initial data for training the first model under this directory) <br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(You can find the model here.) <br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;jaLC_FLiPAKAREEGEMG004_0.mp4 (all movie files are listed here (not in any subdirectory)) <br>
 
 Score_Settings.json:<br>
 "rawdat_dir" : "/home/jaLC_FLiPAKAREEGEMG004/jaLC_FLiPAKAREEGEMG004_data/"<br>
- "model_dir" : "/home/jaLC_FLiPAKAREEGEMG004/model/"<br>
+ "model_dir" : "/home/ChenLab_Sleep_Scoring/model/"<br>
  "video_dir" : "/home/jaLC_FLiPAKAREEGEMG004/"<br>
  "savedir": "/home/jaLC_FLiPAKAREEGEMG004/jaLC_FLiPAKAREEGEMG004_data/extracted_data/"<br>
  
@@ -229,6 +229,9 @@ For instance, if you have scored states from acquisition1hour0, acquisition2hour
 > &nbsp;&nbsp;&nbsp;&nbsp;2:0,<br>
 > &nbsp;&nbsp;&nbsp;&nbsp;4:0<br>
 > }<br>
+
+Place your datasets (for instance, `StatesAcq1_hr0.npy`, `downsampEMG_Acq1_hr0.npy` and `downsampEEG_Acq1_hr0.npy` for each scoring) inside the initial_data folder. <br>
+Go back to the home directory and run `python train_model.py`.
 
 #### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 #### Step 6: Score!

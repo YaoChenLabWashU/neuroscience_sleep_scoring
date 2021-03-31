@@ -4,18 +4,23 @@ import os
 import math
 import pandas as pd
 import json
-
-os.chdir('/Users/annzhou/research/neuroscience/jaLC_FLiPAKAREEGEMG004/model/initial_data')
 import SWS_utils
 
 
-def train_first_model(extracted_dir, epochlen, fsd, emg_flag, animal, model_dir, mod_name):
+def train_first_model(epochlen, fsd, emg_flag, animal, model_dir, mod_name):
 
     # Data available for training for the first time ("#acquisition:#hr")
     raw_data = {
         1:0,
         2:0,
-        4:0
+        4:0,
+        22:0,
+        22:1,
+        # 23:0,
+        # 24:0,
+        31:0,
+        31:1,
+        31:2
     }
 
     # Using EMG data by default. (No video for now)
@@ -28,29 +33,33 @@ def train_first_model(extracted_dir, epochlen, fsd, emg_flag, animal, model_dir,
 
     data = np.empty((len(final_features),0))
 
+    i = 0
     for a in raw_data:
+        print(i)
+        i = i+1
         h = raw_data[a]
 
         print('Handling acquisition '+str(a)+' hour '+str(h))
         print('Loading EEG and EMG....')
-        downsampEEG = np.load(os.path.join(extracted_dir, 'downsampEEG_Acq' + str(a) + '.npy'))
+        data_dir = os.path.join(model_dir, 'initial_data/')
+        downsampEEG = np.load(os.path.join(data_dir, 'downsampEEG_Acq' + str(a) + '_hr' + str(h) + '.npy'))
         if emg_flag:
-            downsampEMG = np.load(os.path.join(extracted_dir, 'downsampEMG_Acq' + str(a) + '.npy'))
+            downsampEMG = np.load(os.path.join(data_dir, 'downsampEMG_Acq' + str(a) + '_hr' + str(h) + '.npy'))
         acq_len = np.size(downsampEEG) / fsd  # fs: sampling rate, fsd: downsampled sampling rate
         hour_segs = math.ceil(acq_len / 3600)  # acq_len in seconds, convert to hours
         print('This acquisition has ' + str(hour_segs) + ' segments.')
 
         for h in np.arange(hour_segs):
-            this_eeg = np.load(os.path.join(extracted_dir, 'downsampEEG_Acq' + str(a) + '_hr' + str(h) + '.npy'))
+            this_eeg = np.load(os.path.join(data_dir, 'downsampEEG_Acq' + str(a) + '_hr' + str(h) + '.npy'))
             if emg_flag:
-                this_emg = np.load(os.path.join(extracted_dir, 'downsampEMG_Acq' + str(a) + '_hr' + str(h) + '.npy'))
+                this_emg = np.load(os.path.join(data_dir, 'downsampEMG_Acq' + str(a) + '_hr' + str(h) + '.npy'))
             # chop off the remainder that does not fit into the 4s epoch
             seg_len = np.size(this_eeg) / fsd
             nearest_epoch = math.floor(seg_len / epochlen)
             new_length = int(nearest_epoch * epochlen * fsd)
             this_eeg = this_eeg[0:new_length]
 
-            os.chdir(extracted_dir)
+            # os.chdir(extracted_dir)
             if emg_flag:
                 EMGamp, EMGmax, EMGmean = SWS_utils.generate_signal(this_emg, epochlen, fsd)
             else:
@@ -130,6 +139,8 @@ def train_first_model(extracted_dir, epochlen, fsd, emg_flag, animal, model_dir,
             inital_data_dir = model_dir+"initial_data/"
             State = np.load(os.path.join(inital_data_dir, 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'))
 
+            print(len(State))
+
             data_addition = np.vstack(
                 [animal_name, animal_num, State, delta_pre, delta_pre2, delta_pre3, delta_post,
                  delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
@@ -165,4 +176,4 @@ if __name__ == "__main__":
     animal = str(d['animal'])
     mod_name = str(d['mod_name'])
 
-    train_first_model(extracted_dir, epochlen, fsd, emg_flag, animal, model_dir, mod_name)
+    train_first_model(epochlen, fsd, emg_flag, animal, model_dir, mod_name)

@@ -1,5 +1,5 @@
 {"rawdat_dir" : "/Users/annzhou/research/neuroscience/jaLC_FLiPAKAREEGEMG004/jaLC_FLiPAKAREEGEMG004_data/",
- "model_dir" : "/Users/annzhou/research/neuroscience/jaLC_FLiPAKAREEGEMG004/model/",
+ "model_dir" : "/Users/annzhou/research/neuroscience/ChenLab_Sleep_Scoring/model/",
  "video_dir" : "/Users/annzhou/research/neuroscience/jaLC_FLiPAKAREEGEMG004/",
  "animal" : "jaLC_FLiPAKAREEGEMG004",
  "mod_name" : "rat_mouse",
