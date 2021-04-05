@@ -5,6 +5,7 @@ import math
 import pandas as pd
 import json
 import SWS_utils
+import sys
 
 
 def train_first_model(epochlen, fsd, emg_flag, animal, model_dir, mod_name):
@@ -163,17 +164,25 @@ def train_first_model(epochlen, fsd, emg_flag, animal, model_dir, mod_name):
 
 if __name__ == "__main__":
     # execute only if run as a script
-    filename_sw = '/Users/annzhou/research/neuroscience/ChenLab_Sleep_Scoring/Score_Settings.json'
-    with open(filename_sw, 'r') as f:
-        d = json.load(f)
+    args = sys.argv
+    assert args[0] == 'train_model.py'
+    if len(args) < 2:
+        print(
+            "You need to specify the path of your Score_Settings.json. For instance, run `python train_model.py /home/ChenLab_Sleep_Scoring/Score_Settings.json`.")
+    elif len(args) > 2:
+        print(
+            "You only need to specify the path of your Score_Settings.json. For instance, run `python train_model.py /home/ChenLab_Sleep_Scoring/Score_Settings.json`.")
+    else:
+        with open(args[1], 'r') as f:
+            d = json.load(f)
 
-    extracted_dir = str(d['savedir'])
-    epochlen = int(d['epochlen'])
-    fsd = int(d['fsd'])
-    emg_flag = int(d['emg'])
-    vid_flag = int(d['vid'])
-    model_dir = str(d['model_dir'])
-    animal = str(d['animal'])
-    mod_name = str(d['mod_name'])
+        extracted_dir = str(d['savedir'])
+        epochlen = int(d['epochlen'])
+        fsd = int(d['fsd'])
+        emg_flag = int(d['emg'])
+        vid_flag = int(d['vid'])
+        model_dir = str(d['model_dir'])
+        animal = str(d['animal'])
+        mod_name = str(d['mod_name'])
 
-    train_first_model(epochlen, fsd, emg_flag, animal, model_dir, mod_name)
+        train_first_model(epochlen, fsd, emg_flag, animal, model_dir, mod_name)

@@ -232,7 +232,7 @@ For instance, if you have scored states from acquisition1hour0, acquisition2hour
 > }<br>
 
 Place your datasets (for instance, `StatesAcq1_hr0.npy`, `downsampEMG_Acq1_hr0.npy` and `downsampEEG_Acq1_hr0.npy` for each scoring) inside the initial_data folder. <br>
-Go back to the home directory and run `python train_model.py`.
+Go back to the home directory and run `python train_model.py [path to your Score_Settings.json]`. For instance, using the sample file directory above, you should run `python train_model.py /home/ChenLab_Sleep_Scoring/Score_Settings.json`.
 
 #### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 #### Step 6: Score!
