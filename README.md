@@ -194,13 +194,14 @@ ffmpeg -i yourfile.avi newfilename.mp4
 #### Step 4: Set up the file directory
 #### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
 
-The basic principle here is that your `Score_Settings.json` must correspond to your directory structure.
+The basic principle here is that your `Score_Settings.json` must correspond to your directory structure. In addition, take note of the path to your `Score_Settings.json`; we will use it later.
 
 An example below:
 
 Directory:<br>
 home/<br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;ChenLab_Sleep_Scoring<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Score_Settings.json <br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;model/ (all model stuff goes here) <br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;initial_data/ (place all initial data for training the first model under this directory) <br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(You should put the model here. / You can find the model here.) <br>
@@ -237,7 +238,7 @@ Go back to the home directory and run `python train_model.py`.
 #### Step 6: Score!
 #### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
 
-Run `python New_SWS.py`.
+Run `python New_SWS.py [path to your Score_Settings.json]`. For instance, using the sample file directory above, you should run `python New_SWS.py /home/ChenLab_Sleep_Scoring/Score_Settings.json`.
 
 When in the manual scoring mode, you can exit by typing `q`.
 When in the fixing mode, you can exit by typing`d`.
