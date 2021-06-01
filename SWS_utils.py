@@ -211,7 +211,7 @@ def plot_predicted(ax, Predict_y, is_predicted, clf, Features):
         else:
             print("Model predicted an unknown state.")
     ax.set_ylim(0.3, 1)
-    ax.set_xlim(0, 900)
+    ax.set_xlim(0, np.size(Predict_y))
     if is_predicted:
         predictions = clf.predict_proba(Features)
         confidence = np.max(predictions, 1)
