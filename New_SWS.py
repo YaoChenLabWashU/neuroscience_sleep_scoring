@@ -299,7 +299,7 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 		new_length = int(nearest_epoch*epochlen*fsd)
 		this_eeg = this_eeg[0:new_length]
 		if vid_flag:
-			this_video = glob.glob(os.path.join(video_dir, '*_'+str(int(a)-1)+'.mp4'))[0]
+			this_video = glob.glob(os.path.join(video_dir, '*'+str(int(a)-1)+'_filled.mp4'))[0]
 			print('using ' + this_video + ' for the video')
 		else:
 			this_video = None
@@ -363,7 +363,10 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 		# Note: The second parameter depends on the actual animal name. For example, if the animal is "KNR00004", we
 		# should use "animal[3:]" for "00004"; if the animal is "jaLC_FLiPAKAREEGEMG004", we should use "animal[19:]"
 		# for "004".
-		animal_num = np.full(np.shape(animal_name), int(animal[19:]))
+		nums = [int(i) for i in animal if i.isdigit()]
+		animal_num = [str(i) for i in nums]
+		animal_num = np.full(np.shape(animal_name), int("".join(animal_num)))
+
 
 		check = input('Do you want to check and fix existing scoring (c) or score new dataset (s)?: c/s ')
 		while check != 'c' and check != 's':
@@ -390,6 +393,13 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 
 				display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, h, emg_flag, this_emg, State, False, None,
 										None, vid_flag, this_video)
+				update = input('Do you want to update the model?: y/n ') == 'y'
+				if update:
+					update_model(animal_name, animal_num, State, delta_pre, delta_pre2, delta_pre3, delta_post,
+							 delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
+							 theta_post3, EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, delt_thet, EEGfire, EEGamp, EEGmax,
+							 EEGmean, EMGamp, model_dir, mod_name, emg_flag)
+
 
 			except FileNotFoundError:
 				# if the file is a brand new one for scoring
