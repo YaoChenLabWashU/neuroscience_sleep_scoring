@@ -19,6 +19,7 @@ import SWS_utils
 import train_model
 from SW_Cursor import Cursor
 
+
 key_stroke = 0
 
 def on_press(event):
@@ -212,6 +213,11 @@ def display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, h, emg_fl
 	cursor = Cursor(ax1, ax2, ax3)
 
 	cID = fig.canvas.mpl_connect('button_press_event', cursor.on_click)
+
+
+	cID4 = fig.canvas.mpl_connect('motion_notify_event', cursor.on_mouse_move)
+
+	#Ok so I think that the quotes is the specific event to trigger and the second arg is the function to run when that happens?
 	cID2 = fig.canvas.mpl_connect('axes_enter_event', cursor.in_axes)
 	cID3 = fig.canvas.mpl_connect('key_press_event', cursor.on_press)
 
@@ -299,7 +305,7 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 		new_length = int(nearest_epoch*epochlen*fsd)
 		this_eeg = this_eeg[0:new_length]
 		if vid_flag:
-			this_video = glob.glob(os.path.join(video_dir, '*'+str(int(a)-1)+'_filled.mp4'))[0]
+			this_video = glob.glob(os.path.join(video_dir, '*'+'Video'+str(int(a)-1)+'_filled.mp4'))[0]
 			print('using ' + this_video + ' for the video')
 		else:
 			this_video = None

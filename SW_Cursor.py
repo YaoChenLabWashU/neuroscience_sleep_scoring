@@ -16,6 +16,10 @@ class Cursor(object):
         self.DONE = False
         self.STATE = []
 
+        self.horizontal_line = ax2.axhline(color='k', lw=0.8, ls='--')
+        self.vertical_line = ax2.axvline(color='k', lw=0.8, ls='--')
+        self.text = ax2.text(0.72, 0.9, '', transform=ax2.transAxes)
+
         # initializing the lines
         self.ylims_ax1 = ax1.get_ylim()
         self.ylims_ax2 = ax2.get_ylim()
@@ -59,14 +63,88 @@ class Cursor(object):
             self.lines[1] = line2.pop(0)
             self.lines[2] = line3.pop(0)
 
+
+    # This works, but doesn't refresh fast enough. I think this is a limit of matplotlib however and out of my control
+    def set_cross_hair_visible(self, visible):
+        need_redraw = self.horizontal_line.get_visible() != visible
+        self.horizontal_line.set_visible(visible)
+        self.vertical_line.set_visible(visible)
+        self.text.set_visible(visible)
+        return need_redraw
+
+    def on_mouse_move(self, event):
+        if not event.inaxes:
+            need_redraw = self.set_cross_hair_visible(False)
+            if need_redraw:
+                self.ax2.figure.canvas.draw()
+        else:
+            self.set_cross_hair_visible(True)
+            x, y = event.xdata, event.ydata
+            # update the line positions
+            self.horizontal_line.set_ydata(y)
+            self.vertical_line.set_xdata(x)
+            self.text.set_text('x=%1.2f, y=%1.2f' % (x, y))
+            self.ax2.figure.canvas.draw()
+
+
+
+
     def in_axes(self, event):
+
+        # Add the crosshair here? TODO: put in priint statements to see when this triggers
+
+
+
+        #Stashing cursor thread here: https://stackoverflow.com/questions/63195460/how-to-have-a-fast-crosshair-mouse-cursor-for-subplots-in-matplotlib
+        #this would be so much chooler if I could use a switch statement but fuck it
+        if event.inaxes == self.ax2:
+
+            print('Second bins')
+            # x, y2 = sel.target
+            # y1 = np.interp( sel.target[0],   plot1.get_xdata(), plot1.get_ydata() )
+            # sel.annotation.set_text(f'x: {x:.2f}\ny1: {y1:.2f}\ny2: {y2:.2f}')
+            # # sel.annotation.set_visible(False)
+            # hline1 = ax1.axhline(y1, color='k', ls=':')
+            # vline1 = ax1.axvline(x, color='k', ls=':')
+            # vline2 = ax2.axvline(x, color='k', ls=':')
+            # hline2 = ax2.axhline(y2, color='k', ls=':')
+            # sel.extras.append(hline1)
+            # sel.extras.append(vline1)
+            # sel.extras.append(hline2)
+            # sel.extras.append(vline2)
+            #
+            # fig = plt.figure(figsize=(15, 10))
+            # ax1 = plt.subplot(2, 1, 1)
+            # ax2 = plt.subplot(2, 1, 2, sharex=ax1)
+            #
+            # plot1, = ax1.plot(np.array(np.random.uniform(-1, 1, 100).cumsum()))
+            # plot2, = ax2.plot(np.array(np.random.uniform(-1, 1, 100).cumsum()))
+            #
+            # cursor = mplcursors.cursor(plot2, hover=True)
+            # cursor.connect('add', crosshair)
+
+
+        # Movie mode triggers when you hover over the bottom axis. Duh ax3 I guess
         if event.inaxes == self.ax3:
             self.movie_mode = True
             print('MOVIE MODE!')
         else:
             self.movie_mode = False
+
+
     def pull_up_movie(self, event):
+
+        # I don't think we call movies there TODO: See if this was a stub for something else?
         print('gon pull up some movies')
+
+    ##
+    def crosshair():
+
+
+        plt.show()
+
+
+    ##
 
 
     def on_click(self, event):
@@ -89,7 +167,3 @@ class Cursor(object):
                 self.bins.append(math.floor(event.xdata))
                 print(f'FIRST CLICK ----- xdata:{event.xdata} x:{event.x} axes: {event.inaxes}')
                 self.clicked = True
-
-
-
-
