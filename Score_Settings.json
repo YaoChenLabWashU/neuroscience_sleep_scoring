@@ -1,7 +1,7 @@
-{"rawdat_dir" : "/Users/annzhou/research/neuroscience/jaLC_FLiPAKAREEGEMG004/jaLC_FLiPAKAREEGEMG004_data/",
- "model_dir" : "/Users/annzhou/research/neuroscience/ChenLab_Sleep_Scoring/model/",
- "video_dir" : "/Users/annzhou/research/neuroscience/jaLC_FLiPAKAREEGEMG004/",
- "animal" : "jaLC_FLiPAKAREEGEMG004",
+{"rawdat_dir" : "/Volumes/yaochen/Active/Yao/Microscopy/FliP/ycFLiPAKAREEGEMG002(KQ3_CortexFiber)-Analyze",
+ "model_dir" : "/Users/evinjaff/Desktop/localgit/model/",
+ "video_dir" : "/Volumes/yaochen/Active/Yao/Microscopy/FliP/ycFLiPAKAREEGEMG002(KQ3_CortexFiber)-Analyze/ycFLiPAKAREEGEMG002_Bonsai",
+ "animal" : "ycFLiPAKAREEGEMG002",
  "mod_name" : "rat_mouse",
  "epochlen" : 4,
  "fs" : 400,
@@ -10,10 +10,9 @@
  "vid": 1,
  "EEG channel": 0,
  "EMG channel": 3,
- "Acquisition": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24],
+ "Acquisition": [1],
  "Filter High": 100,
  "Filter High": 100,
  "Filter Low": 0.5,
- "savedir": "/Users/annzhou/research/neuroscience/jaLC_FLiPAKAREEGEMG004/jaLC_FLiPAKAREEGEMG004_data/extracted_data/"
+ "savedir": "/Volumes/yaochen/Active/Yao/Microscopy/FliP/ycFLiPAKAREEGEMG002(KQ3_CortexFiber)-Analyze/ycFLiPAKAREEGEMG002_extracted_data"
 }
-
