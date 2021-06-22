@@ -36,7 +36,10 @@ import matplotlib.pyplot as plt
 print(pd)
 print(np)
 
-df = pd.read_csv('trimmed.csv', sep=',')
+df = pd.read_csv('data_export.csv', sep=',')
+#Short version to speed up debugging
+#df = pd.read_csv('trimmed.csv', sep=',')
+
 
 npy = df.to_numpy()
 
@@ -45,15 +48,31 @@ npy = npy[0]
 
 print("Len of npy " + str(len(npy)))
 
-#Make a matching x-axis. This will jump it in increments of 1*10^-5 but I don't know if this is correct since the struct doesn't seem to carry the data with it
-nums = np.arange(0, len(npy)*1.0e-5, 1.0e-5)
+nums = np.arange(0, len(npy)*1.0e-3, 1.0e-3)
 
 print(npy)
 print(nums)
 
+plt.figure(1)
 plt.plot(nums, npy)
 plt.ylabel('My Plot')
+
+# Load npy plot too
+
+data2 = np.load("downsampEMG_Acq3.npy")
+
+
+time = np.arange(0, len(data2)*1.0e-3, 1.0e-3)
+
+print("data2: length of " + str(len(data2)) )
+print(data2)
+
+plt.figure(2)
+plt.plot(time, data2)
+plt.ylabel('My Plot')
+
 plt.show()
+
 ~~~
 
 
