@@ -297,6 +297,9 @@ def pull_up_movie(start, end, vid_file, epochlen):
             cv2.waitKey(1)
     cap.release()
     cv2.destroyAllWindows()
+
+#What does this function do? It is definetly part of how figure one gets its data I think, but the print statements seem to contradict this
+
 def pull_up_raw_trace(ax1, ax2, ax3,ax4, emg, start, end, realtime, 
     this_eeg, fsd, LFP_ylim, delt, thet, epochlen, this_emg):
     print('pull up the second figure for that bin - maybe. Option to click through a few bins around it?')
@@ -331,7 +334,10 @@ def plot_delta(delt, start, end, fsd, ax, epochlen, realtime):
 def plot_theta(ax, start, end, fsd, theta, epochlen, realtime):
     line3, = ax.plot(realtime[start:end], theta[start:end])
     ax.set_xlim(start/fsd, end/fsd)
-    ax.set_ylim(-2,2)
+    ax.set_ylim(-4,4)
+    # Auto set y scale here:
+
+    #ax.autoscale()
     ax.set_title('Theta power (4 - 8 Hz)')
     bottom_3 = ax.get_ylim()[0]
     rectangle_3 = patch.Rectangle((start/fsd+epochlen, bottom_3), epochlen, height = -bottom_3 / 5)
@@ -342,7 +348,12 @@ def plot_LFP(start, end, ax, this_eeg, realtime, fsd, LFP_ylim, epochlen):
     line1, = ax.plot(realtime[start:end], this_eeg[start:end])
     ax.set_xlim(start/fsd, end/fsd)
     ax.set_title('LFP')
-    ax.set_ylim(-LFP_ylim, LFP_ylim)
+    #ax.set_ylim(-LFP_ylim, LFP_ylim)
+
+    # Auto set y scale here:
+
+    ax.autoscale()
+
     bottom = -LFP_ylim
     rectangle = patch.Rectangle((start/fsd+epochlen, bottom),epochlen,height=-bottom/5)
     ax.add_patch(rectangle)
@@ -350,13 +361,32 @@ def plot_LFP(start, end, ax, this_eeg, realtime, fsd, LFP_ylim, epochlen):
 
 def plot_EMG(ax, length, bottom, this_emg, epochlen, x, start, end, realtime, fsd):
     # anything with EMG will error
-    line4, = ax.plot(realtime[start:end], this_emg[start:end], color = 'r')    
+
+    testfig = testfig, (testax) = plt.subplots(nrows = 1, ncols = 1, figsize = (11, 6))
+
+    # line4, = ax.plot(realtime[start:end], this_emg[start:end], color = 'r')
+
+    testax = ax.plot(realtime[start:end], this_emg[start:end], color = 'r')
+
+    testax.set_title('EMG Amplitde')
+    testax.set_xlim(start / fsd, end / fsd)
+
     ax.set_title('EMG Amplitde')
     ax.set_xlim(start/fsd, end/fsd)
-    ax.set_ylim(0, 0.3)
+    #ax.set_ylim(0, 0.3)
+    #Auto set y scale here:
+
+    ax.autoscale()
     top = ax.get_ylim()[1]
     rectangle_4 = patch.Rectangle((start/fsd+epochlen, top), epochlen, height = -top / 5, color = 'r')
     ax.add_patch(rectangle_4)
+
+    testfig.show()
+
+    # Loop here while we plot it
+    for _ in iter(int, 1):
+        pass
+
     return line4
 
 def clear_bins(bins, ax2):

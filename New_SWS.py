@@ -38,8 +38,15 @@ def on_press(event):
 
 def manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg, vid_flag, this_video, h):
 	# Manually score the entire file.
+
+	# Raw Signal figure
 	fig, (ax1, ax2, ax3, ax4) = plt.subplots(nrows=4, ncols=1, figsize=(11, 6))
+
+
+	# Spectrogram w/ EEG here
 	fig2, ax5, ax6 = SWS_utils.create_scoring_figure(extracted_dir, a, eeg=this_eeg, fsd=fsd)
+
+
 	# cursor = Cursor(ax5, ax6, ax7)
 	cID2 = fig.canvas.mpl_connect('key_press_event', on_press)
 	cID3 = fig2.canvas.mpl_connect('key_press_event', on_press)
@@ -63,13 +70,19 @@ def manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg
 
 	assert np.size(delt_pad) == np.size(this_eeg) == np.size(thet_pad)
 
+	#Pulls raw data into the lines?
 	line1, line2, line3, line4 = SWS_utils.pull_up_raw_trace(ax1, ax2, ax3, ax4,
 															 emg_flag, start, end, realtime, this_eeg, fsd,
 															 LFP_ylim, delt_pad,
 															 thet_pad, epochlen, this_emg)
 	marker = SWS_utils.make_marker(ax5, end, realtime, fsd, epochlen)
+
+	fig.autoscale()
+	fig2.autoscale()
+
 	fig.show()
 	fig2.show()
+	print("Showing figs")
 	fig.tight_layout()
 	fig2.tight_layout()
 	try:
@@ -181,25 +194,76 @@ def update_model(animal_name, animal_num, State, delta_pre, delta_pre2, delta_pr
 
 def display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, h, emg_flag, this_emg, State_input, is_predicted, clf, Features, vid_flag, this_video):
 	start = 0
-	end = int(fsd * 3 * epochlen)
+	end = int(fsd * 3 * epochlen * 300) # Original formula was: 200 * 3 * 4 = 2400 and that only plotted 12 seconds. So I need to multiply this by 300? There is no data point from the JSON that matches this multiplier so I don't know how to do this
 	realtime = np.arange(np.size(this_eeg)) / fsd
 	LFP_ylim = 5
+
+	print("realtime: ")
+	print(realtime)
+	print("\n")
+
 
 	print('loading delta and theta...')
 	delt = np.load(os.path.join(extracted_dir, 'delt' + str(a) + '_hr' + str(h) + '.npy'))
 	thet = np.load(os.path.join(extracted_dir, 'thet' + str(a) + '_hr' + str(h) + '.npy'))
 
+	###
+
+	# Plot Theta Wave
+
+	# Data for plotting
+	# t = np.arange(0.0, 2.0, 0.01)
+	# s = 1 + np.sin(2 * np.pi * t)
+	#
+	# fig, ax = plt.subplots()
+	# ax.plot(t, s)
+	#
+	# ax.set(xlabel='time (s)', ylabel='voltage (mV)',
+	# 	   title='About as simple as it gets, folks')
+	# ax.grid()
+	#
+	# fig.savefig("test.png")
+	# plt.show()
+
+
+
+
+	###
+
+	#Is there something wrong here?
 	no_delt_start, = np.where(realtime < delt[1][0])
 	no_delt_end, = np.where(realtime > delt[1][-1])
+
+	print("no_delt_start: ")
+	print(no_delt_start)
+	print("\n")
+
+	print("no_delt_end: ")
+	print(no_delt_end)
+	print("\n")
+
 	delt_pad = np.pad(delt[0], (np.size(no_delt_start), np.size(no_delt_end)), 'constant',
 					  constant_values=(0, 0))
+
+	print("delt_pad: ")
+	print(delt_pad)
+	print("\n")
+
 
 	no_thet_start, = np.where(realtime < thet[1][0])
 	no_thet_end, = np.where(realtime > thet[1][-1])
 	thet_pad = np.pad(thet[0], (np.size(no_thet_start), np.size(no_thet_end)), 'constant',
 					  constant_values=(0, 0))
 
+	#Figure subplots here, look for variable origin of these
 	fig2, (ax4, ax5, ax6, ax7) = plt.subplots(nrows=4, ncols=1, figsize=(11, 6))
+
+
+
+
+
+
+	#Look at theese vars
 	line1, line2, line3, line4 = SWS_utils.pull_up_raw_trace(ax4, ax5, ax6, ax7, emg_flag, start, end, realtime,
 															 this_eeg, fsd, LFP_ylim, delt_pad, thet_pad,
 															 epochlen, this_emg)
@@ -220,6 +284,10 @@ def display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, h, emg_fl
 	#Ok so I think that the quotes is the specific event to trigger and the second arg is the function to run when that happens?
 	cID2 = fig.canvas.mpl_connect('axes_enter_event', cursor.in_axes)
 	cID3 = fig.canvas.mpl_connect('key_press_event', cursor.on_press)
+
+	# Try line scaling here:
+
+	plt.autoscale()
 
 	plt.show()
 	DONE = False
@@ -385,6 +453,9 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 				wrong, = np.where(np.isnan(State))
 				State[wrong] = 0
 				s, = np.where(State == 0)
+
+				#Should be pretty easy to add a 4th state here TODO
+
 				color_dict = {'0': 'white',
 							  '1': 'green',
 							  '2': 'blue',
@@ -488,6 +559,8 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 								 EEGmean, EMGamp, model_dir, mod_name, emg_flag)
 
 
+#Dammit how the hell did I miss this - Evin
+# This is where the GD data loads in
 def load_data_for_sw(filename_sw):
 	with open(filename_sw, 'r') as f:
 		d = json.load(f)
@@ -500,6 +573,11 @@ def load_data_for_sw(filename_sw):
 	model_dir = str(d['model_dir'])
 	animal = str(d['animal'])
 	mod_name = str(d['mod_name'])
+
+	#Debug files
+	print("fsd:")
+	print(fsd)
+
 
 	start_swscoring(filename_sw, extracted_dir, epochlen, fsd, emg_flag, vid_flag, animal, model_dir, mod_name)
 

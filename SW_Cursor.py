@@ -2,6 +2,9 @@ import math
 import matplotlib.pyplot as plt
 import numpy as np
 
+
+#Cursor class for scoring figure 2 in the sleeps corind with the spectrogram and predicted stats
+
 class Cursor(object):
     def __init__(self, ax1, ax2, ax3):
         self.clicked=False
