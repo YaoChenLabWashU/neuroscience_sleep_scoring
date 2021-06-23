@@ -17,7 +17,7 @@ npy = npy[0]
 
 print("Len of npy " + str(len(npy)))
 
-nums = np.arange(0, len(npy)*1.0e-3, 1.0e-3)
+nums = np.arange(0, len(npy)*(1/400), 1/400)
 
 print(npy)
 print(nums)
@@ -31,7 +31,7 @@ plt.ylabel('My Plot')
 data2 = np.load("downsampEMG_Acq3.npy")
 
 
-time = np.arange(0, len(data2)*1.0e-3, 1.0e-3)
+time = np.arange(0, len(data2)*(1/400), (1/400))
 
 print("data2: length of " + str(len(data2)) )
 print(data2)
