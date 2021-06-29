@@ -203,28 +203,52 @@ def display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, h, emg_fl
 	line1, line2, line3, line4 = SWS_utils.pull_up_raw_trace(ax4, ax5, ax6, ax7, emg_flag, start, end, realtime,
 															 this_eeg, fsd, LFP_ylim, delt_pad, thet_pad,
 															 epochlen, this_emg)
-	fig, ax1, ax2, ax3 = SWS_utils.create_prediction_figure(State_input, is_predicted, clf, Features, fsd, this_eeg)
+	fig, ax1, ax2, ax3, axx = SWS_utils.create_prediction_figure(State_input, is_predicted, clf, Features, fsd, this_eeg, this_emg, realtime, epochlen, start, end)
 
 	plt.ion()
 	State = copy.deepcopy(State_input)
 	# State[State == 0] = 1
 	# State[State == 2] = 2
 	# State[State == 5] = 3
-	cursor = Cursor(ax1, ax2, ax3)
+	#init cursor and it's libraries from SW_Cursor.py
+	cursor = Cursor(ax1, ax2, ax3, axx)
 
 	cID = fig.canvas.mpl_connect('button_press_event', cursor.on_click)
 
 
+	cID4 = fig.canvas.mpl_connect('motion_notify_event', cursor.on_mouse_move)
 	cID4 = fig.canvas.mpl_connect('motion_notify_event', cursor.on_mouse_move)
 
 	#Ok so I think that the quotes is the specific event to trigger and the second arg is the function to run when that happens?
 	cID2 = fig.canvas.mpl_connect('axes_enter_event', cursor.in_axes)
 	cID3 = fig.canvas.mpl_connect('key_press_event', cursor.on_press)
 
+
+
+	#This is the loop that manages the interface
 	plt.show()
 	DONE = False
 	while not DONE:
 		plt.waitforbuttonpress()
+
+		if cursor.replot:
+			print("Replot of fig 1. called!")
+
+			# Call a replot of the graph here
+
+			print('start = '+str(start))
+			print('end = '+str(end))
+			print('fsd = '+str(fsd))
+			#Bumping up by x3 to test if this is all that's needed
+			line1, line2, line3, line4 = SWS_utils.pull_up_raw_trace(ax4, ax5, ax6, ax7, emg_flag, start+2, end+2, realtime,
+																 this_eeg, fsd, LFP_ylim, delt_pad, thet_pad,
+																 epochlen, this_emg)
+			plt.show()
+			cursor.replot = False
+
+
+			# Flip back the params
+
 		if cursor.change_bins:
 			bins = np.sort(cursor.bins)
 			start_bin = cursor.bins[0]

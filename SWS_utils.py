@@ -219,13 +219,18 @@ def plot_predicted(ax, Predict_y, is_predicted, clf, Features):
         confidence = np.ones(np.size(Predict_y))
     ax.plot(confidence, color = 'k')
 
-def create_prediction_figure(Predict_y, is_predicted, clf, Features, fs, eeg):
+def create_prediction_figure(Predict_y, is_predicted, clf, Features, fs, eeg, this_emg, realtime, epochlen, start, end):
     plt.ion()
-    fig, (ax1, ax2, ax3) = plt.subplots(nrows = 3, ncols = 1, figsize = (11, 6))
+    fig, (ax1, ax2, ax3, axx) = plt.subplots(nrows = 4, ncols = 1, figsize = (11, 6))
     plot_spectrogram(ax1, eeg, fs)
     plot_predicted(ax2, Predict_y, is_predicted, clf, Features)
+
+    plot_EMGFig2(axx, this_emg, epochlen, start, end, realtime, fs)
+
+    #fs = fsd
+    #plot_EMGFig2(axx, this_emg, epochlen, x, start, end, realtime, fs)
     fig.tight_layout()
-    return fig, ax1, ax2, ax3
+    return fig, ax1, ax2, ax3, axx
 
 def update_sleep_model(model_dir, mod_name, df_additions):
     try:
@@ -354,6 +359,25 @@ def plot_EMG(ax, length, bottom, this_emg, epochlen, x, start, end, realtime, fs
     ax.set_title('EMG Amplitde')
     ax.set_xlim(start/fsd, end/fsd)
     ax.set_ylim(0, 0.3)
+    top = ax.get_ylim()[1]
+    rectangle_4 = patch.Rectangle((start/fsd+epochlen, top), epochlen, height = -top / 5, color = 'r')
+    ax.add_patch(rectangle_4)
+    return line4
+
+def plot_EMGFig2(ax, this_emg, epochlen, start, end, realtime, fsd):
+    # anything with EMG will error
+
+    end = end * 300
+
+    x = (end - start)
+    length = np.arange(int(end / x - start / x))
+    bottom = np.zeros(int(end / x - start / x))
+
+    line4, = ax.plot(realtime[start:(end)], this_emg[start:end], color = 'r')
+    ax.set_title('EMG Amplitde')
+    ax.set_xlim(start/fsd, end/fsd)
+    ax.set_ylim(0, 0.4)
+    #ax.autoscale()
     top = ax.get_ylim()[1]
     rectangle_4 = patch.Rectangle((start/fsd+epochlen, top), epochlen, height = -top / 5, color = 'r')
     ax.add_patch(rectangle_4)

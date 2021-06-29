@@ -3,12 +3,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 class Cursor(object):
-    def __init__(self, ax1, ax2, ax3):
+    def __init__(self, ax1, ax2, ax3, ax4):
         self.clicked=False
         self.second_click = False
+        self.replot = False
         self.ax1 = ax1
         self.ax2 = ax2
         self.ax3 = ax3
+        self.ax4 = ax4
         self.movie_mode = False
         self.bins = []
         self.change_bins = False
@@ -93,13 +95,19 @@ class Cursor(object):
 
         # Add the crosshair here? TODO: put in priint statements to see when this triggers
 
-
+        print('scanning axes')
 
         #Stashing cursor thread here: https://stackoverflow.com/questions/63195460/how-to-have-a-fast-crosshair-mouse-cursor-for-subplots-in-matplotlib
         #this would be so much chooler if I could use a switch statement but fuck it
         if event.inaxes == self.ax2:
 
             print('Second bins')
+
+        if event.inaxes == self.ax4:
+            print('EMG bin!!')
+
+            #Should we call a graph refresh here?
+
             # x, y2 = sel.target
             # y1 = np.interp( sel.target[0],   plot1.get_xdata(), plot1.get_ydata() )
             # sel.annotation.set_text(f'x: {x:.2f}\ny1: {y1:.2f}\ny2: {y2:.2f}')
@@ -148,19 +156,30 @@ class Cursor(object):
 
 
     def on_click(self, event):
+
+        print("self.clicked = " + str(self.clicked))
+
         if self.movie_mode:
             self.movie_bin = event.xdata
             print(f'video bin (xdata): {event.xdata}')
             print(f'x: {event.x}')
-        elif self.clicked:
-            if event.inaxes != self.ax2:
-                print('please click in the second figure to select bins')
-            else:
+        else:
+            print('click registered')
+            if event.inaxes == self.ax2:
                 print(F'SECOND CLICK ----  xdata:{event.xdata} x:{event.x} axes: {event.inaxes}')
                 self.bins.append(math.floor(event.xdata))
                 self.clicked = False
                 self.change_bins = True
-        else:
+            elif event.inaxes == self.ax1:
+                print('Clicked inside Spectrogram')
+
+                #Set this bool to true, and then have it get flipped back to false in New_SWS
+                self.replot = True;
+
+                # Replot the graph here
+
+            else:
+                print('Clicked outside of any bins')
             if event.inaxes != self.ax2:
                 print('please click in the second figure to select bins')
             else:
