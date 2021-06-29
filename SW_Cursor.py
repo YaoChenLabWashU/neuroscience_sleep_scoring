@@ -6,7 +6,6 @@ class Cursor(object):
     def __init__(self, ax1, ax2, ax3, ax4):
         self.clicked=False
         self.second_click = False
-        self.replot = False
         self.ax1 = ax1
         self.ax2 = ax2
         self.ax3 = ax3
@@ -17,6 +16,10 @@ class Cursor(object):
         self.movie_bin = 0
         self.DONE = False
         self.STATE = []
+
+        # Replot flags
+        self.replot = False
+        self.replotx = 0
 
         self.horizontal_line = ax2.axhline(color='k', lw=0.8, ls='--')
         self.vertical_line = ax2.axvline(color='k', lw=0.8, ls='--')
@@ -174,7 +177,15 @@ class Cursor(object):
                 print('Clicked inside Spectrogram')
 
                 #Set this bool to true, and then have it get flipped back to false in New_SWS
-                self.replot = True;
+                self.replot = True
+
+                print(f'event.x: {event.x}')
+                print(f'event.xdata {event.xdata}')
+
+                #Set a replot start
+                self.replotx = event.xdata
+
+                #Log and store the xpos
 
                 # Replot the graph here
 

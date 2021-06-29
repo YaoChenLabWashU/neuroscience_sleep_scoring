@@ -239,8 +239,10 @@ def display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, h, emg_fl
 			print('start = '+str(start))
 			print('end = '+str(end))
 			print('fsd = '+str(fsd))
+			print('sindex = '+str((start+(cursor.replotx*fsd))))
+			print('eindex = ' + str((end + (cursor.replotx * fsd))))
 			#Bumping up by x3 to test if this is all that's needed
-			line1, line2, line3, line4 = SWS_utils.pull_up_raw_trace(ax4, ax5, ax6, ax7, emg_flag, start+2, end+2, realtime,
+			line1, line2, line3, line4 = SWS_utils.pull_up_raw_trace(ax4, ax5, ax6, ax7, emg_flag, int(start+(cursor.replotx*fsd)), int(end+(cursor.replotx*fsd)), realtime,
 																 this_eeg, fsd, LFP_ylim, delt_pad, thet_pad,
 																 epochlen, this_emg)
 			plt.show()
