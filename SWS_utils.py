@@ -376,7 +376,18 @@ def plot_EMGFig2(ax, this_emg, epochlen, start, end, realtime, fsd):
     line4, = ax.plot(realtime[start:(end)], this_emg[start:end], color = 'r')
     ax.set_title('EMG Amplitde')
     ax.set_xlim(start/fsd, end/fsd)
-    ax.set_ylim(0, 0.4)
+
+    # Evin's y-axis scaling
+    # Median x2 method
+
+    median = numpy.percentile(this_emg[start:end], 95)
+
+    print('Median: '+str(median))
+
+    ax.set_ylim(0, median*4)
+
+
+
     #ax.autoscale()
     top = ax.get_ylim()[1]
     rectangle_4 = patch.Rectangle((start/fsd+epochlen, top), epochlen, height = -top / 5, color = 'r')
