@@ -319,7 +319,7 @@ def pull_up_raw_trace(ax1, ax2, ax3,ax4, ax5, emg, start, end, realtime,
     line3 = plot_theta(ax3, start, end, fsd, thet, epochlen, realtime)
 
     #plot spectrogram here
-    line5 = plot_spectrogram(ax5, eeg, fsd)
+    line5 = plot_spectrogram(ax5, this_eeg, fsd)
 
     if not emg:
         ax4.text(0.5, 0.5, 'There is no EMG')
@@ -378,13 +378,24 @@ def plot_EMGFig2(ax, this_emg, epochlen, start, end, realtime, fsd):
     x = (end - start)
     length = np.arange(int(end / x - start / x))
     bottom = np.zeros(int(end / x - start / x))
+    # If length error pops up
+    # try:
+    print("realtime len: " + str(len(realtime)))
+    print("this_emg len: " + str(len(this_emg)))
 
-    line4, = ax.plot(realtime[start:(end)], this_emg[start:end], color = 'r')
+    if len(realtime) != len(this_emg):
+        line4, = ax.plot(realtime[start: (min( len(this_emg), len(realtime)) ) ], this_emg[start: (min( len(this_emg), len(realtime)) )  ], color='r')
+    else:
+        line4, = ax.plot(realtime[start:end], this_emg[start:end], color = 'r')
+
+
+        # Evin's y-axis scaling
+        # Median x2 method
+    # except:
+    #     print("Errored out")
+
     ax.set_title('EMG Amplitde')
-    ax.set_xlim(start/fsd, end/fsd)
-
-    # Evin's y-axis scaling
-    # Median x2 method
+    ax.set_xlim(start / fsd, end / fsd)
 
     median = numpy.percentile(this_emg[start:end], 95)
 

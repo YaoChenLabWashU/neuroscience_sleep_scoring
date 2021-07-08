@@ -200,7 +200,7 @@ def display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, h, emg_fl
 	thet_pad = np.pad(thet[0], (np.size(no_thet_start), np.size(no_thet_end)), 'constant',
 					  constant_values=(0, 0))
 
-	fig2, (ax4, ax5, ax6, ax7, ax8) = plt.subplots(nrows=4, ncols=1, figsize=(11, 6))
+	fig2, (ax4, ax5, ax6, ax7, ax8) = plt.subplots(nrows=5, ncols=1, figsize=(11, 6))
 	line1, line2, line3, line4, line5 = SWS_utils.pull_up_raw_trace(ax4, ax5, ax6, ax7, ax8, emg_flag, start, end, realtime,
 															 this_eeg, fsd, LFP_ylim, delt_pad, thet_pad,
 															 epochlen, this_emg)
@@ -243,7 +243,7 @@ def display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, h, emg_fl
 			print('sindex = '+str((start+(cursor.replotx*fsd))))
 			print('eindex = ' + str((end + (cursor.replotx * fsd))))
 			#Bumping up by x3 to test if this is all that's needed
-			line1, line2, line3, line4 = SWS_utils.pull_up_raw_trace(ax4, ax5, ax6, ax7, emg_flag, int(start+(cursor.replotx*fsd)), int(end+(cursor.replotx*fsd)), realtime,
+			line1, line2, line3, line4, line5 = SWS_utils.pull_up_raw_trace(ax4, ax5, ax6, ax7, ax8, emg_flag, int(start+(cursor.replotx*fsd)), int(end+(cursor.replotx*fsd)), realtime,
 																 this_eeg, fsd, LFP_ylim, delt_pad, thet_pad,
 																 epochlen, this_emg)
 			plt.show()
