@@ -1,5 +1,5 @@
 {"rawdat_dir" : "/Volumes/yaochen/Active/Yao/Microscopy/FliP/ycFLiPAKAREEGEMG002(KQ3_CortexFiber)-Analyze",
- "model_dir" : "/Users/evinjaff/Desktop/localgit/model/",
+ "model_dir" : "/Users/evinjaff/Desktop/sleepscoring/model/",
  "video_dir" : "/Volumes/yaochen/Active/Yao/Microscopy/FliP/ycFLiPAKAREEGEMG002(KQ3_CortexFiber)-Analyze/ycFLiPAKAREEGEMG002_Bonsai",
  "animal" : "ycFLiPAKAREEGEMG002",
  "mod_name" : "rat_mouse",

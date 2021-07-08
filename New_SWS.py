@@ -38,7 +38,7 @@ def on_press(event):
 
 def manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg, vid_flag, this_video, h):
 	# Manually score the entire file.
-	fig, (ax1, ax2, ax3, ax4) = plt.subplots(nrows=4, ncols=1, figsize=(11, 6))
+	fig, (ax1, ax2, ax3, ax4, ax4) = plt.subplots(nrows=5, ncols=1, figsize=(11, 6))
 	fig2, ax5, ax6 = SWS_utils.create_scoring_figure(extracted_dir, a, eeg=this_eeg, fsd=fsd)
 	# cursor = Cursor(ax5, ax6, ax7)
 	cID2 = fig.canvas.mpl_connect('key_press_event', on_press)
@@ -53,8 +53,9 @@ def manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg
 
 	no_delt_start, = np.where(realtime < delt[1][0])
 	no_delt_end, = np.where(realtime > delt[1][-1])
-	delt_pad = np.pad(delt[0], (np.size(no_delt_start), np.size(no_delt_end)), 'constant',
+	delt_pad =np.pad(delt[0], (np.size(no_delt_start), np.size(no_delt_end)), 'constant',
 					  constant_values=(0, 0))
+
 
 	no_thet_start, = np.where(realtime < thet[1][0])
 	no_thet_end, = np.where(realtime > thet[1][-1])
@@ -63,7 +64,7 @@ def manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg
 
 	assert np.size(delt_pad) == np.size(this_eeg) == np.size(thet_pad)
 
-	line1, line2, line3, line4 = SWS_utils.pull_up_raw_trace(ax1, ax2, ax3, ax4,
+	line1, line2, line3, line4 = SWS_utils.pull_up_raw_trace(ax1, ax2, ax3, ax4, ax5,
 															 emg_flag, start, end, realtime, this_eeg, fsd,
 															 LFP_ylim, delt_pad,
 															 thet_pad, epochlen, this_emg)
@@ -199,8 +200,8 @@ def display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, h, emg_fl
 	thet_pad = np.pad(thet[0], (np.size(no_thet_start), np.size(no_thet_end)), 'constant',
 					  constant_values=(0, 0))
 
-	fig2, (ax4, ax5, ax6, ax7) = plt.subplots(nrows=4, ncols=1, figsize=(11, 6))
-	line1, line2, line3, line4 = SWS_utils.pull_up_raw_trace(ax4, ax5, ax6, ax7, emg_flag, start, end, realtime,
+	fig2, (ax4, ax5, ax6, ax7, ax8) = plt.subplots(nrows=4, ncols=1, figsize=(11, 6))
+	line1, line2, line3, line4, line5 = SWS_utils.pull_up_raw_trace(ax4, ax5, ax6, ax7, ax8, emg_flag, start, end, realtime,
 															 this_eeg, fsd, LFP_ylim, delt_pad, thet_pad,
 															 epochlen, this_emg)
 	fig, ax1, ax2, ax3, axx = SWS_utils.create_prediction_figure(State_input, is_predicted, clf, Features, fsd, this_eeg, this_emg, realtime, epochlen, start, end)
@@ -477,7 +478,14 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 
 				Predict_y = clf.predict(Features)
 				Predict_y = SWS_utils.fix_states(Predict_y)
-				SWS_utils.create_prediction_figure(Predict_y, True, clf, Features, fsd, this_eeg)
+
+				realtime = np.arange(np.size(this_eeg)) / fsd
+				start = 0
+				end = int(fsd * 3 * epochlen)
+
+				SWS_utils.create_prediction_figure(Predict_y, True, clf, Features, fsd, this_eeg, this_emg, realtime, epochlen, start, end)
+				#SWS_utils.create_prediction_figure(Predict_y, True, clf, Features, fsd, this_eeg)
+				#SWS_utils.create_prediction_figure(State_input, is_predicted, clf, Features, fsd, this_eeg, this_emg, realtime, epochlen, start, end)
 
 				satisfaction = input('Satisfied?: y/n ') == 'y'
 				plt.close('all')

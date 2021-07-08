@@ -219,6 +219,7 @@ def plot_predicted(ax, Predict_y, is_predicted, clf, Features):
         confidence = np.ones(np.size(Predict_y))
     ax.plot(confidence, color = 'k')
 
+# This is the plotting collection function for the coarse prediction figure
 def create_prediction_figure(Predict_y, is_predicted, clf, Features, fs, eeg, this_emg, realtime, epochlen, start, end):
     plt.ion()
     fig, (ax1, ax2, ax3, axx) = plt.subplots(nrows = 4, ncols = 1, figsize = (11, 6))
@@ -302,7 +303,9 @@ def pull_up_movie(start, end, vid_file, epochlen):
             cv2.waitKey(1)
     cap.release()
     cv2.destroyAllWindows()
-def pull_up_raw_trace(ax1, ax2, ax3,ax4, emg, start, end, realtime, 
+
+    #Creates line objects for the fine graph that plots data over 12s intervals
+def pull_up_raw_trace(ax1, ax2, ax3,ax4, ax5, emg, start, end, realtime,
     this_eeg, fsd, LFP_ylim, delt, thet, epochlen, this_emg):
     print('pull up the second figure for that bin - maybe. Option to click through a few bins around it?')
     x = (end - start)
@@ -315,13 +318,16 @@ def pull_up_raw_trace(ax1, ax2, ax3,ax4, emg, start, end, realtime,
     line2 = plot_delta(delt, start, end, fsd, ax2, epochlen, realtime)
     line3 = plot_theta(ax3, start, end, fsd, thet, epochlen, realtime)
 
+    #plot spectrogram here
+    line5 = plot_spectrogram(ax5, eeg, fsd)
+
     if not emg:
         ax4.text(0.5, 0.5, 'There is no EMG')
         line4 = plt.plot([0,0], [1,1], linewidth = 0, color = 'w')
     else:
         line4 = plot_EMG(ax4, length, bottom, this_emg, epochlen, x, start, end, realtime, fsd)
 
-    return line1, line2, line3, line4
+    return line1, line2, line3, line4, line5
 
 def plot_delta(delt, start, end, fsd, ax, epochlen, realtime):
     line2, = ax.plot(realtime[start:end], delt[start:end])
