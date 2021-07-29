@@ -38,7 +38,7 @@ def on_press(event):
 
 def manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg, vid_flag, this_video, h):
 	# Manually score the entire file.
-	fig, (ax1, ax2, ax3, ax4, ax4) = plt.subplots(nrows=5, ncols=1, figsize=(11, 6))
+	fig, (ax1, ax2, ax3, ax4, ax4x) = plt.subplots(nrows=5, ncols=1, figsize=(11, 6))
 	fig2, ax5, ax6 = SWS_utils.create_scoring_figure(extracted_dir, a, eeg=this_eeg, fsd=fsd)
 	# cursor = Cursor(ax5, ax6, ax7)
 	cID2 = fig.canvas.mpl_connect('key_press_event', on_press)
@@ -64,7 +64,8 @@ def manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg
 
 	assert np.size(delt_pad) == np.size(this_eeg) == np.size(thet_pad)
 
-	line1, line2, line3, line4 = SWS_utils.pull_up_raw_trace(ax1, ax2, ax3, ax4, ax5,
+	#Madhav had a line error here, but the code still fails here
+	line1, line2, line3, line4, line5 = SWS_utils.pull_up_raw_trace(ax1, ax2, ax3, ax4, ax4x,
 															 emg_flag, start, end, realtime, this_eeg, fsd,
 															 LFP_ylim, delt_pad,
 															 thet_pad, epochlen, this_emg)
