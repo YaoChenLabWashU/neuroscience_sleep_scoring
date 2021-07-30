@@ -312,7 +312,9 @@ def pull_up_raw_trace(ax1, ax2, ax3,ax4, ax5, emg, start, end, realtime,
     length = np.arange(int(end / x - start / x))
     bottom = np.zeros(int(end / x - start / x))
 
-    assert np.size(delt) == np.size(this_eeg) == np.size(thet)
+    #assert np.size(delt) == np.size(this_eeg) == np.size(thet)
+
+    print("Made it past assertions")
 
     line1 = plot_LFP(start, end, ax1, this_eeg, realtime, fsd, LFP_ylim, epochlen)
     line2 = plot_delta(delt, start, end, fsd, ax2, epochlen, realtime)
@@ -475,6 +477,28 @@ def make_marker(ax, end, realtime, fsd, epochlen):
     ymax = ax.get_ylim()[1]
     marker, = ax.plot([realtime[end], realtime[end]], [ymin, ymax], color = 'k')
     return marker
+
+def raw_scoring_trace(ax1, ax2, ax3,ax4, emg, start, end, realtime,
+    this_eeg, fsd, LFP_ylim, delt, thet, epochlen, this_emg):
+    print('pull up the second figure for that bin - maybe. Option to click through a few bins around it?')
+    x = (end - start)
+    length = np.arange(int(end / x - start / x))
+    bottom = np.zeros(int(end / x - start / x))
+
+    assert np.size(delt) == np.size(this_eeg) == np.size(thet)
+
+    line1 = plot_LFP(start, end, ax1, this_eeg, realtime, fsd, LFP_ylim, epochlen)
+    line2 = plot_delta(delt, start, end, fsd, ax2, epochlen, realtime)
+    line3 = plot_theta(ax3, start, end, fsd, thet, epochlen, realtime)
+
+    if not emg:
+        ax4.text(0.5, 0.5, 'There is no EMG')
+        line4 = plt.plot([0,0], [1,1], linewidth = 0, color = 'w')
+    else:
+        line4 = plot_EMG(ax4, length, bottom, this_emg, epochlen, x, start, end, realtime, fsd)
+
+    return line1, line2, line3, line4
+
 def print_instructions():
     print('''\
 

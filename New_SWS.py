@@ -20,6 +20,9 @@ import train_model
 from SW_Cursor import Cursor
 
 
+
+
+
 key_stroke = 0
 
 def on_press(event):
@@ -38,7 +41,7 @@ def on_press(event):
 
 def manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg, vid_flag, this_video, h):
 	# Manually score the entire file.
-	fig, (ax1, ax2, ax3, ax4, ax4x) = plt.subplots(nrows=5, ncols=1, figsize=(11, 6))
+	fig, (ax1, ax2, ax3, ax4) = plt.subplots(nrows=4, ncols=1, figsize=(11, 6))
 	fig2, ax5, ax6 = SWS_utils.create_scoring_figure(extracted_dir, a, eeg=this_eeg, fsd=fsd)
 	# cursor = Cursor(ax5, ax6, ax7)
 	cID2 = fig.canvas.mpl_connect('key_press_event', on_press)
@@ -53,9 +56,8 @@ def manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg
 
 	no_delt_start, = np.where(realtime < delt[1][0])
 	no_delt_end, = np.where(realtime > delt[1][-1])
-	delt_pad =np.pad(delt[0], (np.size(no_delt_start), np.size(no_delt_end)), 'constant',
+	delt_pad = np.pad(delt[0], (np.size(no_delt_start), np.size(no_delt_end)), 'constant',
 					  constant_values=(0, 0))
-
 
 	no_thet_start, = np.where(realtime < thet[1][0])
 	no_thet_end, = np.where(realtime > thet[1][-1])
@@ -64,16 +66,19 @@ def manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg
 
 	assert np.size(delt_pad) == np.size(this_eeg) == np.size(thet_pad)
 
-	#Madhav had a line error here, but the code still fails here
-	line1, line2, line3, line4, line5 = SWS_utils.pull_up_raw_trace(ax1, ax2, ax3, ax4, ax4x,
+	line1, line2, line3, line4 = SWS_utils.raw_scoring_trace(ax1, ax2, ax3, ax4,
 															 emg_flag, start, end, realtime, this_eeg, fsd,
 															 LFP_ylim, delt_pad,
 															 thet_pad, epochlen, this_emg)
-	marker = SWS_utils.make_marker(ax5, end, realtime, fsd, epochlen)
+	#marker = SWS_utils.make_marker(ax5, end, realtime, fsd, epochlen)
+
 	fig.show()
 	fig2.show()
 	fig.tight_layout()
 	fig2.tight_layout()
+
+	plt.show()
+
 	try:
 		# if some portion of the file has been previously scored
 		State = np.load(os.path.join(extracted_dir, 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'))
@@ -541,6 +546,7 @@ def load_data_for_sw(filename_sw):
 
 if __name__ == "__main__":
 	args = sys.argv
+	args[1] = "Score_Settings.json"
 	assert args[0] == 'New_SWS.py'
 	if len(args) < 2:
 		print("You need to specify the path of your Score_Settings.json. For instance, run `python New_SWS.py /home/ChenLab_Sleep_Scoring/Score_Settings.json`.")
