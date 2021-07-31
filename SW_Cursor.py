@@ -169,12 +169,13 @@ class Cursor(object):
         else:
             print('click registered')
             if event.inaxes == self.ax2:
-                print(F'SECOND CLICK ----  xdata:{event.xdata} x:{event.x} axes: {event.inaxes}')
-                self.bins.append(math.floor(event.xdata))
-                self.clicked = False
-                self.change_bins = True
+                if self.clicked == True:
+                    print(F'SECOND CLICK ----  xdata:{event.xdata} x:{event.x} axes: {event.inaxes}')
+                    self.bins.append(math.floor(event.xdata))
+                    self.clicked = False
+                    self.change_bins = True
             elif event.inaxes == self.ax1:
-                print('Clicked inside Spectrogram')
+                print('Inside Spectrogram')
 
                 #Set this bool to true, and then have it get flipped back to false in New_SWS
                 self.replot = True
@@ -188,7 +189,6 @@ class Cursor(object):
                 #Log and store the xpos
 
                 # Replot the graph here
-
             else:
                 print('Clicked outside of any bins')
             if event.inaxes != self.ax2:

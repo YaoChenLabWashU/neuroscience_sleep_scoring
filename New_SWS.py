@@ -88,7 +88,8 @@ def manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg
 		color_dict = {'0': 'white',
 					  '1': 'green',
 					  '2': 'blue',
-					  '3': 'red'}
+					  '3': 'red',
+					  '4': 'purple'}
 		# rendering what has been previously scored
 		for count, color in enumerate(State[:-1]):
 			start = int(count * fsd * epochlen)
@@ -120,7 +121,8 @@ def manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg
 		color_dict = {'0': 'white',
 					  '1': 'green',
 					  '2': 'blue',
-					  '3': 'red'}
+					  '3': 'red',
+					  '4': 'purple'}
 
 		if math.isnan(State[i-1]):
 			rect = patch.Rectangle((realtime[start], 0),
@@ -421,7 +423,8 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 				color_dict = {'0': 'white',
 							  '1': 'green',
 							  '2': 'blue',
-							  '3': 'red'}
+							  '3': 'red',
+							  '4': 'purple'}
 				# rendering what has been previously scored
 				# for count, color in enumerate(State[:-1]):
 				# 	start = int(count * fsd * epochlen)
