@@ -441,6 +441,23 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 							 delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
 							 theta_post3, EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, delt_thet, EEGfire, EEGamp, EEGmax,
 							 EEGmean, EMGamp, model_dir, mod_name, emg_flag)
+				log = input('Do you want to log the update?: y/n ') == 'y'
+				if log:
+					with open("Score_Settings.json", 'r') as f:
+						d = json.load(f)
+
+						extracted_dir = str(d['savedir'])
+						epochlen = int(d['epochlen'])
+						fsd = int(d['fsd'])
+						emg_flag = int(d['emg'])
+						vid_flag = int(d['vid'])
+						model_dir = str(d['model_dir'])
+						animal = str(d['animal'])
+						mod_name = str(d['mod_name'])
+
+						file = open("log.txt", "w")
+						file.write(animal + " " + mod_name)
+
 
 
 			except FileNotFoundError:
@@ -518,6 +535,22 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 								 delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
 								 theta_post3, EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, delt_thet, EEGfire, EEGamp, EEGmax,
 								 EEGmean, EMGamp, model_dir, mod_name, emg_flag)
+					log = input('Do you want to log the update?: y/n ') == 'y'
+					if log:
+						with open("Score_Settings.json", 'r') as f:
+							d = json.load(f)
+
+							extracted_dir = str(d['savedir'])
+							epochlen = int(d['epochlen'])
+							fsd = int(d['fsd'])
+							emg_flag = int(d['emg'])
+							vid_flag = int(d['vid'])
+							model_dir = str(d['model_dir'])
+							animal = str(d['animal'])
+							mod_name = str(d['mod_name'])
+
+							file = open("log.txt", "w")
+							file.write(animal + " " + mod_name)
 
 			else:
 				State = manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg, vid_flag, this_video, h)
@@ -529,6 +562,22 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 								 theta_post3, EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, delt_thet, EEGfire,
 								 EEGamp, EEGmax,
 								 EEGmean, EMGamp, model_dir, mod_name, emg_flag)
+				log = input('Do you want to log the update?: y/n ') == 'y'
+				if log:
+					with open("Score_Settings.json", 'r') as f:
+						d = json.load(f)
+
+						extracted_dir = str(d['savedir'])
+						epochlen = int(d['epochlen'])
+						fsd = int(d['fsd'])
+						emg_flag = int(d['emg'])
+						vid_flag = int(d['vid'])
+						model_dir = str(d['model_dir'])
+						animal = str(d['animal'])
+						mod_name = str(d['mod_name'])
+
+						file = open("log.txt", "w")
+						file.write(animal + " " + mod_name)
 
 
 def load_data_for_sw(filename_sw):
