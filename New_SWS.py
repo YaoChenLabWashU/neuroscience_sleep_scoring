@@ -546,7 +546,6 @@ def load_data_for_sw(filename_sw):
 
 if __name__ == "__main__":
 	args = sys.argv
-	args[1] = "Score_Settings.json"
 	assert args[0] == 'New_SWS.py'
 	if len(args) < 2:
 		print("You need to specify the path of your Score_Settings.json. For instance, run `python New_SWS.py /home/ChenLab_Sleep_Scoring/Score_Settings.json`.")
