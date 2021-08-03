@@ -208,6 +208,9 @@ def plot_predicted(ax, Predict_y, is_predicted, clf, Features):
         elif Predict_y[state] == 3:
             rect7 = patch.Rectangle((state, 0), 3.8, height = 1, color = 'red')
             ax.add_patch(rect7)
+        elif Predict_y[state] == 4:
+            rect7 = patch.Rectangle((state, 0), 3.8, height=1, color='purple')
+            ax.add_patch(rect7)
         else:
             print("Model predicted an unknown state.")
     ax.set_ylim(0.3, 1)
@@ -430,6 +433,9 @@ def correct_bins(start_bin, end_bin, ax2, new_state):
             color = 'blue'
         if new_state == 3:
             color = 'red'
+        if new_state == 4:
+            color = 'purple'
+        print("color: " + str(color))
         rectangle = patch.Rectangle((location, 0), 1.5, height = 2, color = color)
         print('loc: ', location)
         ax2.add_patch(rectangle)

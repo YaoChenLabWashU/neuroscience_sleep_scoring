@@ -88,7 +88,8 @@ def manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg
 		color_dict = {'0': 'white',
 					  '1': 'green',
 					  '2': 'blue',
-					  '3': 'red'}
+					  '3': 'red',
+					  '4': 'purple'}
 		# rendering what has been previously scored
 		for count, color in enumerate(State[:-1]):
 			start = int(count * fsd * epochlen)
@@ -120,7 +121,8 @@ def manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg
 		color_dict = {'0': 'white',
 					  '1': 'green',
 					  '2': 'blue',
-					  '3': 'red'}
+					  '3': 'red',
+					  '4': 'purple'}
 
 		if math.isnan(State[i-1]):
 			rect = patch.Rectangle((realtime[start], 0),
@@ -421,7 +423,8 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 				color_dict = {'0': 'white',
 							  '1': 'green',
 							  '2': 'blue',
-							  '3': 'red'}
+							  '3': 'red',
+							  '4': 'purple'}
 				# rendering what has been previously scored
 				# for count, color in enumerate(State[:-1]):
 				# 	start = int(count * fsd * epochlen)
@@ -438,6 +441,23 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 							 delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
 							 theta_post3, EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, delt_thet, EEGfire, EEGamp, EEGmax,
 							 EEGmean, EMGamp, model_dir, mod_name, emg_flag)
+				log = input('Do you want to log the update?: y/n ') == 'y'
+				if log:
+					with open("Score_Settings.json", 'r') as f:
+						d = json.load(f)
+
+						extracted_dir = str(d['savedir'])
+						epochlen = int(d['epochlen'])
+						fsd = int(d['fsd'])
+						emg_flag = int(d['emg'])
+						vid_flag = int(d['vid'])
+						model_dir = str(d['model_dir'])
+						animal = str(d['animal'])
+						mod_name = str(d['mod_name'])
+
+						file = open("log.txt", "w")
+						file.write(animal + " " + mod_name)
+
 
 
 			except FileNotFoundError:
@@ -515,6 +535,22 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 								 delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
 								 theta_post3, EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, delt_thet, EEGfire, EEGamp, EEGmax,
 								 EEGmean, EMGamp, model_dir, mod_name, emg_flag)
+					log = input('Do you want to log the update?: y/n ') == 'y'
+					if log:
+						with open("Score_Settings.json", 'r') as f:
+							d = json.load(f)
+
+							extracted_dir = str(d['savedir'])
+							epochlen = int(d['epochlen'])
+							fsd = int(d['fsd'])
+							emg_flag = int(d['emg'])
+							vid_flag = int(d['vid'])
+							model_dir = str(d['model_dir'])
+							animal = str(d['animal'])
+							mod_name = str(d['mod_name'])
+
+							file = open("log.txt", "w")
+							file.write(animal + " " + mod_name)
 
 			else:
 				State = manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg, vid_flag, this_video, h)
@@ -526,6 +562,22 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 								 theta_post3, EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, delt_thet, EEGfire,
 								 EEGamp, EEGmax,
 								 EEGmean, EMGamp, model_dir, mod_name, emg_flag)
+				log = input('Do you want to log the update?: y/n ') == 'y'
+				if log:
+					with open("Score_Settings.json", 'r') as f:
+						d = json.load(f)
+
+						extracted_dir = str(d['savedir'])
+						epochlen = int(d['epochlen'])
+						fsd = int(d['fsd'])
+						emg_flag = int(d['emg'])
+						vid_flag = int(d['vid'])
+						model_dir = str(d['model_dir'])
+						animal = str(d['animal'])
+						mod_name = str(d['mod_name'])
+
+						file = open("log.txt", "w")
+						file.write(animal + " " + mod_name)
 
 
 def load_data_for_sw(filename_sw):
@@ -546,6 +598,7 @@ def load_data_for_sw(filename_sw):
 
 if __name__ == "__main__":
 	args = sys.argv
+	args[1] = "Score_Settings.json"
 	assert args[0] == 'New_SWS.py'
 	if len(args) < 2:
 		print("You need to specify the path of your Score_Settings.json. For instance, run `python New_SWS.py /home/ChenLab_Sleep_Scoring/Score_Settings.json`.")
