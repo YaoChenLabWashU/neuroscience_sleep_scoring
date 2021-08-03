@@ -166,7 +166,7 @@ class Cursor(object):
             self.movie_bin = event.xdata
             print(f'video bin (xdata): {event.xdata}')
             print(f'x: {event.x}')
-        else:
+        elif self.clicked:
             print('click registered')
             if event.inaxes == self.ax2:
                 if self.clicked == True:
@@ -174,7 +174,8 @@ class Cursor(object):
                     self.bins.append(math.floor(event.xdata))
                     self.clicked = False
                     self.change_bins = True
-            elif event.inaxes == self.ax1:
+        else:
+            if event.inaxes == self.ax1:
                 print('Inside Spectrogram')
 
                 #Set this bool to true, and then have it get flipped back to false in New_SWS
