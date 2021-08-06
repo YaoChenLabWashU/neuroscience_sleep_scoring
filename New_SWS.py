@@ -41,7 +41,7 @@ def on_press(event):
 
 def manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg, vid_flag, this_video, h):
 	# Manually score the entire file.
-	fig, (ax1, ax2, ax3, ax4) = plt.subplots(nrows=4, ncols=1, figsize=(11, 6))
+	fig, (ax1, ax2, ax3, ax4, axx) = plt.subplots(nrows=5, ncols=1, figsize=(11, 6))
 	fig2, ax5, ax6 = SWS_utils.create_scoring_figure(extracted_dir, a, eeg=this_eeg, fsd=fsd)
 	# cursor = Cursor(ax5, ax6, ax7)
 	cID2 = fig.canvas.mpl_connect('key_press_event', on_press)
@@ -66,11 +66,11 @@ def manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg
 
 	assert np.size(delt_pad) == np.size(this_eeg) == np.size(thet_pad)
 
-	line1, line2, line3, line4 = SWS_utils.raw_scoring_trace(ax1, ax2, ax3, ax4,
+	line1, line2, line3, line4, line5 = SWS_utils.raw_scoring_trace(ax1, ax2, ax3, ax4, axx, 
 															 emg_flag, start, end, realtime, this_eeg, fsd,
 															 LFP_ylim, delt_pad,
 															 thet_pad, epochlen, this_emg)
-	#marker = SWS_utils.make_marker(ax5, end, realtime, fsd, epochlen)
+	marker = SWS_utils.make_marker(ax5, end, realtime, fsd, epochlen)
 
 	fig.show()
 	fig2.show()
@@ -156,26 +156,143 @@ def manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg
 	np.save(os.path.join(extracted_dir, 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'), State)
 	return State
 
+def nonlegacy_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg, vid_flag, this_video, h):
+	# Manually score the entire file.
+	fig, (ax1, ax2, ax3, ax4, axx) = plt.subplots(nrows=5, ncols=1, figsize=(11, 6))
+	fig2, ax5, ax6 = SWS_utils.create_scoring_figure(extracted_dir, a, eeg=this_eeg, fsd=fsd)
+	# cursor = Cursor(ax5, ax6, ax7)
+	cID2 = fig.canvas.mpl_connect('key_press_event', on_press)
+	cID3 = fig2.canvas.mpl_connect('key_press_event', on_press)
+	i = 0
+	start = int(i * fsd * epochlen)
+	end = int(start + fsd * 3 * epochlen)
+	realtime = np.arange(np.size(this_eeg)) / fsd
+	LFP_ylim = 5
+	delt = np.load(os.path.join(extracted_dir, 'delt' + str(a) + '_hr' + str(h) + '.npy'))
+	thet = np.load(os.path.join(extracted_dir, 'thet' + str(a) + '_hr' + str(h) + '.npy'))
+
+	no_delt_start, = np.where(realtime < delt[1][0])
+	no_delt_end, = np.where(realtime > delt[1][-1])
+	delt_pad = np.pad(delt[0], (np.size(no_delt_start), np.size(no_delt_end)), 'constant',
+					constant_values=(0, 0))
+
+	no_thet_start, = np.where(realtime < thet[1][0])
+	no_thet_end, = np.where(realtime > thet[1][-1])
+	thet_pad = np.pad(thet[0], (np.size(no_thet_start), np.size(no_thet_end)), 'constant',
+					constant_values=(0, 0))
+
+	assert np.size(delt_pad) == np.size(this_eeg) == np.size(thet_pad)
+
+	line1, line2, line3, line4, line5 = SWS_utils.raw_scoring_trace(ax1, ax2, ax3, ax4, axx, 
+															emg_flag, start, end, realtime, this_eeg, fsd,
+															LFP_ylim, delt_pad,
+															thet_pad, epochlen, this_emg)
+	marker = SWS_utils.make_marker(ax5, end, realtime, fsd, epochlen)
+
+	fig.show()
+	fig2.show()
+	fig.tight_layout()
+	fig2.tight_layout()
+
+	plt.show()
+
+	try:
+		# if some portion of the file has been previously scored
+		State = np.load(os.path.join(extracted_dir, 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'))
+		wrong, = np.where(np.isnan(State))
+		State[wrong] = 0
+		s, = np.where(State == 0)
+		color_dict = {'0': 'white',
+					'1': 'green',
+					'2': 'blue',
+					'3': 'red',
+					'4': 'purple'}
+		# rendering what has been previously scored
+		for count, color in enumerate(State[:-1]):
+			start = int(count * fsd * epochlen)
+			rect = patch.Rectangle((realtime[start + (epochlen * fsd)], 0),
+								(epochlen), 1, color=color_dict[str(int(color))])
+			ax6.add_patch(rect)
+		fig2.show()
+
+	except FileNotFoundError:
+		# if the file is a brand new one for scoring
+		State = np.zeros(int(np.size(this_eeg) / fsd / epochlen))
+		s = np.arange(1, np.size(State) - 1)
+		first_state = int(input('Enter the first state: '))
+		State[0] = first_state
+
+	if vid_flag:
+		cap = cv2.VideoCapture(this_video)
+		fps = cap.get(cv2.CAP_PROP_FPS)
+	for i in s[:-3]:
+		# input('press enter or quit')
+		print(f'here. index: {i}')
+		start = int(i * fsd * epochlen)
+		end = int(start + fsd * 3 * epochlen)
+		if vid_flag:
+			vid_start = int(i * fps * epochlen)
+			vid_end = int(vid_start + fps * 3 * epochlen)
+		SWS_utils.update_raw_trace(line1, line2, line3, line4, marker, fig, fig2, start, end,
+								this_eeg, delt_pad, thet_pad, emg_flag, this_emg, realtime)
+		color_dict = {'0': 'white',
+					'1': 'green',
+					'2': 'blue',
+					'3': 'red',
+					'4': 'purple'}
+
+		if math.isnan(State[i-1]):
+			rect = patch.Rectangle((realtime[start], 0),
+								(epochlen), 1, color=color_dict[str(0)])
+		else:
+			rect = patch.Rectangle((realtime[start], 0),
+							(epochlen), 1, color=color_dict[str(int(State[i - 1]))])
+		ax6.add_patch(rect)
+		fig.show()
+		fig2.show()
+		button = False
+		while not button:
+			button = fig2.waitforbuttonpress()
+			print(f'button: {button}')
+			if not button:
+				print('you clicked')
+				if vid_flag:
+					SWS_utils.pull_up_movie(vid_start, vid_end, this_video, epochlen)
+				else:
+					print('...but you do not have videos available')
+		global key_stroke
+		State[i] = key_stroke
+		fig2.canvas.flush_events()
+		fig.canvas.flush_events()
+		np.save(os.path.join(extracted_dir, 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'), State)
+
+	print('DONE SCORING')
+	plt.close('all')
+	last_state = int(input('Enter the last state: '))
+	State[-2:] = last_state
+	np.save(os.path.join(extracted_dir, 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'), State)
+	return State
+
 
 def update_model(animal_name, animal_num, State, delta_pre, delta_pre2, delta_pre3, delta_post,
-		 delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
-		 theta_post3,
-		 EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, delt_thet, EEGfire, EEGamp, EEGmax,
-		 EEGmean, EMGamp, model_dir, mod_name, emg_flag):
+		delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
+		theta_post3,
+		EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, delt_thet, EEGfire, EEGamp, EEGmax,
+		EEGmean, EMGamp, model_dir, mod_name, emg_flag):
 	# Feed the data to retrain a model.
 	# Using EMG data by default. (No video for now)
 	final_features = ['Animal_Name', 'animal_num', 'State', 'delta_pre', 'delta_pre2',
-					  'delta_pre3', 'delta_post', 'delta_post2', 'delta_post3', 'EEGdelta', 'theta_pre',
-					  'theta_pre2', 'theta_pre3',
-					  'theta_post', 'theta_post2', 'theta_post3', 'EEGtheta', 'EEGalpha', 'EEGbeta',
-					  'EEGgamma', 'EEGnarrow', 'nb_pre', 'delta/theta', 'EEGfire', 'EEGamp', 'EEGmax',
-					  'EEGmean', 'EMG']
+					'delta_pre3', 'delta_post', 'delta_post2', 'delta_post3', 'EEGdelta', 'theta_pre',
+					'theta_pre2', 'theta_pre3',
+					'theta_post', 'theta_post2', 'theta_post3', 'EEGtheta', 'EEGalpha', 'EEGbeta',
+					'EEGgamma', 'EEGnarrow', 'nb_pre', 'delta/theta', 'EEGfire', 'EEGamp', 'EEGmax',
+					'EEGmean', 'EMG']
 	data = np.vstack(
 		[animal_name, animal_num, State, delta_pre, delta_pre2, delta_pre3, delta_post,
-		 delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
-		 theta_post3,
-		 EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, delt_thet, EEGfire, EEGamp, EEGmax,
-		 EEGmean])
+		delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
+		theta_post3,
+		EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, delt_thet, EEGfire, EEGamp, EEGmax,
+		EEGmean])
 
 	if np.size(np.where(pd.isnull(EMGamp))[0]) > 0:
 		EMGamp[np.isnan(EMGamp)] = 0
@@ -443,7 +560,11 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 							 EEGmean, EMGamp, model_dir, mod_name, emg_flag)
 				log = input('Do you want to log the update?: y/n ') == 'y'
 				if log:
-					with open("Score_Settings.json", 'r') as f:
+					#Get Score Settings info
+					loc = ("/Users/evinjaff/Desktop/sleepscoring/" + str(sys.argv[1]))
+					print("Opening: " + loc)
+					# Make ready for prod over the weekend - Use pathlib
+					with open(loc, 'r') as f:
 						d = json.load(f)
 
 						extracted_dir = str(d['savedir'])
@@ -455,8 +576,11 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 						animal = str(d['animal'])
 						mod_name = str(d['mod_name'])
 
-						file = open("log.txt", "w")
+						file = open("/Users/evinjaff/Desktop/sleepscoring/log.txt", "w")
+						print("Logging to /Users/evinjaff/Desktop/sleepscoring/log.txt")
 						file.write(animal + " " + mod_name)
+						file.close()
+						junk = 3
 
 
 
@@ -551,9 +675,9 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 
 							file = open("log.txt", "w")
 							file.write(animal + " " + mod_name)
-
+			# No model code
 			else:
-				State = manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg, vid_flag, this_video, h)
+				State = nonlegacy_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg, vid_flag, this_video, h)
 				update = input('Do you want to update the model?: y/n ') == 'y'
 				if update:
 					update_model(animal_name, animal_num, State, delta_pre, delta_pre2, delta_pre3, delta_post,
@@ -578,6 +702,7 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 
 						file = open("log.txt", "w")
 						file.write(animal + " " + mod_name)
+						file.close()
 
 
 def load_data_for_sw(filename_sw):
@@ -598,8 +723,8 @@ def load_data_for_sw(filename_sw):
 
 if __name__ == "__main__":
 	args = sys.argv
-	args[1] = "Score_Settings.json"
-	assert args[0] == 'New_SWS.py'
+	# Why do we need to assert this??? Why the heck would you care if you execute from the same dir if we don't use relative paths anywhere else in the code
+	# assert args[0] == 'New_SWS.py'
 	if len(args) < 2:
 		print("You need to specify the path of your Score_Settings.json. For instance, run `python New_SWS.py /home/ChenLab_Sleep_Scoring/Score_Settings.json`.")
 	elif len(args) > 2:
