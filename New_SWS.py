@@ -16,8 +16,12 @@ from joblib import dump, load
 import pandas as pd
 import warnings
 import SWS_utils
+import filewrite
 import train_model
+from datetime import datetime
 from SW_Cursor import Cursor
+import pathlib
+
 
 
 
@@ -421,7 +425,7 @@ def display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, h, emg_fl
 	return State
 
 
-def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_flag, animal, model_dir, mod_name):
+def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_flag, animal, model_dir, mod_name, log_dir):
 	# mostly for deprecated packages
 	print('this code is supressing warnings')
 	warnings.filterwarnings("ignore")
@@ -558,29 +562,9 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 							 delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
 							 theta_post3, EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, delt_thet, EEGfire, EEGamp, EEGmax,
 							 EEGmean, EMGamp, model_dir, mod_name, emg_flag)
-				log = input('Do you want to log the update?: y/n ') == 'y'
-				if log:
-					#Get Score Settings info
-					loc = ("/Users/evinjaff/Desktop/sleepscoring/" + str(sys.argv[1]))
-					print("Opening: " + loc)
-					# Make ready for prod over the weekend - Use pathlib
-					with open(loc, 'r') as f:
-						d = json.load(f)
-
-						extracted_dir = str(d['savedir'])
-						epochlen = int(d['epochlen'])
-						fsd = int(d['fsd'])
-						emg_flag = int(d['emg'])
-						vid_flag = int(d['vid'])
-						model_dir = str(d['model_dir'])
-						animal = str(d['animal'])
-						mod_name = str(d['mod_name'])
-
-						file = open("/Users/evinjaff/Desktop/sleepscoring/log.txt", "w")
-						print("Logging to /Users/evinjaff/Desktop/sleepscoring/log.txt")
-						file.write(animal + " " + mod_name)
-						file.close()
-						junk = 3
+				logq = input('Do you want to log the update?: y/n ') == 'y'
+				if logq:
+					log(log_dir, 0, animal, mod_name)
 
 
 
@@ -643,6 +627,7 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 				if satisfaction:
 					# Store the result.
 					np.save(os.path.join(extracted_dir, 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'), Predict_y)
+					log(log_dir, 1, animal, mod_name)
 				else:
 					fix = input('Do you want to fix a few states (f) or manually score the whole thing (m)?: f/m ')
 					while fix != 'f' and fix != 'm':
@@ -659,22 +644,9 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 								 delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
 								 theta_post3, EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, delt_thet, EEGfire, EEGamp, EEGmax,
 								 EEGmean, EMGamp, model_dir, mod_name, emg_flag)
-					log = input('Do you want to log the update?: y/n ') == 'y'
-					if log:
-						with open("Score_Settings.json", 'r') as f:
-							d = json.load(f)
-
-							extracted_dir = str(d['savedir'])
-							epochlen = int(d['epochlen'])
-							fsd = int(d['fsd'])
-							emg_flag = int(d['emg'])
-							vid_flag = int(d['vid'])
-							model_dir = str(d['model_dir'])
-							animal = str(d['animal'])
-							mod_name = str(d['mod_name'])
-
-							file = open("log.txt", "w")
-							file.write(animal + " " + mod_name)
+					logq = input('Do you want to log the update?: y/n ') == 'y'
+					if logq:
+						log(log_dir, 1, animal, mod_name)
 			# No model code
 			else:
 				State = nonlegacy_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg, vid_flag, this_video, h)
@@ -686,23 +658,10 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 								 theta_post3, EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, delt_thet, EEGfire,
 								 EEGamp, EEGmax,
 								 EEGmean, EMGamp, model_dir, mod_name, emg_flag)
-				log = input('Do you want to log the update?: y/n ') == 'y'
-				if log:
-					with open("Score_Settings.json", 'r') as f:
-						d = json.load(f)
+				logq = input('Do you want to log the update?: y/n ') == 'y'
+				if logq:
+					log(log_dir, 2, animal, mod_name)
 
-						extracted_dir = str(d['savedir'])
-						epochlen = int(d['epochlen'])
-						fsd = int(d['fsd'])
-						emg_flag = int(d['emg'])
-						vid_flag = int(d['vid'])
-						model_dir = str(d['model_dir'])
-						animal = str(d['animal'])
-						mod_name = str(d['mod_name'])
-
-						file = open("log.txt", "w")
-						file.write(animal + " " + mod_name)
-						file.close()
 
 
 def load_data_for_sw(filename_sw):
@@ -717,9 +676,41 @@ def load_data_for_sw(filename_sw):
 	model_dir = str(d['model_dir'])
 	animal = str(d['animal'])
 	mod_name = str(d['mod_name'])
+	log_dir = str(d['log_dir'])
 
-	start_swscoring(filename_sw, extracted_dir, epochlen, fsd, emg_flag, vid_flag, animal, model_dir, mod_name)
+	start_swscoring(filename_sw, extracted_dir, epochlen, fsd, emg_flag, vid_flag, animal, model_dir, mod_name, log_dir)
 
+
+# Arg 1 is the path of the sleep scoring setting json, taken from argv[1]
+# Will look something like "Users/evinjaff/Desktop/sleepscoring/Score_Setting.json"
+# Type argument is for the type of scoring as an unsinged int
+# 0 = corrected, 1 = scored w/ ML model, 2 = scored in legacy mode
+
+def log(log_dir, type, animal, mod_name):
+	print(pathlib.Path(__file__).parent.resolve())
+	print("logging file changes")
+
+	state_dict = { '0': 'corrected',
+					'1': 'scored with ML model',
+					'2': 'scored in legacy mode'
+	}
+
+	print("Logging to " + log_dir)
+
+	file = open(log_dir, "a+")
+
+	
+
+	# datetime object containing current date and time
+	now = datetime.now()
+
+	# dd/mm/YY H:M:S
+	dt_string = now.strftime("%m/%d/%Y %H:%M:%S")
+	
+	whois = input("What is your name?:")
+	file.write(animal + " " + mod_name + " was " + state_dict[str(type)]  + " by " + whois + " on " + dt_string + "\n")
+	file.flush()
+	file.close()
 
 if __name__ == "__main__":
 	args = sys.argv
