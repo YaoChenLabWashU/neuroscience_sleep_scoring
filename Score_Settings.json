@@ -4,6 +4,7 @@
  "log_dir" : "/Users/evinjaff/Desktop/sleepscoring/log.txt",
  "animal" : "ycFLiPAKAREEGEMG002",
  "mod_name" : "rat_mouse",
+ "mouse_name": "my_mouse_name",
  "epochlen" : 4,
  "fs" : 400,
  "fsd": 200,

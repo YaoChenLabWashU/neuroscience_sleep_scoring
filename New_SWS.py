@@ -425,7 +425,7 @@ def display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, h, emg_fl
 	return State
 
 
-def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_flag, animal, model_dir, mod_name, log_dir):
+def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_flag, animal, model_dir, mod_name, log_dir, mouse_name):
 	# mostly for deprecated packages
 	print('this code is supressing warnings')
 	warnings.filterwarnings("ignore")
@@ -564,7 +564,7 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 							 EEGmean, EMGamp, model_dir, mod_name, emg_flag)
 				logq = input('Do you want to log the update?: y/n ') == 'y'
 				if logq:
-					log(log_dir, 0, animal, mod_name)
+					log(log_dir, 0, animal, mouse_name)
 
 
 
@@ -627,7 +627,7 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 				if satisfaction:
 					# Store the result.
 					np.save(os.path.join(extracted_dir, 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'), Predict_y)
-					log(log_dir, 1, animal, mod_name)
+					log(log_dir, 1, animal, mouse_name)
 				else:
 					fix = input('Do you want to fix a few states (f) or manually score the whole thing (m)?: f/m ')
 					while fix != 'f' and fix != 'm':
@@ -646,7 +646,7 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 								 EEGmean, EMGamp, model_dir, mod_name, emg_flag)
 					logq = input('Do you want to log the update?: y/n ') == 'y'
 					if logq:
-						log(log_dir, 1, animal, mod_name)
+						log(log_dir, 1, animal, mouse_name)
 			# No model code
 			else:
 				State = nonlegacy_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg, vid_flag, this_video, h)
@@ -660,7 +660,7 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 								 EEGmean, EMGamp, model_dir, mod_name, emg_flag)
 				logq = input('Do you want to log the update?: y/n ') == 'y'
 				if logq:
-					log(log_dir, 2, animal, mod_name)
+					log(log_dir, 2, animal, mouse_name)
 
 
 
@@ -677,8 +677,9 @@ def load_data_for_sw(filename_sw):
 	animal = str(d['animal'])
 	mod_name = str(d['mod_name'])
 	log_dir = str(d['log_dir'])
+	mouse_name = str(d['mouse_name'])
 
-	start_swscoring(filename_sw, extracted_dir, epochlen, fsd, emg_flag, vid_flag, animal, model_dir, mod_name, log_dir)
+	start_swscoring(filename_sw, extracted_dir, epochlen, fsd, emg_flag, vid_flag, animal, model_dir, mod_name, log_dir, mouse_name)
 
 
 # Arg 1 is the path of the sleep scoring setting json, taken from argv[1]
@@ -686,7 +687,7 @@ def load_data_for_sw(filename_sw):
 # Type argument is for the type of scoring as an unsinged int
 # 0 = corrected, 1 = scored w/ ML model, 2 = scored in legacy mode
 
-def log(log_dir, type, animal, mod_name):
+def log(log_dir, type, animal, mouse_name):
 	print(pathlib.Path(__file__).parent.resolve())
 	print("logging file changes")
 
@@ -708,7 +709,7 @@ def log(log_dir, type, animal, mod_name):
 	dt_string = now.strftime("%m/%d/%Y %H:%M:%S")
 	
 	whois = input("What is your name?:")
-	file.write(animal + " " + mod_name + " was " + state_dict[str(type)]  + " by " + whois + " on " + dt_string + "\n")
+	file.write(animal + " " + mouse_name + " was " + state_dict[str(type)]  + " by " + whois + " on " + dt_string + "\n")
 	file.flush()
 	file.close()
 
