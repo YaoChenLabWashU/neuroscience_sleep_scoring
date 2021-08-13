@@ -20,6 +20,7 @@ import filewrite
 import train_model
 from datetime import datetime
 from SW_Cursor import Cursor
+from SW_Cursor import ScoringCursor
 import pathlib
 
 
@@ -617,11 +618,98 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 				start = 0
 				end = int(fsd * 3 * epochlen)
 
-				SWS_utils.create_prediction_figure(Predict_y, True, clf, Features, fsd, this_eeg, this_emg, realtime, epochlen, start, end)
+				
+				i = 0
+				start = int(i * fsd * epochlen)
+				end = int(start + fsd * 3 * epochlen)
+				# realtime = np.arange(np.size(this_eeg)) / fsd
+				LFP_ylim = 5
+				delt = np.load(os.path.join(extracted_dir, 'delt' + str(a) + '_hr' + str(h) + '.npy'))
+				thet = np.load(os.path.join(extracted_dir, 'thet' + str(a) + '_hr' + str(h) + '.npy'))
+
+				no_delt_start, = np.where(realtime < delt[1][0])
+				no_delt_end, = np.where(realtime > delt[1][-1])
+				delt_pad = np.pad(delt[0], (np.size(no_delt_start), np.size(no_delt_end)), 'constant',
+								constant_values=(0, 0))
+
+				no_thet_start, = np.where(realtime < thet[1][0])
+				no_thet_end, = np.where(realtime > thet[1][-1])
+				thet_pad = np.pad(thet[0], (np.size(no_thet_start), np.size(no_thet_end)), 'constant',
+									constant_values=(0, 0))
+
+
+
+				fig2, (ax4, ax5, ax6, ax7, ax8) = plt.subplots(nrows=5, ncols=1, figsize=(11, 6))
+				line1, line2, line3, line4, line5 = SWS_utils.pull_up_raw_trace(ax4, ax5, ax6, ax7, ax8, emg_flag, start, end, realtime, this_eeg, fsd, LFP_ylim, delt_pad, thet_pad, epochlen, this_emg)
+				
+				fig, ax1, ax2, ax3, axx  = SWS_utils.create_prediction_figure(Predict_y, True, clf, Features, fsd, this_eeg, this_emg, realtime, epochlen, start, end)
 				#SWS_utils.create_prediction_figure(Predict_y, True, clf, Features, fsd, this_eeg)
 				#SWS_utils.create_prediction_figure(State_input, is_predicted, clf, Features, fsd, this_eeg, this_emg, realtime, epochlen, start, end)
 
+				#cID2 = fig.canvas.mpl_connect('key_press_event', on_press)
+
+				# cID = fig.canvas.mpl_connect('button_press_event', cursor.on_click)
+
+				cursor = ScoringCursor(ax1, ax2, ax3, axx)
+
+				DONE = False
+
+				#cID2 = fig.canvas.mpl_connect('key_press_event', on_press)
+
+				cID = fig.canvas.mpl_connect('button_press_event', cursor.on_click)
+
+				fig.show()
+				fig2.show()
+
+				while not DONE:
+					plt.waitforbuttonpress()
+
+					if cursor.replot:
+						print("Replot of fig 1. called!")
+
+						# Call a replot of the graph here
+
+						print('start = '+str(start))
+						print('end = '+str(end))
+						print('fsd = '+str(fsd))
+						print('sindex = '+str((start+(cursor.replotx*fsd))))
+						print('eindex = ' + str((end + (cursor.replotx * fsd))))
+						#Bumping up by x3 to test if this is all that's needed
+						
+						line1, line2, line3, line4, line5 = SWS_utils.pull_up_raw_trace(ax4, ax5, ax6, ax7, ax8, emg_flag, int(start+(cursor.replotx*fsd)), int(end+(cursor.replotx*fsd)), realtime,
+																			this_eeg, fsd, LFP_ylim, delt_pad, thet_pad,
+																			epochlen, this_emg)
+						fig2.show()
+						cursor.replot = False
+
+
+						# Flip back the params
+					if cursor.movie_mode and cursor.movie_bin > 0:
+						if vid_flag:
+							print("Sorry, this function has not been developed yet.")
+							# start = int(cursor.movie_bin * 60 * fsd)
+							# end = int(((cursor.movie_bin * 60) + 12) * fsd)
+							# # end = int(((cursor.movie_bin * 60) + 2) * fsd)
+							# marker = SWS_utils.make_marker(ax5, end, realtime, fsd, epochlen)
+							# SWS_utils.update_raw_trace(line1, line2, line3, line4, marker, fig, fig2, start, end, this_eeg,
+							# 						   delt_pad, thet_pad, emg_flag, this_emg, realtime)
+							# fig2.canvas.draw()
+							# fig2.tight_layout()
+							# # fig2.show()
+							# SWS_utils.pull_up_movie(start, end, this_video, epochlen)
+							# cursor.movie_bin = 0
+						else:
+							print("you don't have video, sorry")
+					if cursor.DONE:
+						DONE = True
+
+
+				
+
 				satisfaction = input('Satisfied?: y/n ') == 'y'
+
+
+
 				plt.close('all')
 
 				if satisfaction:
