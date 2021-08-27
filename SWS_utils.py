@@ -399,7 +399,7 @@ def plot_EMGFig2(ax, this_emg, epochlen, start, end, realtime, fsd):
     # except:
     #     print("Errored out")
 
-    ax.set_title('EMG Amplitde')
+    ax.set_title('Full-Length EMG')
     ax.set_xlim(start / fsd, end / fsd)
 
     median = numpy.percentile(this_emg[start:end], 95)
@@ -484,7 +484,7 @@ def make_marker(ax, end, realtime, fsd, epochlen):
     marker, = ax.plot([realtime[end], realtime[end]], [ymin, ymax], color = 'k')
     return marker
 
-def raw_scoring_trace(ax1, ax2, ax3,ax4, emg, start, end, realtime,
+def raw_scoring_trace(ax1, ax2, ax3,ax4, axx, emg, start, end, realtime,
     this_eeg, fsd, LFP_ylim, delt, thet, epochlen, this_emg):
     print('pull up the second figure for that bin - maybe. Option to click through a few bins around it?')
     x = (end - start)
@@ -496,6 +496,7 @@ def raw_scoring_trace(ax1, ax2, ax3,ax4, emg, start, end, realtime,
     line1 = plot_LFP(start, end, ax1, this_eeg, realtime, fsd, LFP_ylim, epochlen)
     line2 = plot_delta(delt, start, end, fsd, ax2, epochlen, realtime)
     line3 = plot_theta(ax3, start, end, fsd, thet, epochlen, realtime)
+    line5 = plot_EMGFig2(axx, this_emg, epochlen, start, end, realtime, fsd)
 
     if not emg:
         ax4.text(0.5, 0.5, 'There is no EMG')
@@ -503,7 +504,7 @@ def raw_scoring_trace(ax1, ax2, ax3,ax4, emg, start, end, realtime,
     else:
         line4 = plot_EMG(ax4, length, bottom, this_emg, epochlen, x, start, end, realtime, fsd)
 
-    return line1, line2, line3, line4
+    return line1, line2, line3, line4, line5
 
 def print_instructions():
     print('''\

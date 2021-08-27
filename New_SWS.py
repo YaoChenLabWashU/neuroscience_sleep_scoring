@@ -16,8 +16,13 @@ from joblib import dump, load
 import pandas as pd
 import warnings
 import SWS_utils
+import filewrite
 import train_model
+from datetime import datetime
 from SW_Cursor import Cursor
+from SW_Cursor import ScoringCursor
+import pathlib
+
 
 
 
@@ -41,7 +46,7 @@ def on_press(event):
 
 def manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg, vid_flag, this_video, h):
 	# Manually score the entire file.
-	fig, (ax1, ax2, ax3, ax4) = plt.subplots(nrows=4, ncols=1, figsize=(11, 6))
+	fig, (ax1, ax2, ax3, ax4, axx) = plt.subplots(nrows=5, ncols=1, figsize=(11, 6))
 	fig2, ax5, ax6 = SWS_utils.create_scoring_figure(extracted_dir, a, eeg=this_eeg, fsd=fsd)
 	# cursor = Cursor(ax5, ax6, ax7)
 	cID2 = fig.canvas.mpl_connect('key_press_event', on_press)
@@ -66,11 +71,11 @@ def manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg
 
 	assert np.size(delt_pad) == np.size(this_eeg) == np.size(thet_pad)
 
-	line1, line2, line3, line4 = SWS_utils.raw_scoring_trace(ax1, ax2, ax3, ax4,
+	line1, line2, line3, line4, line5 = SWS_utils.raw_scoring_trace(ax1, ax2, ax3, ax4, axx, 
 															 emg_flag, start, end, realtime, this_eeg, fsd,
 															 LFP_ylim, delt_pad,
 															 thet_pad, epochlen, this_emg)
-	#marker = SWS_utils.make_marker(ax5, end, realtime, fsd, epochlen)
+	marker = SWS_utils.make_marker(ax5, end, realtime, fsd, epochlen)
 
 	fig.show()
 	fig2.show()
@@ -156,26 +161,143 @@ def manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg
 	np.save(os.path.join(extracted_dir, 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'), State)
 	return State
 
+def nonlegacy_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg, vid_flag, this_video, h):
+	# Manually score the entire file.
+	fig, (ax1, ax2, ax3, ax4, axx) = plt.subplots(nrows=5, ncols=1, figsize=(11, 6))
+	fig2, ax5, ax6 = SWS_utils.create_scoring_figure(extracted_dir, a, eeg=this_eeg, fsd=fsd)
+	# cursor = Cursor(ax5, ax6, ax7)
+	cID2 = fig.canvas.mpl_connect('key_press_event', on_press)
+	cID3 = fig2.canvas.mpl_connect('key_press_event', on_press)
+	i = 0
+	start = int(i * fsd * epochlen)
+	end = int(start + fsd * 3 * epochlen)
+	realtime = np.arange(np.size(this_eeg)) / fsd
+	LFP_ylim = 5
+	delt = np.load(os.path.join(extracted_dir, 'delt' + str(a) + '_hr' + str(h) + '.npy'))
+	thet = np.load(os.path.join(extracted_dir, 'thet' + str(a) + '_hr' + str(h) + '.npy'))
+
+	no_delt_start, = np.where(realtime < delt[1][0])
+	no_delt_end, = np.where(realtime > delt[1][-1])
+	delt_pad = np.pad(delt[0], (np.size(no_delt_start), np.size(no_delt_end)), 'constant',
+					constant_values=(0, 0))
+
+	no_thet_start, = np.where(realtime < thet[1][0])
+	no_thet_end, = np.where(realtime > thet[1][-1])
+	thet_pad = np.pad(thet[0], (np.size(no_thet_start), np.size(no_thet_end)), 'constant',
+					constant_values=(0, 0))
+
+	assert np.size(delt_pad) == np.size(this_eeg) == np.size(thet_pad)
+
+	line1, line2, line3, line4, line5 = SWS_utils.raw_scoring_trace(ax1, ax2, ax3, ax4, axx, 
+															emg_flag, start, end, realtime, this_eeg, fsd,
+															LFP_ylim, delt_pad,
+															thet_pad, epochlen, this_emg)
+	marker = SWS_utils.make_marker(ax5, end, realtime, fsd, epochlen)
+
+	fig.show()
+	fig2.show()
+	fig.tight_layout()
+	fig2.tight_layout()
+
+	plt.show()
+
+	try:
+		# if some portion of the file has been previously scored
+		State = np.load(os.path.join(extracted_dir, 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'))
+		wrong, = np.where(np.isnan(State))
+		State[wrong] = 0
+		s, = np.where(State == 0)
+		color_dict = {'0': 'white',
+					'1': 'green',
+					'2': 'blue',
+					'3': 'red',
+					'4': 'purple'}
+		# rendering what has been previously scored
+		for count, color in enumerate(State[:-1]):
+			start = int(count * fsd * epochlen)
+			rect = patch.Rectangle((realtime[start + (epochlen * fsd)], 0),
+								(epochlen), 1, color=color_dict[str(int(color))])
+			ax6.add_patch(rect)
+		fig2.show()
+
+	except FileNotFoundError:
+		# if the file is a brand new one for scoring
+		State = np.zeros(int(np.size(this_eeg) / fsd / epochlen))
+		s = np.arange(1, np.size(State) - 1)
+		first_state = int(input('Enter the first state: '))
+		State[0] = first_state
+
+	if vid_flag:
+		cap = cv2.VideoCapture(this_video)
+		fps = cap.get(cv2.CAP_PROP_FPS)
+	for i in s[:-3]:
+		# input('press enter or quit')
+		print(f'here. index: {i}')
+		start = int(i * fsd * epochlen)
+		end = int(start + fsd * 3 * epochlen)
+		if vid_flag:
+			vid_start = int(i * fps * epochlen)
+			vid_end = int(vid_start + fps * 3 * epochlen)
+		SWS_utils.update_raw_trace(line1, line2, line3, line4, marker, fig, fig2, start, end,
+								this_eeg, delt_pad, thet_pad, emg_flag, this_emg, realtime)
+		color_dict = {'0': 'white',
+					'1': 'green',
+					'2': 'blue',
+					'3': 'red',
+					'4': 'purple'}
+
+		if math.isnan(State[i-1]):
+			rect = patch.Rectangle((realtime[start], 0),
+								(epochlen), 1, color=color_dict[str(0)])
+		else:
+			rect = patch.Rectangle((realtime[start], 0),
+							(epochlen), 1, color=color_dict[str(int(State[i - 1]))])
+		ax6.add_patch(rect)
+		fig.show()
+		fig2.show()
+		button = False
+		while not button:
+			button = fig2.waitforbuttonpress()
+			print(f'button: {button}')
+			if not button:
+				print('you clicked')
+				if vid_flag:
+					SWS_utils.pull_up_movie(vid_start, vid_end, this_video, epochlen)
+				else:
+					print('...but you do not have videos available')
+		global key_stroke
+		State[i] = key_stroke
+		fig2.canvas.flush_events()
+		fig.canvas.flush_events()
+		np.save(os.path.join(extracted_dir, 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'), State)
+
+	print('DONE SCORING')
+	plt.close('all')
+	last_state = int(input('Enter the last state: '))
+	State[-2:] = last_state
+	np.save(os.path.join(extracted_dir, 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'), State)
+	return State
+
 
 def update_model(animal_name, animal_num, State, delta_pre, delta_pre2, delta_pre3, delta_post,
-		 delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
-		 theta_post3,
-		 EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, delt_thet, EEGfire, EEGamp, EEGmax,
-		 EEGmean, EMGamp, model_dir, mod_name, emg_flag):
+		delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
+		theta_post3,
+		EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, delt_thet, EEGfire, EEGamp, EEGmax,
+		EEGmean, EMGamp, model_dir, mod_name, emg_flag):
 	# Feed the data to retrain a model.
 	# Using EMG data by default. (No video for now)
 	final_features = ['Animal_Name', 'animal_num', 'State', 'delta_pre', 'delta_pre2',
-					  'delta_pre3', 'delta_post', 'delta_post2', 'delta_post3', 'EEGdelta', 'theta_pre',
-					  'theta_pre2', 'theta_pre3',
-					  'theta_post', 'theta_post2', 'theta_post3', 'EEGtheta', 'EEGalpha', 'EEGbeta',
-					  'EEGgamma', 'EEGnarrow', 'nb_pre', 'delta/theta', 'EEGfire', 'EEGamp', 'EEGmax',
-					  'EEGmean', 'EMG']
+					'delta_pre3', 'delta_post', 'delta_post2', 'delta_post3', 'EEGdelta', 'theta_pre',
+					'theta_pre2', 'theta_pre3',
+					'theta_post', 'theta_post2', 'theta_post3', 'EEGtheta', 'EEGalpha', 'EEGbeta',
+					'EEGgamma', 'EEGnarrow', 'nb_pre', 'delta/theta', 'EEGfire', 'EEGamp', 'EEGmax',
+					'EEGmean', 'EMG']
 	data = np.vstack(
 		[animal_name, animal_num, State, delta_pre, delta_pre2, delta_pre3, delta_post,
-		 delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
-		 theta_post3,
-		 EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, delt_thet, EEGfire, EEGamp, EEGmax,
-		 EEGmean])
+		delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
+		theta_post3,
+		EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, delt_thet, EEGfire, EEGamp, EEGmax,
+		EEGmean])
 
 	if np.size(np.where(pd.isnull(EMGamp))[0]) > 0:
 		EMGamp[np.isnan(EMGamp)] = 0
@@ -304,7 +426,7 @@ def display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, h, emg_fl
 	return State
 
 
-def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_flag, animal, model_dir, mod_name):
+def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_flag, animal, model_dir, mod_name, log_dir, mouse_name):
 	# mostly for deprecated packages
 	print('this code is supressing warnings')
 	warnings.filterwarnings("ignore")
@@ -441,22 +563,9 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 							 delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
 							 theta_post3, EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, delt_thet, EEGfire, EEGamp, EEGmax,
 							 EEGmean, EMGamp, model_dir, mod_name, emg_flag)
-				log = input('Do you want to log the update?: y/n ') == 'y'
-				if log:
-					with open("Score_Settings.json", 'r') as f:
-						d = json.load(f)
-
-						extracted_dir = str(d['savedir'])
-						epochlen = int(d['epochlen'])
-						fsd = int(d['fsd'])
-						emg_flag = int(d['emg'])
-						vid_flag = int(d['vid'])
-						model_dir = str(d['model_dir'])
-						animal = str(d['animal'])
-						mod_name = str(d['mod_name'])
-
-						file = open("log.txt", "w")
-						file.write(animal + " " + mod_name)
+				logq = input('Do you want to log the update?: y/n ') == 'y'
+				if logq:
+					log(log_dir, 0, animal, mouse_name)
 
 
 
@@ -509,16 +618,104 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 				start = 0
 				end = int(fsd * 3 * epochlen)
 
-				SWS_utils.create_prediction_figure(Predict_y, True, clf, Features, fsd, this_eeg, this_emg, realtime, epochlen, start, end)
+				
+				i = 0
+				start = int(i * fsd * epochlen)
+				end = int(start + fsd * 3 * epochlen)
+				# realtime = np.arange(np.size(this_eeg)) / fsd
+				LFP_ylim = 5
+				delt = np.load(os.path.join(extracted_dir, 'delt' + str(a) + '_hr' + str(h) + '.npy'))
+				thet = np.load(os.path.join(extracted_dir, 'thet' + str(a) + '_hr' + str(h) + '.npy'))
+
+				no_delt_start, = np.where(realtime < delt[1][0])
+				no_delt_end, = np.where(realtime > delt[1][-1])
+				delt_pad = np.pad(delt[0], (np.size(no_delt_start), np.size(no_delt_end)), 'constant',
+								constant_values=(0, 0))
+
+				no_thet_start, = np.where(realtime < thet[1][0])
+				no_thet_end, = np.where(realtime > thet[1][-1])
+				thet_pad = np.pad(thet[0], (np.size(no_thet_start), np.size(no_thet_end)), 'constant',
+									constant_values=(0, 0))
+
+
+
+				fig2, (ax4, ax5, ax6, ax7, ax8) = plt.subplots(nrows=5, ncols=1, figsize=(11, 6))
+				line1, line2, line3, line4, line5 = SWS_utils.pull_up_raw_trace(ax4, ax5, ax6, ax7, ax8, emg_flag, start, end, realtime, this_eeg, fsd, LFP_ylim, delt_pad, thet_pad, epochlen, this_emg)
+				
+				fig, ax1, ax2, ax3, axx  = SWS_utils.create_prediction_figure(Predict_y, True, clf, Features, fsd, this_eeg, this_emg, realtime, epochlen, start, end)
 				#SWS_utils.create_prediction_figure(Predict_y, True, clf, Features, fsd, this_eeg)
 				#SWS_utils.create_prediction_figure(State_input, is_predicted, clf, Features, fsd, this_eeg, this_emg, realtime, epochlen, start, end)
 
+				#cID2 = fig.canvas.mpl_connect('key_press_event', on_press)
+
+				# cID = fig.canvas.mpl_connect('button_press_event', cursor.on_click)
+
+				cursor = ScoringCursor(ax1, ax2, ax3, axx)
+
+				DONE = False
+
+				#cID2 = fig.canvas.mpl_connect('key_press_event', on_press)
+
+				cID = fig.canvas.mpl_connect('button_press_event', cursor.on_click)
+
+				fig.show()
+				fig2.show()
+
+				while not DONE:
+					plt.waitforbuttonpress()
+
+					if cursor.replot:
+						print("Replot of fig 1. called!")
+
+						# Call a replot of the graph here
+
+						print('start = '+str(start))
+						print('end = '+str(end))
+						print('fsd = '+str(fsd))
+						print('sindex = '+str((start+(cursor.replotx*fsd))))
+						print('eindex = ' + str((end + (cursor.replotx * fsd))))
+						#Bumping up by x3 to test if this is all that's needed
+						
+						line1, line2, line3, line4, line5 = SWS_utils.pull_up_raw_trace(ax4, ax5, ax6, ax7, ax8, emg_flag, int(start+(cursor.replotx*fsd)), int(end+(cursor.replotx*fsd)), realtime,
+																			this_eeg, fsd, LFP_ylim, delt_pad, thet_pad,
+																			epochlen, this_emg)
+						fig2.show()
+						cursor.replot = False
+
+
+						# Flip back the params
+					if cursor.movie_mode and cursor.movie_bin > 0:
+						if vid_flag:
+							print("Sorry, this function has not been developed yet.")
+							# start = int(cursor.movie_bin * 60 * fsd)
+							# end = int(((cursor.movie_bin * 60) + 12) * fsd)
+							# # end = int(((cursor.movie_bin * 60) + 2) * fsd)
+							# marker = SWS_utils.make_marker(ax5, end, realtime, fsd, epochlen)
+							# SWS_utils.update_raw_trace(line1, line2, line3, line4, marker, fig, fig2, start, end, this_eeg,
+							# 						   delt_pad, thet_pad, emg_flag, this_emg, realtime)
+							# fig2.canvas.draw()
+							# fig2.tight_layout()
+							# # fig2.show()
+							# SWS_utils.pull_up_movie(start, end, this_video, epochlen)
+							# cursor.movie_bin = 0
+						else:
+							print("you don't have video, sorry")
+					if cursor.DONE:
+						DONE = True
+
+
+				
+
 				satisfaction = input('Satisfied?: y/n ') == 'y'
+
+
+
 				plt.close('all')
 
 				if satisfaction:
 					# Store the result.
 					np.save(os.path.join(extracted_dir, 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'), Predict_y)
+					log(log_dir, 1, animal, mouse_name)
 				else:
 					fix = input('Do you want to fix a few states (f) or manually score the whole thing (m)?: f/m ')
 					while fix != 'f' and fix != 'm':
@@ -535,25 +732,12 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 								 delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
 								 theta_post3, EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, delt_thet, EEGfire, EEGamp, EEGmax,
 								 EEGmean, EMGamp, model_dir, mod_name, emg_flag)
-					log = input('Do you want to log the update?: y/n ') == 'y'
-					if log:
-						with open("Score_Settings.json", 'r') as f:
-							d = json.load(f)
-
-							extracted_dir = str(d['savedir'])
-							epochlen = int(d['epochlen'])
-							fsd = int(d['fsd'])
-							emg_flag = int(d['emg'])
-							vid_flag = int(d['vid'])
-							model_dir = str(d['model_dir'])
-							animal = str(d['animal'])
-							mod_name = str(d['mod_name'])
-
-							file = open("log.txt", "w")
-							file.write(animal + " " + mod_name)
-
+					logq = input('Do you want to log the update?: y/n ') == 'y'
+					if logq:
+						log(log_dir, 1, animal, mouse_name)
+			# No model code
 			else:
-				State = manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg, vid_flag, this_video, h)
+				State = nonlegacy_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg, vid_flag, this_video, h)
 				update = input('Do you want to update the model?: y/n ') == 'y'
 				if update:
 					update_model(animal_name, animal_num, State, delta_pre, delta_pre2, delta_pre3, delta_post,
@@ -562,22 +746,10 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 								 theta_post3, EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, delt_thet, EEGfire,
 								 EEGamp, EEGmax,
 								 EEGmean, EMGamp, model_dir, mod_name, emg_flag)
-				log = input('Do you want to log the update?: y/n ') == 'y'
-				if log:
-					with open("Score_Settings.json", 'r') as f:
-						d = json.load(f)
+				logq = input('Do you want to log the update?: y/n ') == 'y'
+				if logq:
+					log(log_dir, 2, animal, mouse_name)
 
-						extracted_dir = str(d['savedir'])
-						epochlen = int(d['epochlen'])
-						fsd = int(d['fsd'])
-						emg_flag = int(d['emg'])
-						vid_flag = int(d['vid'])
-						model_dir = str(d['model_dir'])
-						animal = str(d['animal'])
-						mod_name = str(d['mod_name'])
-
-						file = open("log.txt", "w")
-						file.write(animal + " " + mod_name)
 
 
 def load_data_for_sw(filename_sw):
@@ -592,14 +764,47 @@ def load_data_for_sw(filename_sw):
 	model_dir = str(d['model_dir'])
 	animal = str(d['animal'])
 	mod_name = str(d['mod_name'])
+	log_dir = str(d['log_dir'])
+	mouse_name = str(d['mouse_name'])
 
-	start_swscoring(filename_sw, extracted_dir, epochlen, fsd, emg_flag, vid_flag, animal, model_dir, mod_name)
+	start_swscoring(filename_sw, extracted_dir, epochlen, fsd, emg_flag, vid_flag, animal, model_dir, mod_name, log_dir, mouse_name)
 
+
+# Arg 1 is the path of the sleep scoring setting json, taken from argv[1]
+# Will look something like "Users/evinjaff/Desktop/sleepscoring/Score_Setting.json"
+# Type argument is for the type of scoring as an unsinged int
+# 0 = corrected, 1 = scored w/ ML model, 2 = scored in legacy mode
+
+def log(log_dir, type, animal, mouse_name):
+	print(pathlib.Path(__file__).parent.resolve())
+	print("logging file changes")
+
+	state_dict = { '0': 'corrected',
+					'1': 'scored with ML model',
+					'2': 'scored in legacy mode'
+	}
+
+	print("Logging to " + log_dir)
+
+	file = open(log_dir, "a+")
+
+	
+
+	# datetime object containing current date and time
+	now = datetime.now()
+
+	# dd/mm/YY H:M:S
+	dt_string = now.strftime("%m/%d/%Y %H:%M:%S")
+	
+	whois = input("What is your name?:")
+	file.write(animal + " " + mouse_name + " was " + state_dict[str(type)]  + " by " + whois + " on " + dt_string + "\n")
+	file.flush()
+	file.close()
 
 if __name__ == "__main__":
 	args = sys.argv
-	args[1] = "Score_Settings.json"
-	assert args[0] == 'New_SWS.py'
+	# Why do we need to assert this??? Why the heck would you care if you execute from the same dir if we don't use relative paths anywhere else in the code
+	# assert args[0] == 'New_SWS.py'
 	if len(args) < 2:
 		print("You need to specify the path of your Score_Settings.json. For instance, run `python New_SWS.py /home/ChenLab_Sleep_Scoring/Score_Settings.json`.")
 	elif len(args) > 2:

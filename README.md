@@ -1,4 +1,13 @@
 
+Summary of Evin's big updates:
+
+- Interface is overhauled: a lot of changes were made so that more information is given to the scorer and that the scorer can manipulate the data
+    - The biggest feature here is the dynamic replotting that allows the user to click on the spectrogram and replot the second subfigure containing 12-second segments of raw signals of delta, theta, etc. This works on all modes except legacy scoring.
+- Addition of quiet wakefulness could be considered the most impactful features as it is an entirely new dataset and a lot of retraining of the model is required
+- Better accountability in terms of text-logging changes and hopefully the incorporation of git
+    - Whether git is used for the model, or if we use another method for keeping the model up to date, now the model will hopefully be able to be distributed and updated for everyone
+    - Text logging will hopefully also help keep track of who scored what for better accountability. In the future, I would love to see the text logging evolve over to either XML or SQLlite for logging changes.
+
 
 ### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  - ###
 ### For firsttime users:
@@ -248,6 +257,7 @@ When in the fixing mode, you can exit by typing`d`.
 # 1 = Awake (Green)
 # 2 = NREM (Blue)
 # 3 = REM (Red)
+# 4 = Quiet Wakefullness (Purple)
 
 ## - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -  -##
 ### Notes
