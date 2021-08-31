@@ -46,6 +46,7 @@ def on_press(event):
 
 def manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg, vid_flag, this_video, h):
 	# Manually score the entire file.
+	plt.ion()
 	fig, (ax1, ax2, ax3, ax4, axx) = plt.subplots(nrows=5, ncols=1, figsize=(11, 6))
 	fig2, ax5, ax6 = SWS_utils.create_scoring_figure(extracted_dir, a, eeg=this_eeg, fsd=fsd)
 	# cursor = Cursor(ax5, ax6, ax7)
@@ -163,6 +164,7 @@ def manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg
 
 def nonlegacy_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg, vid_flag, this_video, h):
 	# Manually score the entire file.
+	plt.ion()
 	fig, (ax1, ax2, ax3, ax4, axx) = plt.subplots(nrows=5, ncols=1, figsize=(11, 6))
 	fig2, ax5, ax6 = SWS_utils.create_scoring_figure(extracted_dir, a, eeg=this_eeg, fsd=fsd)
 	# cursor = Cursor(ax5, ax6, ax7)
@@ -462,7 +464,7 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 		new_length = int(nearest_epoch*epochlen*fsd)
 		this_eeg = this_eeg[0:new_length]
 		if vid_flag:
-			this_video = glob.glob(os.path.join(video_dir, '*'+'Video'+str(int(a)-1)+'_filled.mp4'))[0]
+			this_video = glob.glob(os.path.join(video_dir, '*'+str(int(a)-1)+'.mp4'))[0]
 			print('using ' + this_video + ' for the video')
 		else:
 			this_video = None
@@ -737,7 +739,7 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 						log(log_dir, 1, animal, mouse_name)
 			# No model code
 			else:
-				State = nonlegacy_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg, vid_flag, this_video, h)
+				State = manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg, vid_flag, this_video, h)
 				update = input('Do you want to update the model?: y/n ') == 'y'
 				if update:
 					update_model(animal_name, animal_num, State, delta_pre, delta_pre2, delta_pre3, delta_post,
