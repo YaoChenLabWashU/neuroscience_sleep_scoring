@@ -16,7 +16,10 @@ import cv2
 import math
 from pylab import *
 from matplotlib import *
-
+import time
+import glob
+from dateutil.parser import parse
+from datetime import datetime
 
 def generate_signal(downsamp_signal, epochlen, fs): # fs = fsd here
     # mean of 4 seconds
@@ -288,9 +291,7 @@ def retrain_model(Sleep_Model, x_features, model_dir, jobname):
         dump(clf, model_dir + jobname)
 
 
-def pull_up_movie(start, end, vid_file, epochlen):
-    cap = cv2.VideoCapture(vid_file)
-    fps = cap.get(cv2.CAP_PROP_FPS)
+def pull_up_movie(cap, fps, start, end, vid_file, epochlen):
     print('Pulling up video ....')
     print('starting at ' + str(start/fps) + ' seconds')
     if not cap.isOpened():
@@ -304,7 +305,6 @@ def pull_up_movie(start, end, vid_file, epochlen):
                 cv2.putText(frame, "SCORE WINDOW", (50, 105), cv2.FONT_HERSHEY_PLAIN, 4, (225, 0, 0), 2)
             cv2.imshow('Frame', frame)
             cv2.waitKey(1)
-    cap.release()
     cv2.destroyAllWindows()
 
     #Creates line objects for the fine graph that plots data over 12s intervals
@@ -505,6 +505,62 @@ def raw_scoring_trace(ax1, ax2, ax3,ax4, axx, emg, start, end, realtime,
         line4 = plot_EMG(ax4, length, bottom, this_emg, epochlen, x, start, end, realtime, fsd)
 
     return line1, line2, line3, line4, line5
+
+def load_video(this_video):
+    bn_vid, ext_vid = os.path.splitext(this_video)
+    timestamps = glob.glob(bn_vid+'*.txt') or glob.glob(bn_vid+'*.csv')
+    print('I think I found a timestamp file: ' + timestamps[0])
+    with open(timestamps[0], "r") as file:
+        first_line = file.readline()
+    try: 
+        parse(first_line, fuzzy=False)
+        print('This is a timestamp file. Moving on...')
+    except ValueError:
+        print('This is not a timestamp file. Help.')
+        sys.exit()
+    timestamp_df = pd.read_csv(timestamps[0], delimiter = "\n", header=None) 
+    timestamp_df.columns = ['Timestamps']
+    cap = cv2.VideoCapture(this_video)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+    assert frames ==  timestamp_df.shape[0]
+    return cap, timestamp_df, fps
+
+def convert_timestamp(timestamp_df):
+    ts_format = '%Y-%m-%dT%H:%M:%S.%f'
+    short_ts = [x.replace('-05:00', '') for x in list(timestamp_df['Timestamps'])]
+    datetimes = [datetime.strptime(short_ts[i][:-1], ts_format) for i in np.arange(len(short_ts))]
+    offset_time = [(datetimes[i]-datetimes[0]).total_seconds() for i in np.arange(len(datetimes))]
+    timestamp_df['Offset Time'] = offset_time
+    return timestamp_df
+
+def load_bands(extracted_dir, realtime, a, h, theta_flag = True, delta_flag = True):
+    if delta_flag:
+        delt = np.load(os.path.join(extracted_dir, 'delt' + str(a) + '_hr' + str(h) + '.npy'))
+        no_delt_start, = np.where(realtime < delt[1][0])
+        no_delt_end, = np.where(realtime > delt[1][-1])
+        delt_pad = np.pad(delt[0], (np.size(no_delt_start), np.size(no_delt_end)), 'constant',
+                          constant_values=(0, 0))
+    else:
+        print('Not loading delta')
+
+    if theta_flag:
+        thet = np.load(os.path.join(extracted_dir, 'thet' + str(a) + '_hr' + str(h) + '.npy'))
+        no_thet_start, = np.where(realtime < thet[1][0])
+        no_thet_end, = np.where(realtime > thet[1][-1])
+        thet_pad = np.pad(thet[0], (np.size(no_thet_start), np.size(no_thet_end)), 'constant',
+                          constant_values=(0, 0))
+    else:
+        print('Not loading theta')
+    if delta_flag & theta_flag:
+        return delt, delt_pad, thet, thet_pad
+    elif delta_flag:
+        return delt, delt_pad
+    elif theta_flag:
+        return thet, thet_pad
+    else:
+        print('Returning nothing')
+
 
 def print_instructions():
     print('''\

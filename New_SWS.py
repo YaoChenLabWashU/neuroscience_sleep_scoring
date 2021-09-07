@@ -15,18 +15,12 @@ from sklearn.metrics import accuracy_score
 from joblib import dump, load
 import pandas as pd
 import warnings
-import SWS_utils
-import filewrite
-import train_model
+from neuroscience_sleep_scoring import SWS_utils
+from neuroscience_sleep_scoring import train_model
 from datetime import datetime
-from SW_Cursor import Cursor
-from SW_Cursor import ScoringCursor
+from neuroscience_sleep_scoring.SW_Cursor import Cursor
+from neuroscience_sleep_scoring.SW_Cursor import ScoringCursor
 import pathlib
-
-
-
-
-
 
 key_stroke = 0
 
@@ -57,18 +51,8 @@ def manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg
 	end = int(start + fsd * 3 * epochlen)
 	realtime = np.arange(np.size(this_eeg)) / fsd
 	LFP_ylim = 5
-	delt = np.load(os.path.join(extracted_dir, 'delt' + str(a) + '_hr' + str(h) + '.npy'))
-	thet = np.load(os.path.join(extracted_dir, 'thet' + str(a) + '_hr' + str(h) + '.npy'))
 
-	no_delt_start, = np.where(realtime < delt[1][0])
-	no_delt_end, = np.where(realtime > delt[1][-1])
-	delt_pad = np.pad(delt[0], (np.size(no_delt_start), np.size(no_delt_end)), 'constant',
-					  constant_values=(0, 0))
-
-	no_thet_start, = np.where(realtime < thet[1][0])
-	no_thet_end, = np.where(realtime > thet[1][-1])
-	thet_pad = np.pad(thet[0], (np.size(no_thet_start), np.size(no_thet_end)), 'constant',
-					  constant_values=(0, 0))
+	delt, delt_pad, thet, thet_pad = SWS_utils.load_bands(extracted_dir, realtime, a, h, theta_flag = True, delta_flag = True)
 
 	assert np.size(delt_pad) == np.size(this_eeg) == np.size(thet_pad)
 
@@ -112,16 +96,18 @@ def manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg
 		State[0] = first_state
 
 	if vid_flag:
-		cap = cv2.VideoCapture(this_video)
-		fps = cap.get(cv2.CAP_PROP_FPS)
+		print('Loading video now, this might take a second....')
+		cap, timestamp_df, fps = SWS_utils.load_video(this_video)
+		timestamp_df = SWS_utils.convert_timestamp(timestamp_df)
+
 	for i in s[:-3]:
 		# input('press enter or quit')
 		print(f'here. index: {i}')
 		start = int(i * fsd * epochlen)
 		end = int(start + fsd * 3 * epochlen)
 		if vid_flag:
-			vid_start = int(i * fps * epochlen)
-			vid_end = int(vid_start + fps * 3 * epochlen)
+			vid_start = timestamp_df.index[timestamp_df['Offset Time']>(i*epochlen)][0]
+			vid_end = timestamp_df.index[timestamp_df['Offset Time']<((i*epochlen)+(epochlen*3))][-1]
 		SWS_utils.update_raw_trace(line1, line2, line3, line4, marker, fig, fig2, start, end,
 								   this_eeg, delt_pad, thet_pad, emg_flag, this_emg, realtime)
 		color_dict = {'0': 'white',
@@ -146,7 +132,7 @@ def manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg
 			if not button:
 				print('you clicked')
 				if vid_flag:
-					SWS_utils.pull_up_movie(vid_start, vid_end, this_video, epochlen)
+					SWS_utils.pull_up_movie(cap, fps, vid_start, vid_end, this_video, epochlen)
 				else:
 					print('...but you do not have videos available')
 		global key_stroke
@@ -156,130 +142,12 @@ def manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg
 		np.save(os.path.join(extracted_dir, 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'), State)
 
 	print('DONE SCORING')
+	cap.release()
 	plt.close('all')
 	last_state = int(input('Enter the last state: '))
 	State[-2:] = last_state
 	np.save(os.path.join(extracted_dir, 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'), State)
 	return State
-
-def nonlegacy_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg, vid_flag, this_video, h):
-	# Manually score the entire file.
-	plt.ion()
-	fig, (ax1, ax2, ax3, ax4, axx) = plt.subplots(nrows=5, ncols=1, figsize=(11, 6))
-	fig2, ax5, ax6 = SWS_utils.create_scoring_figure(extracted_dir, a, eeg=this_eeg, fsd=fsd)
-	# cursor = Cursor(ax5, ax6, ax7)
-	cID2 = fig.canvas.mpl_connect('key_press_event', on_press)
-	cID3 = fig2.canvas.mpl_connect('key_press_event', on_press)
-	i = 0
-	start = int(i * fsd * epochlen)
-	end = int(start + fsd * 3 * epochlen)
-	realtime = np.arange(np.size(this_eeg)) / fsd
-	LFP_ylim = 5
-	delt = np.load(os.path.join(extracted_dir, 'delt' + str(a) + '_hr' + str(h) + '.npy'))
-	thet = np.load(os.path.join(extracted_dir, 'thet' + str(a) + '_hr' + str(h) + '.npy'))
-
-	no_delt_start, = np.where(realtime < delt[1][0])
-	no_delt_end, = np.where(realtime > delt[1][-1])
-	delt_pad = np.pad(delt[0], (np.size(no_delt_start), np.size(no_delt_end)), 'constant',
-					constant_values=(0, 0))
-
-	no_thet_start, = np.where(realtime < thet[1][0])
-	no_thet_end, = np.where(realtime > thet[1][-1])
-	thet_pad = np.pad(thet[0], (np.size(no_thet_start), np.size(no_thet_end)), 'constant',
-					constant_values=(0, 0))
-
-	assert np.size(delt_pad) == np.size(this_eeg) == np.size(thet_pad)
-
-	line1, line2, line3, line4, line5 = SWS_utils.raw_scoring_trace(ax1, ax2, ax3, ax4, axx, 
-															emg_flag, start, end, realtime, this_eeg, fsd,
-															LFP_ylim, delt_pad,
-															thet_pad, epochlen, this_emg)
-	marker = SWS_utils.make_marker(ax5, end, realtime, fsd, epochlen)
-
-	fig.show()
-	fig2.show()
-	fig.tight_layout()
-	fig2.tight_layout()
-
-	plt.show()
-
-	try:
-		# if some portion of the file has been previously scored
-		State = np.load(os.path.join(extracted_dir, 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'))
-		wrong, = np.where(np.isnan(State))
-		State[wrong] = 0
-		s, = np.where(State == 0)
-		color_dict = {'0': 'white',
-					'1': 'green',
-					'2': 'blue',
-					'3': 'red',
-					'4': 'purple'}
-		# rendering what has been previously scored
-		for count, color in enumerate(State[:-1]):
-			start = int(count * fsd * epochlen)
-			rect = patch.Rectangle((realtime[start + (epochlen * fsd)], 0),
-								(epochlen), 1, color=color_dict[str(int(color))])
-			ax6.add_patch(rect)
-		fig2.show()
-
-	except FileNotFoundError:
-		# if the file is a brand new one for scoring
-		State = np.zeros(int(np.size(this_eeg) / fsd / epochlen))
-		s = np.arange(1, np.size(State) - 1)
-		first_state = int(input('Enter the first state: '))
-		State[0] = first_state
-
-	if vid_flag:
-		cap = cv2.VideoCapture(this_video)
-		fps = cap.get(cv2.CAP_PROP_FPS)
-	for i in s[:-3]:
-		# input('press enter or quit')
-		print(f'here. index: {i}')
-		start = int(i * fsd * epochlen)
-		end = int(start + fsd * 3 * epochlen)
-		if vid_flag:
-			vid_start = int(i * fps * epochlen)
-			vid_end = int(vid_start + fps * 3 * epochlen)
-		SWS_utils.update_raw_trace(line1, line2, line3, line4, marker, fig, fig2, start, end,
-								this_eeg, delt_pad, thet_pad, emg_flag, this_emg, realtime)
-		color_dict = {'0': 'white',
-					'1': 'green',
-					'2': 'blue',
-					'3': 'red',
-					'4': 'purple'}
-
-		if math.isnan(State[i-1]):
-			rect = patch.Rectangle((realtime[start], 0),
-								(epochlen), 1, color=color_dict[str(0)])
-		else:
-			rect = patch.Rectangle((realtime[start], 0),
-							(epochlen), 1, color=color_dict[str(int(State[i - 1]))])
-		ax6.add_patch(rect)
-		fig.show()
-		fig2.show()
-		button = False
-		while not button:
-			button = fig2.waitforbuttonpress()
-			print(f'button: {button}')
-			if not button:
-				print('you clicked')
-				if vid_flag:
-					SWS_utils.pull_up_movie(vid_start, vid_end, this_video, epochlen)
-				else:
-					print('...but you do not have videos available')
-		global key_stroke
-		State[i] = key_stroke
-		fig2.canvas.flush_events()
-		fig.canvas.flush_events()
-		np.save(os.path.join(extracted_dir, 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'), State)
-
-	print('DONE SCORING')
-	plt.close('all')
-	last_state = int(input('Enter the last state: '))
-	State[-2:] = last_state
-	np.save(os.path.join(extracted_dir, 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'), State)
-	return State
-
 
 def update_model(animal_name, animal_num, State, delta_pre, delta_pre2, delta_pre3, delta_post,
 		delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
@@ -319,19 +187,7 @@ def display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, h, emg_fl
 	LFP_ylim = 5
 
 	print('loading delta and theta...')
-	delt = np.load(os.path.join(extracted_dir, 'delt' + str(a) + '_hr' + str(h) + '.npy'))
-	thet = np.load(os.path.join(extracted_dir, 'thet' + str(a) + '_hr' + str(h) + '.npy'))
-
-	no_delt_start, = np.where(realtime < delt[1][0])
-	no_delt_end, = np.where(realtime > delt[1][-1])
-	delt_pad = np.pad(delt[0], (np.size(no_delt_start), np.size(no_delt_end)), 'constant',
-					  constant_values=(0, 0))
-
-	no_thet_start, = np.where(realtime < thet[1][0])
-	no_thet_end, = np.where(realtime > thet[1][-1])
-	thet_pad = np.pad(thet[0], (np.size(no_thet_start), np.size(no_thet_end)), 'constant',
-					  constant_values=(0, 0))
-
+	delt, delt_pad, thet, thet_pad = SWS_utils.load_bands(extracted_dir, realtime, a, h, theta_flag = True, delta_flag = True)
 	fig2, (ax4, ax5, ax6, ax7, ax8) = plt.subplots(nrows=5, ncols=1, figsize=(11, 6))
 	line1, line2, line3, line4, line5 = SWS_utils.pull_up_raw_trace(ax4, ax5, ax6, ax7, ax8, emg_flag, start, end, realtime,
 															 this_eeg, fsd, LFP_ylim, delt_pad, thet_pad,
@@ -340,9 +196,6 @@ def display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, h, emg_fl
 
 	plt.ion()
 	State = copy.deepcopy(State_input)
-	# State[State == 0] = 1
-	# State[State == 2] = 2
-	# State[State == 5] = 3
 	#init cursor and it's libraries from SW_Cursor.py
 	cursor = Cursor(ax1, ax2, ax3, axx)
 
@@ -626,20 +479,7 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 				end = int(start + fsd * 3 * epochlen)
 				# realtime = np.arange(np.size(this_eeg)) / fsd
 				LFP_ylim = 5
-				delt = np.load(os.path.join(extracted_dir, 'delt' + str(a) + '_hr' + str(h) + '.npy'))
-				thet = np.load(os.path.join(extracted_dir, 'thet' + str(a) + '_hr' + str(h) + '.npy'))
-
-				no_delt_start, = np.where(realtime < delt[1][0])
-				no_delt_end, = np.where(realtime > delt[1][-1])
-				delt_pad = np.pad(delt[0], (np.size(no_delt_start), np.size(no_delt_end)), 'constant',
-								constant_values=(0, 0))
-
-				no_thet_start, = np.where(realtime < thet[1][0])
-				no_thet_end, = np.where(realtime > thet[1][-1])
-				thet_pad = np.pad(thet[0], (np.size(no_thet_start), np.size(no_thet_end)), 'constant',
-									constant_values=(0, 0))
-
-
+				delt, delt_pad, thet, thet_pad = SWS_utils.load_bands(extracted_dir, realtime, a, h, theta_flag = True, delta_flag = True)
 
 				fig2, (ax4, ax5, ax6, ax7, ax8) = plt.subplots(nrows=5, ncols=1, figsize=(11, 6))
 				line1, line2, line3, line4, line5 = SWS_utils.pull_up_raw_trace(ax4, ax5, ax6, ax7, ax8, emg_flag, start, end, realtime, this_eeg, fsd, LFP_ylim, delt_pad, thet_pad, epochlen, this_emg)
