@@ -226,9 +226,18 @@ def plot_predicted(ax, Predict_y, is_predicted, clf, Features):
     ax.plot(confidence, color = 'k')
 
 # This is the plotting collection function for the coarse prediction figure
-def create_prediction_figure(Predict_y, is_predicted, clf, Features, fs, eeg, this_emg, realtime, epochlen, start, end):
+def create_prediction_figure(Predict_y, is_predicted, clf, Features, fs, eeg, this_emg, realtime, 
+    epochlen, start, end, movement_flag = False, trace = None):
     plt.ion()
-    fig, (ax1, ax2, ax3, axx) = plt.subplots(nrows = 4, ncols = 1, figsize = (11, 6))
+    if movement_flag:
+        fig, (ax1, ax_move, ax2, ax3, axx) = plt.subplots(nrows = 5, ncols = 1, figsize = (11, 6))
+        ax_move.plot(trace, color = 'k', linestyle = '--')
+        ax_move.set_ylim([0,25])
+        ax_move.set_xlim([0,int(np.size(eeg)/fs)])
+
+    else:
+        fig, (ax1, ax2, ax3, axx) = plt.subplots(nrows = 4, ncols = 1, figsize = (11, 6))
+
     plot_spectrogram(ax1, eeg, fs)
     plot_predicted(ax2, Predict_y, is_predicted, clf, Features)
 
@@ -440,17 +449,31 @@ def correct_bins(start_bin, end_bin, ax2, new_state):
         print('loc: ', location)
         ax2.add_patch(rectangle)
 
-def create_scoring_figure(extracted_dir, a, eeg, fsd):
-    fig = plt.figure(constrained_layout=True, figsize = (11, 6))
-    widths = [1]
-    heights = [2,1,0.5]
-    spec = fig.add_gridspec(ncols=1, nrows=3, width_ratios=widths, height_ratios=heights)
-    ax1 = fig.add_subplot(spec[0])
-    ax2 = fig.add_subplot(spec[1])
-    ax3 = fig.add_subplot(spec[2])
+def create_scoring_figure(extracted_dir, a, eeg, fsd,  movement_flag = False, trace = None):
+    if movement_flag:
+        fig = plt.figure(constrained_layout=True, figsize = (11, 6))
+        widths = [1]
+        heights = [2,1,1,0.5]
+        spec = fig.add_gridspec(ncols=1, nrows=4, width_ratios=widths, height_ratios=heights)
+        ax1 = fig.add_subplot(spec[0])
+        ax2 = fig.add_subplot(spec[2])
+        ax3 = fig.add_subplot(spec[3])
+        ax4 = fig.add_subplot(spec[1])
+    else:
+        fig = plt.figure(constrained_layout=True, figsize = (11, 6))
+        widths = [1]
+        heights = [2,1,0.5]
+        spec = fig.add_gridspec(ncols=1, nrows=4, width_ratios=widths, height_ratios=heights)
+        ax1 = fig.add_subplot(spec[0])
+        ax2 = fig.add_subplot(spec[1])
+        ax3 = fig.add_subplot(spec[2])    
 
     #fig, (ax1, ax2) = plt.subplots(nrows = 2, ncols = 1, figsize = (11, 6))
     plot_spectrogram(ax1, eeg, fsd)
+    if movement_flag:
+        ax4.plot(trace, color = 'k', linestyle = '--')
+        ax4.set_ylim([0,25])
+        ax4.set_xlim([0,int(np.size(eeg)/fsd)])
     ax2.set_ylim(0.3, 1)
     ax2.set_xlim(0, int(np.size(eeg)/fsd))
     ax3.set_xlim([0,1])
@@ -486,7 +509,6 @@ def make_marker(ax, end, realtime, fsd, epochlen):
 
 def raw_scoring_trace(ax1, ax2, ax3,ax4, axx, emg, start, end, realtime,
     this_eeg, fsd, LFP_ylim, delt, thet, epochlen, this_emg):
-    print('pull up the second figure for that bin - maybe. Option to click through a few bins around it?')
     x = (end - start)
     length = np.arange(int(end / x - start / x))
     bottom = np.zeros(int(end / x - start / x))
@@ -560,6 +582,43 @@ def load_bands(extracted_dir, realtime, a, h, theta_flag = True, delta_flag = Tr
         return thet, thet_pad
     else:
         print('Returning nothing')
+
+def movement_extracting(this_video):
+    bn_vid, ext_vid = os.path.splitext(this_video)
+    movement_file = bn_vid + '.csv'
+    movement_file = glob.glob(movement_file)
+    if np.size(movement_file) == 1:
+        print('I think I found a movement file: ' + movement_file[0])
+        with open(movement_file[0], "r") as file:
+            first_line = file.readline()
+        if first_line == 'X,Y\n':
+            print('Yes, this is a movement file, incorporating this into the figure')
+        else:
+            print('This is not a movement file. The first line is: ' + first_line)
+    movement_df = pd.read_csv(movement_file[0])
+    return movement_df
+
+def movement_processing(movement_df, time):
+
+    tot_frames = movement_df.index.stop
+    nearest_sec = np.round(tot_frames/time)
+    reshape_val = nearest_sec*time
+
+    diff = reshape_val-tot_frames
+    if diff > 0:
+        for i in np.arange(diff):
+            movement_df = movement_df.append(movement_df.iloc[-1])
+    if diff < 0:
+        drop_these = np.arange(movement_df.index.stop+diff, movement_df.index.stop)
+        movement_df = movement_df.drop(drop_these)
+    reshape_x = np.reshape(np.asarray(movement_df['X']), (int(time),-1))
+    reshape_y = np.reshape(np.asarray(movement_df['X']), (int(time),-1))
+
+    dx = [abs(reshape_x[i,-1]-reshape_x[i,0]) for i in range(np.shape(reshape_x)[0])]
+    dy = [abs(reshape_y[i,-1]-reshape_y[i,0]) for i in range(np.shape(reshape_y)[0])]
+
+    v = np.sqrt((np.square(dx) + np.square(dy)))
+    return v
 
 
 def print_instructions():

@@ -38,11 +38,18 @@ def on_press(event):
 		print('I did not understand that keystroke; I will mark it white and please come back to fix it.')
 
 
-def manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg, vid_flag, this_video, h):
+def manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg, vid_flag, this_video, h, movement_flag):
 	# Manually score the entire file.
 	plt.ion()
 	fig, (ax1, ax2, ax3, ax4, axx) = plt.subplots(nrows=5, ncols=1, figsize=(11, 6))
-	fig2, ax5, ax6 = SWS_utils.create_scoring_figure(extracted_dir, a, eeg=this_eeg, fsd=fsd)
+	if movement_flag:
+		movement_df = SWS_utils.movement_extracting(this_video)
+		time = np.size(this_eeg)/fsd
+		v = SWS_utils.movement_processing(movement_df, time)
+		fig2, ax5, ax6 = SWS_utils.create_scoring_figure(extracted_dir, a, eeg=this_eeg, fsd=fsd, movement_flag = movement_flag, trace = v)
+
+	else:
+		fig2, ax5, ax6 = SWS_utils.create_scoring_figure(extracted_dir, a, eeg=this_eeg, fsd=fsd)
 	# cursor = Cursor(ax5, ax6, ax7)
 	cID2 = fig.canvas.mpl_connect('key_press_event', on_press)
 	cID3 = fig2.canvas.mpl_connect('key_press_event', on_press)
@@ -180,7 +187,7 @@ def update_model(animal_name, animal_num, State, delta_pre, delta_pre2, delta_pr
 	SWS_utils.retrain_model(Sleep_Model, x_features, model_dir, jobname)
 
 
-def display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, h, emg_flag, this_emg, State_input, is_predicted, clf, Features, vid_flag, this_video):
+def display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, h, emg_flag, movement_flag, this_emg, State_input, is_predicted, clf, Features, vid_flag, this_video):
 	start = 0
 	end = int(fsd * 3 * epochlen)
 	realtime = np.arange(np.size(this_eeg)) / fsd
@@ -192,7 +199,18 @@ def display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, h, emg_fl
 	line1, line2, line3, line4, line5 = SWS_utils.pull_up_raw_trace(ax4, ax5, ax6, ax7, ax8, emg_flag, start, end, realtime,
 															 this_eeg, fsd, LFP_ylim, delt_pad, thet_pad,
 															 epochlen, this_emg)
-	fig, ax1, ax2, ax3, axx = SWS_utils.create_prediction_figure(State_input, is_predicted, clf, Features, fsd, this_eeg, this_emg, realtime, epochlen, start, end)
+	if movement_flag:
+		movement_df = SWS_utils.movement_extracting(this_video)
+		time = np.size(this_eeg)/fsd
+		v = SWS_utils.movement_processing(movement_df, time)
+		fig, ax1, ax2, ax3, axx = SWS_utils.create_prediction_figure(State_input, is_predicted, clf, 
+			Features, fsd, this_eeg, this_emg, realtime, epochlen, start, end, movement_flag = movement_flag, trace = v)
+
+	else:
+		fig, ax1, ax2, ax3, axx = SWS_utils.create_prediction_figure(State_input, is_predicted, clf, 
+			Features, fsd, this_eeg, this_emg, realtime, epochlen, start, end)
+
+
 
 	plt.ion()
 	State = copy.deepcopy(State_input)
@@ -281,7 +299,7 @@ def display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, h, emg_fl
 	return State
 
 
-def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_flag, animal, model_dir, mod_name, log_dir, mouse_name):
+def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_flag, movement_flag, animal, model_dir, mod_name, log_dir, mouse_name):
 	# mostly for deprecated packages
 	print('this code is supressing warnings')
 	warnings.filterwarnings("ignore")
@@ -410,7 +428,7 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 				# 	ax6.add_patch(rect)
 				# fig2.show()
 
-				display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, h, emg_flag, this_emg, State, False, None,
+				display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, h, emg_flag, movement_flag, this_emg, State, False, None,
 										None, vid_flag, this_video)
 				update = input('Do you want to update the model?: y/n ') == 'y'
 				if update:
@@ -563,10 +581,10 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 					while fix != 'f' and fix != 'm':
 						fix = input('Only f/m is accepted. Do you want to fix a few states (f) or manually score the whole thing (m)?: f/m ')
 					if fix == 'f':
-						State = display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, h, emg_flag, this_emg, Predict_y, True, clf, Features, vid_flag, this_video)
+						State = display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, h, emg_flag, movement_flag, this_emg, Predict_y, True, clf, Features, vid_flag, this_video)
 					else:
 						print("Manually score the whole thing and update model.")
-						State = manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg, vid_flag, this_video, h)
+						State = manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg, vid_flag, this_video, h, movement_flag)
 
 					update = input('Do you want to update the model?: y/n ') == 'y'
 					if update:
@@ -579,7 +597,7 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 						log(log_dir, 1, animal, mouse_name)
 			# No model code
 			else:
-				State = manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg, vid_flag, this_video, h)
+				State = manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg, vid_flag, this_video, h, movement_flag)
 				update = input('Do you want to update the model?: y/n ') == 'y'
 				if update:
 					update_model(animal_name, animal_num, State, delta_pre, delta_pre2, delta_pre3, delta_post,
@@ -603,13 +621,14 @@ def load_data_for_sw(filename_sw):
 	fsd = int(d['fsd'])
 	emg_flag = int(d['emg'])
 	vid_flag = int(d['vid'])
+	movement_flag = int(d['movement'])
 	model_dir = str(d['model_dir'])
 	animal = str(d['animal'])
 	mod_name = str(d['mod_name'])
 	log_dir = str(d['log_dir'])
 	mouse_name = str(d['mouse_name'])
 
-	start_swscoring(filename_sw, extracted_dir, epochlen, fsd, emg_flag, vid_flag, animal, model_dir, mod_name, log_dir, mouse_name)
+	start_swscoring(filename_sw, extracted_dir, epochlen, fsd, emg_flag, vid_flag, movement_flag, animal, model_dir, mod_name, log_dir, mouse_name)
 
 
 # Arg 1 is the path of the sleep scoring setting json, taken from argv[1]
