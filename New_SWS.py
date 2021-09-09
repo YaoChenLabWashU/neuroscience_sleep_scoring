@@ -203,11 +203,11 @@ def display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, h, emg_fl
 		movement_df = SWS_utils.movement_extracting(this_video)
 		time = np.size(this_eeg)/fsd
 		v = SWS_utils.movement_processing(movement_df, time)
-		fig, ax1, ax2, ax3, axx = SWS_utils.create_prediction_figure(State_input, is_predicted, clf, 
+		fig, ax1, ax2, axx = SWS_utils.create_prediction_figure(State_input, is_predicted, clf, 
 			Features, fsd, this_eeg, this_emg, realtime, epochlen, start, end, movement_flag = movement_flag, trace = v)
 
 	else:
-		fig, ax1, ax2, ax3, axx = SWS_utils.create_prediction_figure(State_input, is_predicted, clf, 
+		fig, ax1, ax2, axx = SWS_utils.create_prediction_figure(State_input, is_predicted, clf, 
 			Features, fsd, this_eeg, this_emg, realtime, epochlen, start, end)
 
 
@@ -215,7 +215,8 @@ def display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, h, emg_fl
 	plt.ion()
 	State = copy.deepcopy(State_input)
 	#init cursor and it's libraries from SW_Cursor.py
-	cursor = Cursor(ax1, ax2, ax3, axx)
+	#cursor = Cursor(ax1, ax2, ax3, axx)
+	cursor = Cursor(ax1, ax2, axx)	
 
 	cID = fig.canvas.mpl_connect('button_press_event', cursor.on_click)
 
@@ -299,21 +300,15 @@ def display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, h, emg_fl
 	return State
 
 
-def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_flag, movement_flag, animal, model_dir, mod_name, log_dir, mouse_name):
+def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_flag, 
+	movement_flag, animal, model_dir, mod_name, log_dir, mouse_name, acq, video_dir ):
 	# mostly for deprecated packages
 	print('this code is supressing warnings')
 	warnings.filterwarnings("ignore")
 
-	with open(filename_sw, 'r') as f:
-			d = json.load(f)
-
-	acq = d['Acquisition']
-	video_dir = d['video_dir']
-
 	print('These are the available acquisitions: '+ str(acq))
 
 	a = input('Which acqusition do you want to score?')
-
 
 	print('Loading EEG and EMG....')
 	downsampEEG = np.load(os.path.join(extracted_dir,'downsampEEG_Acq'+str(a)+'.npy'))
@@ -325,7 +320,7 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 
 	for h in np.arange(hour_segs):
 		this_eeg = np.load(os.path.join(extracted_dir, 'downsampEEG_Acq'+str(a) + '_hr' + str(h)+ '.npy'))
-		if int(d['emg']) == 1:
+		if emg_flag == 1:
 			this_emg = np.load(os.path.join(extracted_dir,'downsampEMG_Acq'+str(a) + '_hr' + str(h)+ '.npy'))
 		else:
 			this_emg = None
@@ -497,26 +492,29 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 				end = int(start + fsd * 3 * epochlen)
 				# realtime = np.arange(np.size(this_eeg)) / fsd
 				LFP_ylim = 5
-				delt, delt_pad, thet, thet_pad = SWS_utils.load_bands(extracted_dir, realtime, a, h, theta_flag = True, delta_flag = True)
+				delt, delt_pad, thet, thet_pad = SWS_utils.load_bands(extracted_dir, 
+					realtime, a, h, theta_flag = True, delta_flag = True)
 
 				fig2, (ax4, ax5, ax6, ax7, ax8) = plt.subplots(nrows=5, ncols=1, figsize=(11, 6))
-				line1, line2, line3, line4, line5 = SWS_utils.pull_up_raw_trace(ax4, ax5, ax6, ax7, ax8, emg_flag, start, end, realtime, this_eeg, fsd, LFP_ylim, delt_pad, thet_pad, epochlen, this_emg)
+				line1, line2, line3, line4, line5 = SWS_utils.pull_up_raw_trace(ax4, ax5, ax6, ax7, 
+					ax8, emg_flag, start, end, realtime, this_eeg, fsd, LFP_ylim, delt_pad, thet_pad, 
+					epochlen, this_emg)
+				if movement_flag:
+					movement_df = SWS_utils.movement_extracting(this_video)
+					time = np.size(this_eeg)/fsd
+					v = SWS_utils.movement_processing(movement_df, time)
 				
-				fig, ax1, ax2, ax3, axx  = SWS_utils.create_prediction_figure(Predict_y, True, clf, Features, fsd, this_eeg, this_emg, realtime, epochlen, start, end)
-				#SWS_utils.create_prediction_figure(Predict_y, True, clf, Features, fsd, this_eeg)
-				#SWS_utils.create_prediction_figure(State_input, is_predicted, clf, Features, fsd, this_eeg, this_emg, realtime, epochlen, start, end)
+				fig, ax1, ax2, axx  = SWS_utils.create_prediction_figure(Predict_y, True, clf, Features, 
+					fsd, this_eeg, this_emg, realtime, epochlen, start, end, movement_flag = movement_flag, trace = v)
 
-				#cID2 = fig.canvas.mpl_connect('key_press_event', on_press)
-
-				# cID = fig.canvas.mpl_connect('button_press_event', cursor.on_click)
-
-				cursor = ScoringCursor(ax1, ax2, ax3, axx)
-
+				#cursor = ScoringCursor(ax1, ax2, ax3, axx)
+				cursor = Cursor(ax1, ax2, axx)
 				DONE = False
 
 				#cID2 = fig.canvas.mpl_connect('key_press_event', on_press)
 
 				cID = fig.canvas.mpl_connect('button_press_event', cursor.on_click)
+				cID3 = fig.canvas.mpl_connect('key_press_event', cursor.on_press)
 
 				fig.show()
 				fig2.show()
@@ -627,8 +625,11 @@ def load_data_for_sw(filename_sw):
 	mod_name = str(d['mod_name'])
 	log_dir = str(d['log_dir'])
 	mouse_name = str(d['mouse_name'])
+	acq = d['Acquisition']
+	video_dir = d['video_dir']
 
-	start_swscoring(filename_sw, extracted_dir, epochlen, fsd, emg_flag, vid_flag, movement_flag, animal, model_dir, mod_name, log_dir, mouse_name)
+	start_swscoring(filename_sw, extracted_dir, epochlen, fsd, emg_flag, vid_flag, 
+		movement_flag, animal, model_dir, mod_name, log_dir, mouse_name, acq, video_dir)
 
 
 # Arg 1 is the path of the sleep scoring setting json, taken from argv[1]

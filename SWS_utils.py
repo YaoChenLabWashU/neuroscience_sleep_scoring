@@ -230,14 +230,15 @@ def create_prediction_figure(Predict_y, is_predicted, clf, Features, fs, eeg, th
     epochlen, start, end, movement_flag = False, trace = None):
     plt.ion()
     if movement_flag:
-        fig, (ax1, ax_move, ax2, ax3, axx) = plt.subplots(nrows = 5, ncols = 1, figsize = (11, 6))
+        #fig, (ax1, ax_move, ax2, ax3, axx) = plt.subplots(nrows = 5, ncols = 1, figsize = (11, 6))
+        fig, (ax1, ax_move, ax2, axx) = plt.subplots(nrows = 4, ncols = 1, figsize = (11, 6))
         ax_move.plot(trace, color = 'k', linestyle = '--')
         ax_move.set_ylim([0,25])
         ax_move.set_xlim([0,int(np.size(eeg)/fs)])
 
     else:
-        fig, (ax1, ax2, ax3, axx) = plt.subplots(nrows = 4, ncols = 1, figsize = (11, 6))
-
+        #fig, (ax1, ax2, ax3, axx) = plt.subplots(nrows = 4, ncols = 1, figsize = (11, 6))
+        fig, (ax1, ax2, axx) = plt.subplots(nrows = 3, ncols = 1, figsize = (11, 6))
     plot_spectrogram(ax1, eeg, fs)
     plot_predicted(ax2, Predict_y, is_predicted, clf, Features)
 
@@ -246,8 +247,8 @@ def create_prediction_figure(Predict_y, is_predicted, clf, Features, fs, eeg, th
     #fs = fsd
     #plot_EMGFig2(axx, this_emg, epochlen, x, start, end, realtime, fs)
     fig.tight_layout()
-    return fig, ax1, ax2, ax3, axx
-
+    #return fig, ax1, ax2, ax3, axx
+    return fig, ax1, ax2, axx
 def update_sleep_model(model_dir, mod_name, df_additions):
     try:
         Sleep_Model = np.load(file = model_dir + mod_name + '_model.pkl', allow_pickle = True)

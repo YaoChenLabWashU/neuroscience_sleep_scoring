@@ -3,12 +3,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 class Cursor(object):
-    def __init__(self, ax1, ax2, ax3, ax4):
+    #def __init__(self, ax1, ax2, ax3, ax4):
+    def __init__(self, ax1, ax2, ax4):
         self.clicked=False
         self.second_click = False
         self.ax1 = ax1
         self.ax2 = ax2
-        self.ax3 = ax3
+        #self.ax3 = ax3
         self.ax4 = ax4
         self.movie_mode = False
         self.bins = []
@@ -28,7 +29,7 @@ class Cursor(object):
         # initializing the lines
         self.ylims_ax1 = ax1.get_ylim()
         self.ylims_ax2 = ax2.get_ylim()
-        self.ylims_ax3 = ax3.get_ylim()
+        #self.ylims_ax3 = ax3.get_ylim()
 
         line1 = ax1.plot([0,0], [self.ylims_ax1[0], self.ylims_ax1[1]], linewidth = 0.5, color = 'k')
         ml1 = line1.pop(0)
@@ -36,13 +37,13 @@ class Cursor(object):
         line2 = ax2.plot([0,0], [self.ylims_ax2[0], self.ylims_ax2[1]], linewidth = 0.5, color = 'k')
         ml2 = line2.pop(0)
 
-        line3 = ax3.plot([0,0], [self.ylims_ax3[0], self.ylims_ax3[1]], linewidth = 0.5, color = 'k')
-        ml3 = line3.pop(0)
+        #line3 = ax3.plot([0,0], [self.ylims_ax3[0], self.ylims_ax3[1]], linewidth = 0.5, color = 'k')
+        #ml3 = line3.pop(0)
 
         self.movement_x_axis = np.linspace(0,60,900)
         self.spect_x_axis = np.linspace(199,1442, 900)
 
-        self.lines = [ml1, ml2, ml3]
+        #self.lines = [ml1, ml2, ml3]
         self.toggle_line = False
 
         print('making a cursor')
@@ -63,10 +64,10 @@ class Cursor(object):
                 line.remove()
             line1 = self.ax1.plot([self.spect_x_axis[int(event.xdata)],self.spect_x_axis[int(event.xdata)]], [self.ylims_ax1[0], self.ylims_ax1[1]], linewidth = 0.5, color = 'k')
             line2 = self.ax2.plot([int(event.xdata), int(event.xdata)], [self.ylims_ax2[0], self.ylims_ax2[1]], linewidth = 0.5, color = 'k')
-            line3 = self.ax3.plot([self.movement_x_axis[int(event.xdata)],self.movement_x_axis[int(event.xdata)]], [self.ylims_ax3[0], self.ylims_ax3[1]], linewidth = 0.5, color = 'k')
+            #line3 = self.ax3.plot([self.movement_x_axis[int(event.xdata)],self.movement_x_axis[int(event.xdata)]], [self.ylims_ax3[0], self.ylims_ax3[1]], linewidth = 0.5, color = 'k')
             self.lines[0] = line1.pop(0)
             self.lines[1] = line2.pop(0)
-            self.lines[2] = line3.pop(0)
+            #self.lines[2] = line3.pop(0)
 
 
     # This works, but doesn't refresh fast enough. I think this is a limit of matplotlib however and out of my control
@@ -136,11 +137,11 @@ class Cursor(object):
 
 
         # Movie mode triggers when you hover over the bottom axis. Duh ax3 I guess
-        if event.inaxes == self.ax3:
-            self.movie_mode = True
-            print('MOVIE MODE!')
-        else:
-            self.movie_mode = False
+        # if event.inaxes == self.ax3:
+        #     self.movie_mode = True
+        #     print('MOVIE MODE!')
+        # else:
+        #     self.movie_mode = False
 
 
     def pull_up_movie(self, event):
@@ -200,12 +201,13 @@ class Cursor(object):
                 self.clicked = True
 
 class ScoringCursor(object):
-    def __init__(self, ax1, ax2, ax3, ax4):
+    #def __init__(self, ax1, ax2, ax3, ax4):
+    def __init__(self, ax1, ax2, ax4):
         self.clicked=False
         self.second_click = False
         self.ax1 = ax1
         self.ax2 = ax2
-        self.ax3 = ax3
+        #self.ax3 = ax3
         self.ax4 = ax4
         self.movie_mode = False
         self.bins = []
@@ -225,7 +227,7 @@ class ScoringCursor(object):
         # initializing the lines
         self.ylims_ax1 = ax1.get_ylim()
         self.ylims_ax2 = ax2.get_ylim()
-        self.ylims_ax3 = ax3.get_ylim()
+        #self.ylims_ax3 = ax3.get_ylim()
 
         line1 = ax1.plot([0,0], [self.ylims_ax1[0], self.ylims_ax1[1]], linewidth = 0.5, color = 'k')
         ml1 = line1.pop(0)
@@ -233,13 +235,14 @@ class ScoringCursor(object):
         line2 = ax2.plot([0,0], [self.ylims_ax2[0], self.ylims_ax2[1]], linewidth = 0.5, color = 'k')
         ml2 = line2.pop(0)
 
-        line3 = ax3.plot([0,0], [self.ylims_ax3[0], self.ylims_ax3[1]], linewidth = 0.5, color = 'k')
-        ml3 = line3.pop(0)
+        # line3 = ax3.plot([0,0], [self.ylims_ax3[0], self.ylims_ax3[1]], linewidth = 0.5, color = 'k')
+        # ml3 = line3.pop(0)
 
         self.movement_x_axis = np.linspace(0,60,900)
         self.spect_x_axis = np.linspace(199,1442, 900)
 
-        self.lines = [ml1, ml2, ml3]
+        #self.lines = [ml1, ml2, ml3]
+        self.lines = [ml1, ml2]
         self.toggle_line = False
 
         print('making a cursor')
