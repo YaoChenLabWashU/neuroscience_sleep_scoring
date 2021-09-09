@@ -584,9 +584,10 @@ def load_bands(extracted_dir, realtime, a, h, theta_flag = True, delta_flag = Tr
     else:
         print('Returning nothing')
 
-def movement_extracting(this_video):
-    bn_vid, ext_vid = os.path.splitext(this_video)
-    movement_file = bn_vid + '.csv'
+def movement_extracting(video_dir, animal, acq):
+    #bn_vid, ext_vid = os.path.splitext(this_video)
+    #movement_file = bn_vid + '.csv'
+    movement_file = video_dir + animal + '_' +acq + '.csv'
     movement_file = glob.glob(movement_file)
     if np.size(movement_file) == 1:
         print('I think I found a movement file: ' + movement_file[0])
