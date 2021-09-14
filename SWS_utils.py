@@ -314,7 +314,9 @@ def pull_up_movie(cap, fps, start, end, vid_file, epochlen):
             if f in score_win:
                 cv2.putText(frame, "SCORE WINDOW", (50, 105), cv2.FONT_HERSHEY_PLAIN, 4, (225, 0, 0), 2)
             cv2.imshow('Frame', frame)
-            cv2.waitKey(1)
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord('v'):
+                break
     cv2.destroyAllWindows()
 
     #Creates line objects for the fine graph that plots data over 12s intervals
@@ -546,7 +548,14 @@ def load_video(this_video):
     cap = cv2.VideoCapture(this_video)
     fps = cap.get(cv2.CAP_PROP_FPS)
     frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
-    assert frames ==  timestamp_df.shape[0]
+    try:
+        assert frames ==  timestamp_df.shape[0]
+    except AssertionError:
+        if abs(timestamp_df.shape[0]-frames) < fps:
+            print('The timestamp file and the video are a little different, but not much.')
+        else:
+            print('The timestamp file and the video seem very different.')
+            sys.exit()
     return cap, timestamp_df, fps
 
 def convert_timestamp(timestamp_df):
@@ -584,20 +593,22 @@ def load_bands(extracted_dir, realtime, a, h, theta_flag = True, delta_flag = Tr
     else:
         print('Returning nothing')
 
-def movement_extracting(video_dir, animal, acq):
+def movement_extracting(video_dir, acq):
     #bn_vid, ext_vid = os.path.splitext(this_video)
     #movement_file = bn_vid + '.csv'
-    movement_file = video_dir + animal + '_' +acq + '.csv'
-    movement_file = glob.glob(movement_file)
+    movement_filedir = video_dir
+    movement_files = glob.glob(movement_filedir + '*.csv')
+    acq_cor = int(acq) - 1
+    movement_file = [movement_files[i] for i in range(len(movement_files)) if ('_' + str(acq_cor) + '.csv') in movement_files[i]][0]
     if np.size(movement_file) == 1:
-        print('I think I found a movement file: ' + movement_file[0])
-        with open(movement_file[0], "r") as file:
+        print('I think I found a movement file: ' + movement_file)
+        with open(movement_file, "r") as file:
             first_line = file.readline()
         if first_line == 'X,Y\n':
             print('Yes, this is a movement file, incorporating this into the figure')
         else:
             print('This is not a movement file. The first line is: ' + first_line)
-    movement_df = pd.read_csv(movement_file[0])
+    movement_df = pd.read_csv(movement_file)
     return movement_df
 
 def movement_processing(movement_df, time):

@@ -26,7 +26,7 @@ key_stroke = 0
 
 def on_press(event):
 	global key_stroke
-	if event.key in ['1','2','3']:
+	if event.key in ['1','2','3', '4']:
 		key_stroke = int(event.key)
 		print(f'scored: {event.key}')
 	elif event.key == 'q':
@@ -43,9 +43,7 @@ def manual_scoring(extracted_dir, a, this_eeg, fsd, epochlen, emg_flag, this_emg
 	# Manually score the entire file.
 	plt.ion()
 	fig, (ax1, ax2, ax3, ax4, axx) = plt.subplots(nrows=5, ncols=1, figsize=(11, 6))
-	if movement_flag:
-		fig2, ax5, ax6 = SWS_utils.create_scoring_figure(extracted_dir, a, eeg=this_eeg, fsd=fsd, movement_flag = movement_flag, trace = trace)
-
+	fig2, ax5, ax6 = SWS_utils.create_scoring_figure(extracted_dir, a, eeg=this_eeg, fsd=fsd, movement_flag = movement_flag, trace = trace)
 	# cursor = Cursor(ax5, ax6, ax7)
 	cID2 = fig.canvas.mpl_connect('key_press_event', on_press)
 	cID3 = fig2.canvas.mpl_connect('key_press_event', on_press)
@@ -156,11 +154,11 @@ def update_model(animal_name, animal_num, State, delta_pre, delta_pre2, delta_pr
 		delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
 		theta_post3,
 		EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, delt_thet, EEGfire, EEGamp, EEGmax,
-		EEGmean, EMGamp, model_dir, mod_name, emg_flag, movement_flag, video_dir):
+		EEGmean, EMGamp, model_dir, mod_name, emg_flag, movement_flag, video_dir, acq):
 	# Feed the data to retrain a model.
 	# Using EMG data by default. (No video for now)
 	if movement_flag:
-		movement_df = SWS_utils.movement_extracting(this_video)
+		movement_df = SWS_utils.movement_extracting(video_dir, acq)
 		time = np.size(this_eeg)/fsd
 		v = SWS_utils.movement_processing(movement_df, time)
 		v_reshape = np.reshape(-1,epochlen)
@@ -340,7 +338,7 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 		else:
 			EMGamp = False
 		if movement_flag:
-			movement_df = SWS_utils.movement_extracting(video_dir, animal, a)
+			movement_df = SWS_utils.movement_extracting(video_dir, a)
 			time = np.size(this_eeg)/fsd
 			v = SWS_utils.movement_processing(movement_df, time)
 		else:
@@ -427,7 +425,7 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 					update_model(animal_name, animal_num, State, delta_pre, delta_pre2, delta_pre3, delta_post,
 							 delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
 							 theta_post3, EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, delt_thet, EEGfire, EEGamp, EEGmax,
-							 EEGmean, EMGamp, model_dir, mod_name, emg_flag, movement_flag, video_dir)
+							 EEGmean, EMGamp, model_dir, mod_name, emg_flag, movement_flag, video_dir, a)
 				logq = input('Do you want to log the update?: y/n ') == 'y'
 				if logq:
 					log(log_dir, 0, animal, mouse_name)
@@ -498,7 +496,7 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 					ax8, emg_flag, start, end, realtime, this_eeg, fsd, LFP_ylim, delt_pad, thet_pad, 
 					epochlen, this_emg)
 				if movement_flag:
-					movement_df = SWS_utils.movement_extracting(animal, video_dir, a)
+					movement_df = SWS_utils.movement_extracting(video_dir, a)
 					time = np.size(this_eeg)/fsd
 					v = SWS_utils.movement_processing(movement_df, time)
 				
@@ -590,7 +588,7 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 						update_model(animal_name, animal_num, State, delta_pre, delta_pre2, delta_pre3, delta_post,
 								 delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
 								 theta_post3, EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, delt_thet, EEGfire, EEGamp, EEGmax,
-								 EEGmean, EMGamp, model_dir, mod_name, emg_flag, movement_flag, video_dir)
+								 EEGmean, EMGamp, model_dir, mod_name, emg_flag, movement_flag, video_dir, a)
 					logq = input('Do you want to log the update?: y/n ') == 'y'
 					if logq:
 						log(log_dir, 1, animal, mouse_name)
@@ -605,7 +603,7 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 								 theta_post2,
 								 theta_post3, EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, delt_thet, EEGfire,
 								 EEGamp, EEGmax,
-								 EEGmean, EMGamp, model_dir, mod_name, emg_flag, movement_flag, video_dir)
+								 EEGmean, EMGamp, model_dir, mod_name, emg_flag, movement_flag, video_dir, a)
 				logq = input('Do you want to log the update?: y/n ') == 'y'
 				if logq:
 					log(log_dir, 2, animal, mouse_name)
