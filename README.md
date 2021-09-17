@@ -11,7 +11,7 @@ To start a new project:
   "model_dir": "/Users/lizzie/Desktop/Remote_Git/neuroscience_sleep_scoring/model/", #This is the directory with the Sleep Scoring model
   "video_dir": "/Users/lizzie/Box/ChenLab/Jacob Amme/FLiP Videos/jaLC_FLiPAKAREEGEMG004/", #This is the directory wiht videos
   "log_dir": "/Users/lizzie/Desktop/", #This is where the log file is saved
-  "animal": "1225-9", #Animal number
+  "species": "mouse", #species of animal used (just in case rats are eventually used in the future)
   "mod_name": "mouse", #I wouldn't change this
   "mouse_name": "1225-9", #Animal name (not experiment name)
   "epochlen": 4, #This is the bin size for scoring (cannot go lower than 4)
