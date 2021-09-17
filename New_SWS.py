@@ -154,13 +154,12 @@ def update_model(this_eeg, fsd, epochlen, animal_name, State, delta_pre, delta_p
 		delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
 		theta_post3,
 		EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, thet_delt, EEGfire, EEGamp, EEGmax,
-		EEGmean, EMGamp, model_dir, mod_name, emg_flag, movement_flag, video_dir, acq, a, bonsai_v):
+		EEGmean, EMGamp, model_dir, mod_name, emg_flag, movement_flag, vid_flag, video_dir, acq, a, bonsai_v):
 	# Feed the data to retrain a model.
 	# Using EMG data by default. (No video for now)
 	if movement_flag:
-		movement_df = SWS_utils.movement_extracting(video_dir, acq, a, bonsai_v)
-		time = np.size(this_eeg)/fsd
-		v = SWS_utils.movement_processing(movement_df, time)
+		this_video, v = SWS_utils.initialize_vid_and_move(bonsai_v, vid_flag, movement_flag, video_dir, a, 
+			acq, this_eeg, fsd)		
 		v_reshape = np.reshape(v, (-1,epochlen))
 		mean_v = np.mean(v_reshape, axis = 1)
 		mean_v[np.isnan(mean_v)] = 0
@@ -426,7 +425,7 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 					update_model(this_eeg, fsd, epochlen, animal_name, State, delta_pre, delta_pre2, delta_pre3, delta_post,
 							 delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
 							 theta_post3, EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, thet_delt, EEGfire, EEGamp, EEGmax,
-							 EEGmean, EMGamp, model_dir, mod_name, emg_flag, movement_flag, video_dir, acq, a, bonsai_v)
+							 EEGmean, EMGamp, model_dir, mod_name, emg_flag, movement_flag, vid_flag, video_dir, acq, a, bonsai_v)
 				logq = input('Do you want to log the update?: y/n ') == 'y'
 				if logq:
 					log(log_dir, 0, animal, mouse_name, mod_name, a)
@@ -475,9 +474,8 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 								   EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, thet_delt, EEGfire, EEGamp, EEGmax,
 								   EEGmean, nans]
 				if movement_flag:
-					movement_df = SWS_utils.movement_extracting(video_dir, acq, a, bonsai_v)
-					time = np.size(this_eeg)/fsd
-					v = SWS_utils.movement_processing(movement_df, time)
+					this_video, v = SWS_utils.initialize_vid_and_move(bonsai_v, vid_flag, movement_flag, video_dir, a, 
+						acq, this_eeg, fsd)
 					v_reshape = np.reshape(v, (-1,epochlen))
 					mean_v = np.mean(v_reshape, axis = 1)
 					mean_v[np.isnan(mean_v)] = 0
@@ -510,7 +508,7 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 					update_model(this_eeg, fsd, epochlen, animal_name, Predict_y, delta_pre, delta_pre2, delta_pre3, delta_post,
 							 delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
 							 theta_post3, EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, thet_delt, EEGfire, EEGamp, EEGmax,
-							 EEGmean, EMGamp, model_dir, mod_name, emg_flag, movement_flag, video_dir, acq, a, bonsai_v)
+							 EEGmean, EMGamp, model_dir, mod_name, emg_flag, movement_flag, vid_flag, video_dir, acq, a, bonsai_v)
 				logq = input('Do you want to log the update?: y/n ') == 'y'
 				if logq:
 					log(log_dir, 1, animal, mouse_name, mod_name, a)
@@ -525,7 +523,7 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 								 theta_post2,
 								 theta_post3, EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, thet_delt, EEGfire,
 								 EEGamp, EEGmax,
-								 EEGmean, EMGamp, model_dir, mod_name, emg_flag, movement_flag, video_dir, acq, a, bonsai_v)
+								 EEGmean, EMGamp, model_dir, mod_name, emg_flag, movement_flag, vid_flag, video_dir, acq, a, bonsai_v)
 				logq = input('Do you want to log the update?: y/n ') == 'y'
 				if logq:
 					log(log_dir, 2, animal, mouse_name, mod_name, a)
