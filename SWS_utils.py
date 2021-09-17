@@ -105,11 +105,11 @@ def plot_spectrogram(ax, eegdat, fsd):
     ax.set_xlabel('Time (seconds)')
     ax.set_ylabel('Frequency (Hz)')
     # the minfreq and maxfreq args will limit the frequencies
-    Pxx, freqs, bins, im = my_specgram(eegdat, ax, NFFT=NFFT, Fs=fsd, noverlap=noverlap,
+    Pxx, freqs, bins, im = my_specgram(eegdat, ax = ax, NFFT=NFFT, Fs=fsd, noverlap=noverlap,
                                 cmap=cm.get_cmap('jet'), minfreq = minfreq, maxfreq = maxfreq,
                                 xextent = (0,np.int(t_elapsed)) )
 
-def my_specgram(x, ax, NFFT=400, Fs=200, Fc=0, detrend=mlab.detrend_none,
+def my_specgram(x, ax = None, NFFT=400, Fs=200, Fc=0, detrend=mlab.detrend_none,
              window=mlab.window_hanning, noverlap=200,
              cmap=None, xextent=None, pad_to=None, sides='default',
              scale_by_freq=None, minfreq = None, maxfreq = None, **kwargs):
@@ -194,10 +194,12 @@ def my_specgram(x, ax, NFFT=400, Fs=200, Fc=0, detrend=mlab.detrend_none,
     xmin, xmax = xextent
     freqs += Fc
     extent = xmin, xmax, freqs[0], freqs[-1]
-    im = ax.imshow(Z, cmap, extent=extent, **kwargs)
-    ax.axis('auto')
-
-    return Pxx, freqs, bins, im
+    if ax:
+        im = ax.imshow(Z, cmap, extent=extent, **kwargs)
+        ax.axis('auto')
+        return Pxx, freqs, bins, im
+    else:
+        return Pxx, freqs
 
 def plot_predicted(ax, Predict_y, is_predicted, clf, Features):
     ax.set_title('Predicted States')
@@ -227,12 +229,12 @@ def plot_predicted(ax, Predict_y, is_predicted, clf, Features):
 
 # This is the plotting collection function for the coarse prediction figure
 def create_prediction_figure(Predict_y, is_predicted, clf, Features, fs, eeg, this_emg, realtime, 
-    epochlen, start, end, movement_flag = False, trace = None):
+    epochlen, start, end, movement_flag = False, v = None):
     plt.ion()
     if movement_flag:
         #fig, (ax1, ax_move, ax2, ax3, axx) = plt.subplots(nrows = 5, ncols = 1, figsize = (11, 6))
         fig, (ax1, ax_move, ax2, axx) = plt.subplots(nrows = 4, ncols = 1, figsize = (11, 6))
-        ax_move.plot(trace, color = 'k', linestyle = '--')
+        ax_move.plot(v, color = 'k', linestyle = '--')
         ax_move.set_ylim([0,25])
         ax_move.set_xlim([0,int(np.size(eeg)/fs)])
 
@@ -242,7 +244,7 @@ def create_prediction_figure(Predict_y, is_predicted, clf, Features, fs, eeg, th
     plot_spectrogram(ax1, eeg, fs)
     plot_predicted(ax2, Predict_y, is_predicted, clf, Features)
 
-    plot_EMGFig2(axx, this_emg, epochlen, start, end, realtime, fs)
+    plot_EMGFig2(axx, this_emg, epochlen, realtime, fs)
 
     #fs = fsd
     #plot_EMGFig2(axx, this_emg, epochlen, x, start, end, realtime, fs)
@@ -260,18 +262,22 @@ def update_sleep_model(model_dir, mod_name, df_additions):
     Sleep_Model.to_pickle(model_dir + mod_name + '_model.pkl')
     return Sleep_Model
 
-def load_joblib(FeatureList, emg_flag, mod_name):
+def load_joblib(FeatureList, emg_flag, movement_flag, mod_name):
     x_features = cp.deepcopy(FeatureList)
     [x_features.remove(i) for i in ['Animal_Name', 'State']]
-    jobname =''
 
     if emg_flag:
-        jobname = mod_name + '_EMG.joblib'
+        jobname = mod_name + '_EMG'
         print("EMG flag on")
     else:
         x_features.remove('EMG')
-        jobname = mod_name + '_no_EMG.joblib'
+        jobname = mod_name + '_no_EMG'
         print('Just so you know...this model has no EMG')
+    if movement_flag:
+        jobname = jobname + '_movement'
+    else:
+        jobname = jobname + '_no_movement'
+    jobname = jobname + '.joblib'
     return jobname, x_features
 
 def retrain_model(Sleep_Model, x_features, model_dir, jobname):
@@ -292,7 +298,7 @@ def retrain_model(Sleep_Model, x_features, model_dir, jobname):
     print("Train Accuracy :: ", accuracy_score(train_y, clf.predict(train_x)))
     print("Test Accuracy :: ", accuracy_score(test_y, clf.predict(test_x)))
 
-    Satisfaction = input('Satisfied?: ')
+    Satisfaction = input('Satisfied? (y/n): ')
     if Satisfaction == 'y':
         clf = random_forest_classifier(Sleep_Model[x_features].apply(pd.to_numeric).values,
                                        Sleep_Model['State'].apply(pd.to_numeric).values)
@@ -306,7 +312,7 @@ def pull_up_movie(cap, fps, start, end, vid_file, epochlen):
     print('starting at ' + str(start/fps) + ' seconds')
     if not cap.isOpened():
         print("Error opening video stream or file")
-    score_win = np.arange(start+fps*1*epochlen, start+fps*2*epochlen)
+    score_win = np.arange(int(start+fps*1*epochlen), int(start+fps*2*epochlen))
     for f in np.arange(start, end):
         cap.set(1, f)
         ret, frame = cap.read()
@@ -320,31 +326,49 @@ def pull_up_movie(cap, fps, start, end, vid_file, epochlen):
     cv2.destroyAllWindows()
 
     #Creates line objects for the fine graph that plots data over 12s intervals
-def pull_up_raw_trace(ax1, ax2, ax3,ax4, ax5, emg, start, end, realtime,
-    this_eeg, fsd, LFP_ylim, delt, thet, epochlen, this_emg):
-    print('pull up the second figure for that bin - maybe. Option to click through a few bins around it?')
+def pull_up_raw_trace(ax1, ax2,ax4, emg, start, end, realtime,
+    this_eeg, fsd, LFP_ylim, DTh, epochlen, this_emg):
     x = (end - start)
     length = np.arange(int(end / x - start / x))
     bottom = np.zeros(int(end / x - start / x))
 
     #assert np.size(delt) == np.size(this_eeg) == np.size(thet)
 
-    print("Made it past assertions")
+    #print("Made it past assertions")
 
     line1 = plot_LFP(start, end, ax1, this_eeg, realtime, fsd, LFP_ylim, epochlen)
-    line2 = plot_delta(delt, start, end, fsd, ax2, epochlen, realtime)
-    line3 = plot_theta(ax3, start, end, fsd, thet, epochlen, realtime)
+    line2 = plot_DTh_ratio(DTh, start, end, fsd, ax2, epochlen)
+    # line2 = plot_delta(delt, start, end, fsd, ax2, epochlen, realtime)
+    # line3 = plot_theta(ax3, start, end, fsd, thet, epochlen, realtime)
 
     #plot spectrogram here
-    line5 = plot_spectrogram(ax5, this_eeg, fsd)
+    #line5 = plot_spectrogram(ax5, this_eeg, fsd)
 
     if not emg:
         ax4.text(0.5, 0.5, 'There is no EMG')
         line4 = plt.plot([0,0], [1,1], linewidth = 0, color = 'w')
     else:
         line4 = plot_EMG(ax4, length, bottom, this_emg, epochlen, x, start, end, realtime, fsd)
+        #line5 = plot_EMGFig2(ax5, this_emg, epochlen, realtime, fsd)
+    plt.show()
 
-    return line1, line2, line3, line4, line5
+    return line1, line2, line4
+
+def plot_DTh_ratio(DTh, start, end, fsd, ax, epochlen):
+    start = int(start/fsd)
+    end = int(end/fsd)
+    extra = 5*epochlen
+    long_DTh = np.concatenate((np.full(extra, 0),DTh, np.full(extra+1, 0)))
+    time = np.arange(extra*-1, np.size(DTh)+extra+1)
+    line2, = ax.plot(time[start:end], long_DTh[start:end])
+    ax.set_xlim(time[start], time[end])
+    ax.set_title('Theta/Delta Ratio')
+    ax.set_ylim([0,30])
+    top = ax.get_ylim()[1]
+    rectangle = patch.Rectangle((time[start]+(5*epochlen), top),epochlen,height=-top / 5)
+    ax.add_patch(rectangle)
+    
+    return line2
 
 def plot_delta(delt, start, end, fsd, ax, epochlen, realtime):
     line2, = ax.plot(realtime[start:end], delt[start:end])
@@ -367,31 +391,38 @@ def plot_theta(ax, start, end, fsd, theta, epochlen, realtime):
     return line3
 
 def plot_LFP(start, end, ax, this_eeg, realtime, fsd, LFP_ylim, epochlen):
-    line1, = ax.plot(realtime[start:end], this_eeg[start:end])
-    ax.set_xlim(start/fsd, end/fsd)
+    extra = 5*fsd*epochlen
+    long_eeg = np.concatenate((np.full(extra, 0),this_eeg, np.full(extra, 0)))
+    long_time = np.concatenate((np.arange(extra*-1, 0)/fsd,realtime[0:-1], np.arange(realtime[-1]*fsd, realtime[-1]*fsd+extra+1)/fsd))
+    line1, = ax.plot(long_time[start:end], long_eeg[start:end])
+    ax.set_xlim(long_time[start], long_time[end])
     ax.set_title('LFP')
     ax.set_ylim(-LFP_ylim, LFP_ylim)
     bottom = -LFP_ylim
-    rectangle = patch.Rectangle((start/fsd+epochlen, bottom),epochlen,height=-bottom/5)
+    rectangle = patch.Rectangle((long_time[start]+(5*epochlen), bottom),epochlen,height=-bottom/5)
     ax.add_patch(rectangle)
     return line1
 
 def plot_EMG(ax, length, bottom, this_emg, epochlen, x, start, end, realtime, fsd):
     # anything with EMG will error
-    line4, = ax.plot(realtime[start:end], this_emg[start:end], color = 'r')    
+    extra = 5*fsd*epochlen
+    long_emg = np.concatenate((np.full(extra, 0),this_emg, np.full(extra, 0)))
+    long_time = np.concatenate((np.arange(extra*-1, 0)/fsd,realtime[0:-1], np.arange(realtime[-1]*fsd, realtime[-1]*fsd+extra+1)/fsd))
+    line4, = ax.plot(long_time[start:end], long_emg[start:end], color = 'r')    
     ax.set_title('EMG Amplitde')
-    ax.set_xlim(start/fsd, end/fsd)
-    ax.set_ylim(0, 0.3)
-    top = ax.get_ylim()[1]
-    rectangle_4 = patch.Rectangle((start/fsd+epochlen, top), epochlen, height = -top / 5, color = 'r')
+    ax.set_xlim(long_time[start], long_time[end])
+    ax.set_ylim(-2.5, 2.5)
+    bottom = ax.get_ylim()[0]
+    rectangle_4 = patch.Rectangle((long_time[start]+(epochlen*5), bottom), epochlen, height = -bottom / 5, color = 'r')
     ax.add_patch(rectangle_4)
     return line4
 
-def plot_EMGFig2(ax, this_emg, epochlen, start, end, realtime, fsd):
+def plot_EMGFig2(ax, this_emg, epochlen, realtime, fsd):
     # anything with EMG will error
 
-    end = end * 300
-
+#    end = end * 300
+    start = 0
+    end = np.size(this_emg)
     x = (end - start)
     length = np.arange(int(end / x - start / x))
     bottom = np.zeros(int(end / x - start / x))
@@ -414,18 +445,18 @@ def plot_EMGFig2(ax, this_emg, epochlen, start, end, realtime, fsd):
     ax.set_title('Full-Length EMG')
     ax.set_xlim(start / fsd, end / fsd)
 
-    median = numpy.percentile(this_emg[start:end], 95)
+    median = np.percentile(this_emg[start:end], 95)
 
     print('Median: '+str(median))
 
-    ax.set_ylim(0, median*4)
+    ax.set_ylim(-median*4, median*4)
 
 
 
     #ax.autoscale()
-    top = ax.get_ylim()[1]
-    rectangle_4 = patch.Rectangle((start/fsd+epochlen, top), epochlen, height = -top / 5, color = 'r')
-    ax.add_patch(rectangle_4)
+    # top = ax.get_ylim()[1]
+    # rectangle_4 = patch.Rectangle((start/fsd+epochlen, top), epochlen, height = -top / 5, color = 'r')
+    # ax.add_patch(rectangle_4)
     return line4
 
 def clear_bins(bins, ax2):
@@ -492,50 +523,71 @@ def create_scoring_figure(extracted_dir, a, eeg, fsd,  movement_flag = False, tr
     fig.tight_layout()
     return fig, ax1, ax2
 
-def update_raw_trace(line1, line2, line3, line4, marker, fig, fig2, start, end, 
-    this_eeg, delt, thet, emg_flag, this_emg, realtime):
-    line1.set_ydata(this_eeg[start:end])
-    line2.set_ydata(delt[start:end])
-    line3.set_ydata(thet[start:end])
-    marker.set_xdata([realtime[end],realtime[end]])
+def update_raw_trace(line1, line2, line4, marker, fig, fig2, start, end, 
+    this_eeg, DTh, emg_flag, this_emg, realtime, fsd, epochlen):
+
+    extra_eeg = 5*fsd*epochlen
+    long_eeg = np.concatenate((np.full(extra_eeg, 0),this_eeg, np.full(extra_eeg, 0)))
+
+    extra_DTh = 5*epochlen
+    long_DTh = np.concatenate((np.full(extra_DTh, 0),DTh, np.full(extra_DTh+1, 0)))
+    time_DTh = np.arange(extra_DTh*-1, np.size(DTh)+extra_DTh+1)
+
+    line1.set_ydata(long_eeg[start:end])
+    line2.set_ydata(long_DTh[int(start/fsd):int(end/fsd)])
+    # line2.set_ydata(delt[start:end])
+    # line3.set_ydata(thet[start:end])
+    marker.set_xdata([realtime[int(start+(fsd*epochlen))],realtime[int(start+(fsd*epochlen))]])
     if emg_flag:
+        long_emg = np.concatenate((np.full(extra_eeg, 0),this_emg, np.full(extra_eeg, 0)))
         line4.set_ydata(this_emg[start:end])
     else:
         line4.set_ydata([1,1])
     fig.canvas.draw()
     fig2.canvas.draw()
-def make_marker(ax, end, realtime, fsd, epochlen):
+def make_marker(ax, this_bin, realtime, fsd, epochlen):
     ymin = ax.get_ylim()[0]
     ymax = ax.get_ylim()[1]
-    marker, = ax.plot([realtime[end], realtime[end]], [ymin, ymax], color = 'k')
+    marker, = ax.plot([realtime[this_bin], realtime[this_bin]], [ymin, ymax], color = 'k')
     return marker
 
-def raw_scoring_trace(ax1, ax2, ax3,ax4, axx, emg, start, end, realtime,
-    this_eeg, fsd, LFP_ylim, delt, thet, epochlen, this_emg):
+def raw_scoring_trace(ax1, ax2, ax4, axx, emg_flag, start, end, realtime, this_eeg, fsd,
+                        LFP_ylim, DTh, epochlen, this_emg):
     x = (end - start)
     length = np.arange(int(end / x - start / x))
     bottom = np.zeros(int(end / x - start / x))
 
-    assert np.size(delt) == np.size(this_eeg) == np.size(thet)
+    #assert np.size(delt) == np.size(this_eeg) == np.size(thet)
 
     line1 = plot_LFP(start, end, ax1, this_eeg, realtime, fsd, LFP_ylim, epochlen)
-    line2 = plot_delta(delt, start, end, fsd, ax2, epochlen, realtime)
-    line3 = plot_theta(ax3, start, end, fsd, thet, epochlen, realtime)
-    line5 = plot_EMGFig2(axx, this_emg, epochlen, start, end, realtime, fsd)
+    line2 = plot_DTh_ratio(DTh, start, end, fsd, ax2, epochlen)
+    # line3 = plot_theta(ax3, start, end, fsd, thet, epochlen, realtime)
 
-    if not emg:
+    if not emg_flag:
         ax4.text(0.5, 0.5, 'There is no EMG')
         line4 = plt.plot([0,0], [1,1], linewidth = 0, color = 'w')
     else:
         line4 = plot_EMG(ax4, length, bottom, this_emg, epochlen, x, start, end, realtime, fsd)
+        line5 = plot_EMGFig2(axx, this_emg, epochlen, realtime, fsd)
 
-    return line1, line2, line3, line4, line5
+    return line1, line2, line4, line5
 
-def load_video(this_video):
-    bn_vid, ext_vid = os.path.splitext(this_video)
-    timestamps = glob.glob(bn_vid+'*.txt') or glob.glob(bn_vid+'*.csv')
-    print('I think I found a timestamp file: ' + timestamps[0])
-    with open(timestamps[0], "r") as file:
+def load_video(this_video, bonsai_v, a, acq):
+    if bonsai_v < 6:
+        bn_vid, ext_vid = os.path.splitext(this_video)
+        timestamps = glob.glob(bn_vid+'*.txt') or glob.glob(bn_vid+'*.csv')
+        timestamp_file = timestamps[0]
+        print('I think I found a timestamp file: ' + timestamp_file)
+    if bonsai_v >= 6:
+        video_dir  = os.path.dirname(this_video)
+        top_directory = video_dir.replace(video_dir.split('/')[-1], '')
+        csv_dir = glob.glob(top_directory + '*csv')[0]
+        timestamp_files = glob.glob(os.path.join(csv_dir, '*timestamp*.csv'))
+        timestamp_files.sort(key=lambda f: os.path.getmtime(os.path.join(csv_dir, f)))
+        file_idx, = np.where(np.asarray(acq) == int(a))
+        timestamp_file = timestamp_files[int(file_idx)]
+
+    with open(timestamp_file, "r") as file:
         first_line = file.readline()
     try: 
         parse(first_line, fuzzy=False)
@@ -543,7 +595,7 @@ def load_video(this_video):
     except ValueError:
         print('This is not a timestamp file. Help.')
         sys.exit()
-    timestamp_df = pd.read_csv(timestamps[0], delimiter = "\n", header=None) 
+    timestamp_df = pd.read_csv(timestamp_file, delimiter = "\n", header=None) 
     timestamp_df.columns = ['Timestamps']
     cap = cv2.VideoCapture(this_video)
     fps = cap.get(cv2.CAP_PROP_FPS)
@@ -565,49 +617,99 @@ def convert_timestamp(timestamp_df):
     offset_time = [(datetimes[i]-datetimes[0]).total_seconds() for i in np.arange(len(datetimes))]
     timestamp_df['Offset Time'] = offset_time
     return timestamp_df
-
-def load_bands(extracted_dir, realtime, a, h, theta_flag = True, delta_flag = True):
-    if delta_flag:
-        delt = np.load(os.path.join(extracted_dir, 'delt' + str(a) + '_hr' + str(h) + '.npy'))
-        no_delt_start, = np.where(realtime < delt[1][0])
-        no_delt_end, = np.where(realtime > delt[1][-1])
-        delt_pad = np.pad(delt[0], (np.size(no_delt_start), np.size(no_delt_end)), 'constant',
-                          constant_values=(0, 0))
-    else:
-        print('Not loading delta')
-
-    if theta_flag:
-        thet = np.load(os.path.join(extracted_dir, 'thet' + str(a) + '_hr' + str(h) + '.npy'))
-        no_thet_start, = np.where(realtime < thet[1][0])
-        no_thet_end, = np.where(realtime > thet[1][-1])
-        thet_pad = np.pad(thet[0], (np.size(no_thet_start), np.size(no_thet_end)), 'constant',
-                          constant_values=(0, 0))
-    else:
-        print('Not loading theta')
-    if delta_flag & theta_flag:
-        return delt, delt_pad, thet, thet_pad
-    elif delta_flag:
-        return delt, delt_pad
-    elif theta_flag:
-        return thet, thet_pad
-    else:
-        print('Returning nothing')
-
-def movement_extracting(video_dir, acq):
-    #bn_vid, ext_vid = os.path.splitext(this_video)
-    #movement_file = bn_vid + '.csv'
-    movement_filedir = video_dir
-    movement_files = glob.glob(movement_filedir + '*.csv')
-    acq_cor = int(acq) - 1
-    movement_file = [movement_files[i] for i in range(len(movement_files)) if ('_' + str(acq_cor) + '.csv') in movement_files[i]][0]
-    if np.size(movement_file) == 1:
-        print('I think I found a movement file: ' + movement_file)
-        with open(movement_file, "r") as file:
-            first_line = file.readline()
-        if first_line == 'X,Y\n':
-            print('Yes, this is a movement file, incorporating this into the figure')
+def initialize_vid_and_move(bonsai_v, vid_flag, movement_flag, video_dir, a, acq, this_eeg, fsd):
+    if bonsai_v < 6:
+        if vid_flag:
+            this_video = glob.glob(os.path.join(video_dir, '*'+str(int(a)-1)+'.mp4'))[0]
+            print('using ' + this_video + ' for the video')
         else:
-            print('This is not a movement file. The first line is: ' + first_line)
+            this_video = None
+            print('no video available')
+
+        if movement_flag:
+            movement_df = movement_extracting(video_dir, acq, a, bonsai_v)
+            time = np.size(this_eeg)/fsd
+            v = movement_processing(movement_df, time)
+        else:
+            v = None
+    elif bonsai_v >= 6:
+        if vid_flag:
+            video_list = glob.glob(os.path.join(video_dir, '*.mp4'))
+            video_list.sort(key=lambda f: os.path.getmtime(os.path.join(video_dir, f)))
+            try:
+                assert len(video_list) == len(acq)
+            except AssertionError:
+                if len(video_list) > len(acq):
+                    print('There are more videos than aquisitions. Please move any videos that do not have a corresponding acquisition out of this directory: ' + str(video_dir))
+                if len(video_list) < len(acq):
+                    print('There are more acquisitions than videos. Only list acquisitions with videos in the Score_Settings.json file')
+            vid_idx, = np.where(np.asarray(acq) == int(a))
+            this_video = video_list[int(vid_idx)]
+        else:
+            this_video = None
+            print('no video available')
+
+        if movement_flag:
+            top_directory = video_dir.replace(video_dir.split('/')[-2], '')[:-1]
+            csv_dir = glob.glob(top_directory + '*csv')[0]
+            movement_df = movement_extracting(csv_dir, acq, a, bonsai_v)
+            time = np.size(this_eeg)/fsd
+            movement_df.columns = ['Timestamp', 'X','Y']
+            v = movement_processing(movement_df, time)
+        else:
+            v = None
+    return this_video, v
+# def load_bands(extracted_dir, realtime, a, h, theta_flag = True, delta_flag = True):
+#     if delta_flag:
+#         delt = np.load(os.path.join(extracted_dir, 'delt' + str(a) + '_hr' + str(h) + '.npy'))
+#         no_delt_start, = np.where(realtime < delt[1][0])
+#         no_delt_end, = np.where(realtime > delt[1][-1])
+#         delt_pad = np.pad(delt[0], (np.size(no_delt_start), np.size(no_delt_end)), 'constant',
+#                           constant_values=(0, 0))
+#     else:
+#         print('Not loading delta')
+
+#     if theta_flag:
+#         thet = np.load(os.path.join(extracted_dir, 'thet' + str(a) + '_hr' + str(h) + '.npy'))
+#         no_thet_start, = np.where(realtime < thet[1][0])
+#         no_thet_end, = np.where(realtime > thet[1][-1])
+#         thet_pad = np.pad(thet[0], (np.size(no_thet_start), np.size(no_thet_end)), 'constant',
+#                           constant_values=(0, 0))
+#     else:
+#         print('Not loading theta')
+#     if delta_flag & theta_flag:
+#         return delt, delt_pad, thet, thet_pad
+#     elif delta_flag:
+#         return delt, delt_pad
+#     elif theta_flag:
+#         return thet, thet_pad
+#     else:
+#         print('Returning nothing')
+
+def load_bands(this_eeg, fsd):
+
+    minfreq = 0.5 # min freq in Hz
+    maxfreq = 35 # max freq in Hz
+    Pxx, freqs = my_specgram(this_eeg, Fs = fsd)
+    delta_band = np.sum(Pxx[np.where(np.logical_and(freqs>=1,freqs<=4))],axis = 0)
+    theta_band = np.sum(Pxx[np.where(np.logical_and(freqs>=5,freqs<=8))],axis = 0)
+
+    return theta_band/delta_band
+
+def movement_extracting(video_dir, acq, a, bonsai_v):
+    if bonsai_v < 6:    
+        movement_filedir = video_dir
+        movement_files = glob.glob(movement_filedir + '*.csv')
+        acq_cor = int(a) - 1
+        movement_file = [movement_files[i] for i in range(len(movement_files)) if ('_' + str(acq_cor) + '.csv') in movement_files[i]][0]
+    elif bonsai_v >= 6:
+        movement_filedir = video_dir
+        movement_files = glob.glob(os.path.join(movement_filedir, '*motion*.csv'))
+        movement_files.sort(key=lambda f: os.path.getmtime(os.path.join(movement_filedir, f)))
+        file_idx, = np.where(np.asarray(acq) == int(a))
+        movement_file = movement_files[int(file_idx)]
+
+    print('I think I found a movement file: ' + movement_file)
     movement_df = pd.read_csv(movement_file)
     return movement_df
 

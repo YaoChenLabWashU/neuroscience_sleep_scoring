@@ -8,6 +8,8 @@ import matplotlib.pyplot as plt
 import os.path
 import math
 import psutil
+import json
+import sys
 
 
 def choosing_acquisition(filename_sw):
@@ -44,9 +46,16 @@ def choosing_acquisition(filename_sw):
 		else: 
 			print('I did not understand that input. Please run this function again.')
 			return
-	print('Copy the values below to the Acquisition line in ' + filename_sw)
+	print('Here are the acquisitions you chose: ')
 	print(sorted(acq))
 
+	with open(filename_sw, 'r') as f:
+		d = json.load(f)
+
+	d['Acquisition'] = sorted(acq)
+
+	with open(filename_sw, 'w') as f:
+		json.dump(d, f, indent=2)
 
 def downsample_filter(filename_sw):
 	with open(filename_sw, 'r') as f:
@@ -83,6 +92,7 @@ def downsample_filter(filename_sw):
 	
 
 	for fil in np.arange(np.size(acq)):
+		a = acq[fil]
 		Wn = [filt_low/nyq,filt_high/nyq] # Cutoff frequencies
 		f_eeg = EEG_files[fil]
 		f_emg = EMG_files[fil]
@@ -99,10 +109,35 @@ def downsample_filter(filename_sw):
 			B, A = signal.butter(N, Wn, btype='highpass',output='ba')
 			emgfilt = signal.filtfilt(B,A, emg)
 			emg_downsamp = signal.resample(emgfilt, int(new_len))
-			emg_abs = np.absolute(emg_downsamp)
+			#emg_abs = np.absolute(emg_downsamp)
 		eeg_downsamp = signal.resample(eegfilt, int(new_len))
-		np.save(os.path.join(savedir, 'downsampEEG_Acq'+str(acq[fil])), eeg_downsamp)
-		np.save(os.path.join(savedir, 'downsampEMG_Acq'+str(acq[fil])), emg_abs)
+		np.save(os.path.join(savedir, 'downsampEEG_Acq'+str(a)), eeg_downsamp)
+		np.save(os.path.join(savedir, 'downsampEMG_Acq'+str(a)), emg_downsamp)
+
+		acq_len = np.size(eeg_downsamp)/fsd
+		hour_segs = math.ceil(acq_len/3600)
+
+		for h in np.arange(hour_segs):
+			if hour_segs == 1:
+				this_eeg = eeg_downsamp
+				if int(d['emg']) == 1:
+					this_emg = emg_downsamp
+			elif h == hour_segs-1:
+				this_eeg = eeg_downsamp[h*3600*fsd:]
+				if int(d['emg']) == 1:
+					this_emg = emg_downsamp[h*3600*fsd:]
+			else:
+				this_eeg = eeg_downsamp[h*3600*fsd:(h+1)*3600*fsd]
+				if int(d['emg']) == 1:
+					this_emg = emg_downsamp[h*3600*fsd:(h+1)*3600*fsd]
+			seg_len = np.size(this_eeg)/fsd
+			nearest_epoch = math.floor(seg_len/epochlen)
+			new_length = int(nearest_epoch*epochlen*fsd)
+			this_eeg = this_eeg[0:new_length]			
+			np.save(os.path.join(savedir, 'downsampEEG_Acq'+str(a) + '_hr' + str(h)+ '.npy'), this_eeg)
+			np.save(os.path.join(savedir, 'downsampEMG_Acq'+str(a) + '_hr' + str(h)+ '.npy'), this_emg)
+
+
 def create_spectrogram(filename_sw):
 	with open(filename_sw, 'r') as f:
 		d = json.load(f)
@@ -166,6 +201,17 @@ def create_spectrogram(filename_sw):
 			del(this_eeg)
 			del(this_emg)
 			
+if __name__ == "__main__":
+	args = sys.argv
+	# Why do we need to assert this??? Why the heck would you care if you execute from the same dir if we don't use relative paths anywhere else in the code
+	# assert args[0] == 'New_SWS.py'
+	if len(args) < 2:
+		print("You need to specify the path of your Score_Settings.json. For instance, run `python New_SWS.py /home/ChenLab_Sleep_Scoring/Score_Settings.json`.")
+	elif len(args) > 2:
+		print("You only need to specify the path of your Score_Settings.json. For instance, run `python New_SWS.py /home/ChenLab_Sleep_Scoring/Score_Settings.json`.")
+	else:
+		choosing_acquisition(args[1])
+		downsample_filter(args[1])
 
 
 
