@@ -63,7 +63,7 @@ def downsample_filter(filename_sw):
 
 	rawdat_dir = str(d['rawdat_dir'])
 	model_dir = str(d['model_dir'])
-	animal = str(d['animal'])
+	animal = str(d['species'])
 	epochlen = int(d['epochlen'])
 	fs = int(d['fs'])
 	emg_flag = int(d['emg'])
