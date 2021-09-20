@@ -43,7 +43,7 @@ def manual_scoring(extracted_dir, a, acq, this_eeg, fsd, epochlen, emg_flag, thi
 	# Manually score the entire file.
 	plt.ion()
 	fig, (ax1, ax2, ax4, axx) = plt.subplots(nrows=4, ncols=1, figsize=(11, 6))
-	fig2, ax5, ax6 = SWS_utils.create_scoring_figure(extracted_dir, a, eeg=this_eeg, fsd=fsd, movement_flag = movement_flag, trace = v)
+	fig2, ax5, ax6 = SWS_utils.create_scoring_figure(extracted_dir, a, eeg=this_eeg, fsd=fsd, movement_flag = movement_flag, v = v)
 	
 	cID2 = fig.canvas.mpl_connect('key_press_event', on_press)
 	cID3 = fig2.canvas.mpl_connect('key_press_event', on_press)

@@ -20,6 +20,7 @@ import time
 import glob
 from dateutil.parser import parse
 from datetime import datetime
+from pandas.io.parsers import ParserError
 
 def generate_signal(downsamp_signal, epochlen, fs): # fs = fsd here
     # mean of 4 seconds
@@ -483,7 +484,7 @@ def correct_bins(start_bin, end_bin, ax2, new_state):
         print('loc: ', location)
         ax2.add_patch(rectangle)
 
-def create_scoring_figure(extracted_dir, a, eeg, fsd,  movement_flag = False, trace = None):
+def create_scoring_figure(extracted_dir, a, eeg, fsd,  movement_flag = False, v = None):
     if movement_flag:
         fig = plt.figure(constrained_layout=True, figsize = (11, 6))
         widths = [1]
@@ -505,7 +506,7 @@ def create_scoring_figure(extracted_dir, a, eeg, fsd,  movement_flag = False, tr
     #fig, (ax1, ax2) = plt.subplots(nrows = 2, ncols = 1, figsize = (11, 6))
     plot_spectrogram(ax1, eeg, fsd)
     if movement_flag:
-        ax4.plot(trace, color = 'k', linestyle = '--')
+        ax4.plot(v, color = 'k', linestyle = '--')
         ax4.set_ylim([0,25])
         ax4.set_xlim([0,int(np.size(eeg)/fsd)])
     ax2.set_ylim(0.3, 1)
@@ -575,9 +576,23 @@ def raw_scoring_trace(ax1, ax2, ax4, axx, emg_flag, start, end, realtime, this_e
 def load_video(this_video, bonsai_v, a, acq):
     if bonsai_v < 6:
         bn_vid, ext_vid = os.path.splitext(this_video)
-        timestamps = glob.glob(bn_vid+'*.txt') or glob.glob(bn_vid+'*.csv')
-        timestamp_file = timestamps[0]
-        print('I think I found a timestamp file: ' + timestamp_file)
+        if '_filled' in bn_vid:
+            bn_vid = bn_vid.replace('_filled', '')
+        timestamps = glob.glob(bn_vid+'*.txt')
+        timestamps_csv = glob.glob(bn_vid+'*.csv')
+        for t in timestamps_csv:
+            timestamps.append(t)
+        for tf in timestamps:
+            print('I think I found a timestamp file: ' + tf)
+            with open(tf, "r") as file:
+                first_line = file.readline()
+            try: 
+                parse(first_line, fuzzy=False)
+                print('This is a timestamp file. Moving on...')
+                timestamp_file = tf
+            except Exception:
+                print('This is not a timestamp file. Help.')
+
     if bonsai_v >= 6:
         video_dir  = os.path.dirname(this_video)
         top_directory = video_dir.replace(video_dir.split('/')[-1], '')
@@ -586,15 +601,8 @@ def load_video(this_video, bonsai_v, a, acq):
         timestamp_files.sort(key=lambda f: os.path.getmtime(os.path.join(csv_dir, f)))
         file_idx, = np.where(np.asarray(acq) == int(a))
         timestamp_file = timestamp_files[int(file_idx)]
+        print('Timestamp file: ' + timestamp_file)
 
-    with open(timestamp_file, "r") as file:
-        first_line = file.readline()
-    try: 
-        parse(first_line, fuzzy=False)
-        print('This is a timestamp file. Moving on...')
-    except ValueError:
-        print('This is not a timestamp file. Help.')
-        sys.exit()
     timestamp_df = pd.read_csv(timestamp_file, delimiter = "\n", header=None) 
     timestamp_df.columns = ['Timestamps']
     cap = cv2.VideoCapture(this_video)
@@ -618,73 +626,39 @@ def convert_timestamp(timestamp_df):
     timestamp_df['Offset Time'] = offset_time
     return timestamp_df
 def initialize_vid_and_move(bonsai_v, vid_flag, movement_flag, video_dir, a, acq, this_eeg, fsd):
-    if bonsai_v < 6:
-        if vid_flag:
-            this_video = glob.glob(os.path.join(video_dir, '*'+str(int(a)-1)+'.mp4'))[0]
-            print('using ' + this_video + ' for the video')
-        else:
-            this_video = None
-            print('no video available')
-
-        if movement_flag:
-            movement_df = movement_extracting(video_dir, acq, a, bonsai_v)
+    if vid_flag:
+        video_list = glob.glob(os.path.join(video_dir, '*.mp4'))
+        video_list.sort(key=lambda f: os.path.getmtime(os.path.join(video_dir, f)))
+        try:
+            assert len(video_list) == len(acq)
+        except AssertionError:
+            if len(video_list) > len(acq):
+                print('There are more videos than aquisitions. Please move any videos that do not have a corresponding acquisition out of this directory: ' + str(video_dir))
+            if len(video_list) < len(acq):
+                print('There are more acquisitions than videos. Only list acquisitions with videos in the Score_Settings.json file')
+        vid_idx, = np.where(np.asarray(acq) == int(a))
+        this_video = video_list[int(vid_idx)]
+        print('This is your video file: ' + this_video)
+    else:
+        this_video = None
+        print('no video available')
+    if movement_flag:
+        if bonsai_v < 6:
+            movement_df = movement_extracting(video_dir, acq, a, bonsai_v, this_video = this_video)
             time = np.size(this_eeg)/fsd
             v = movement_processing(movement_df, time)
-        else:
-            v = None
-    elif bonsai_v >= 6:
-        if vid_flag:
-            video_list = glob.glob(os.path.join(video_dir, '*.mp4'))
-            video_list.sort(key=lambda f: os.path.getmtime(os.path.join(video_dir, f)))
-            try:
-                assert len(video_list) == len(acq)
-            except AssertionError:
-                if len(video_list) > len(acq):
-                    print('There are more videos than aquisitions. Please move any videos that do not have a corresponding acquisition out of this directory: ' + str(video_dir))
-                if len(video_list) < len(acq):
-                    print('There are more acquisitions than videos. Only list acquisitions with videos in the Score_Settings.json file')
-            vid_idx, = np.where(np.asarray(acq) == int(a))
-            this_video = video_list[int(vid_idx)]
-        else:
-            this_video = None
-            print('no video available')
 
-        if movement_flag:
+        if bonsai_v >= 6:
             top_directory = video_dir.replace(video_dir.split('/')[-2], '')[:-1]
             csv_dir = glob.glob(top_directory + '*csv')[0]
-            movement_df = movement_extracting(csv_dir, acq, a, bonsai_v)
+            movement_df = movement_extracting(csv_dir, acq, a, bonsai_v, this_video = None)
             time = np.size(this_eeg)/fsd
             movement_df.columns = ['Timestamp', 'X','Y']
             v = movement_processing(movement_df, time)
-        else:
-            v = None
+    else:
+        v = None
     return this_video, v
-# def load_bands(extracted_dir, realtime, a, h, theta_flag = True, delta_flag = True):
-#     if delta_flag:
-#         delt = np.load(os.path.join(extracted_dir, 'delt' + str(a) + '_hr' + str(h) + '.npy'))
-#         no_delt_start, = np.where(realtime < delt[1][0])
-#         no_delt_end, = np.where(realtime > delt[1][-1])
-#         delt_pad = np.pad(delt[0], (np.size(no_delt_start), np.size(no_delt_end)), 'constant',
-#                           constant_values=(0, 0))
-#     else:
-#         print('Not loading delta')
 
-#     if theta_flag:
-#         thet = np.load(os.path.join(extracted_dir, 'thet' + str(a) + '_hr' + str(h) + '.npy'))
-#         no_thet_start, = np.where(realtime < thet[1][0])
-#         no_thet_end, = np.where(realtime > thet[1][-1])
-#         thet_pad = np.pad(thet[0], (np.size(no_thet_start), np.size(no_thet_end)), 'constant',
-#                           constant_values=(0, 0))
-#     else:
-#         print('Not loading theta')
-#     if delta_flag & theta_flag:
-#         return delt, delt_pad, thet, thet_pad
-#     elif delta_flag:
-#         return delt, delt_pad
-#     elif theta_flag:
-#         return thet, thet_pad
-#     else:
-#         print('Returning nothing')
 
 def load_bands(this_eeg, fsd):
 
@@ -696,20 +670,30 @@ def load_bands(this_eeg, fsd):
 
     return theta_band/delta_band
 
-def movement_extracting(video_dir, acq, a, bonsai_v):
+def movement_extracting(video_dir, acq, a, bonsai_v, this_video = None):
     if bonsai_v < 6:    
         movement_filedir = video_dir
-        movement_files = glob.glob(movement_filedir + '*.csv')
-        acq_cor = int(a) - 1
-        movement_file = [movement_files[i] for i in range(len(movement_files)) if ('_' + str(acq_cor) + '.csv') in movement_files[i]][0]
+        movement_files = glob.glob(os.path.join(movement_filedir, '*.csv'))
+        temp = [movement_files[i] for i in range(len(movement_files)) if (os.path.splitext(this_video)[0]) in movement_files[i]]
+        print('I think I found some movements file(s): ')
+        print(temp)
+        for f in temp:
+            with open(f, "r") as file:
+                first_line = file.readline()
+                if first_line == 'X,Y\n':
+                    print('This is your movement file: ' + f)
+                    movement_file = f
+                    break
+                else:
+                    print(f + 'is actually not a movement file.')
+
     elif bonsai_v >= 6:
         movement_filedir = video_dir
         movement_files = glob.glob(os.path.join(movement_filedir, '*motion*.csv'))
         movement_files.sort(key=lambda f: os.path.getmtime(os.path.join(movement_filedir, f)))
         file_idx, = np.where(np.asarray(acq) == int(a))
         movement_file = movement_files[int(file_idx)]
-
-    print('I think I found a movement file: ' + movement_file)
+        print('This is your movement file: ' + movement_file)
     movement_df = pd.read_csv(movement_file)
     return movement_df
 
