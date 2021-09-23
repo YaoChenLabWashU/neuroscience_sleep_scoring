@@ -301,7 +301,7 @@ def display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, acq, h, e
 
 
 def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_flag, 
-	movement_flag, mouse_name, animal, model_dir, mod_name, log_dir, acq, video_dir, bonsai_v):
+	movement_flag, mouse_name, animal, model_dir, mod_name, modellog_dir, personallog_dir, acq, video_dir, bonsai_v):
 	# mostly for deprecated packages
 	print('this code is supressing warnings')
 	warnings.filterwarnings("ignore")
@@ -425,9 +425,10 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 							 delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
 							 theta_post3, EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, thet_delt, EEGfire, EEGamp, EEGmax,
 							 EEGmean, EMGamp, model_dir, mod_name, emg_flag, movement_flag, vid_flag, video_dir, acq, a, bonsai_v)
-				logq = input('Do you want to log the update?: y/n ') == 'y'
+					model_log(log_dir, 0, animal, mouse_name, mod_name, a)
+				logq = input('Do you want to update your personal log?: y/n ') == 'y'
 				if logq:
-					log(log_dir, 0, animal, mouse_name, mod_name, a)
+					personal_log(personallog_dir, mouse_name, save_dir, a)
 
 			except FileNotFoundError:
 				# if the file is a brand new one for scoring
@@ -508,9 +509,10 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 							 delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
 							 theta_post3, EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, thet_delt, EEGfire, EEGamp, EEGmax,
 							 EEGmean, EMGamp, model_dir, mod_name, emg_flag, movement_flag, vid_flag, video_dir, acq, a, bonsai_v)
-				logq = input('Do you want to log the update?: y/n ') == 'y'
+					model_log(log_dir, 1, animal, mouse_name, mod_name, a)
+				logq = input('Do you want to update your personal log?: y/n ') == 'y'
 				if logq:
-					log(log_dir, 1, animal, mouse_name, mod_name, a)
+					personal_log(personallog_dir, mouse_name, save_dir, a)
 			# No model code
 			else:
 				State = manual_scoring(extracted_dir, a, acq, this_eeg, fsd, epochlen, emg_flag, 
@@ -523,9 +525,10 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 								 theta_post3, EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, thet_delt, EEGfire,
 								 EEGamp, EEGmax,
 								 EEGmean, EMGamp, model_dir, mod_name, emg_flag, movement_flag, vid_flag, video_dir, acq, a, bonsai_v)
-				logq = input('Do you want to log the update?: y/n ') == 'y'
+					model_log(log_dir, 2, animal, mouse_name, mod_name, a)
+				logq = input('Do you want to update your personal log?: y/n ') == 'y'
 				if logq:
-					log(log_dir, 2, animal, mouse_name, mod_name, a)
+					personal_log(personallog_dir, mouse_name, save_dir, a)
 
 
 
@@ -542,14 +545,15 @@ def load_data_for_sw(filename_sw):
 	model_dir = str(d['model_dir'])
 	animal = str(d['species'])
 	mod_name = str(d['mod_name'])
-	log_dir = str(d['log_dir'])
+	modellog_dir = str(d['modellog_dir'])
+	personallog_dir = str(d['personallog_dir'])
 	mouse_name = str(d['mouse_name'])
 	acq = d['Acquisition']
 	video_dir = d['video_dir']
 	bonsai_v = d['Bonsai Version']
 
 	start_swscoring(filename_sw, extracted_dir, epochlen, fsd, emg_flag, vid_flag, 
-		movement_flag, mouse_name, animal, model_dir, mod_name, log_dir, acq, video_dir, bonsai_v)
+		movement_flag, mouse_name, animal, model_dir, mod_name, modellog_dir, personallog_dir, acq, video_dir, bonsai_v)
 
 
 # Arg 1 is the path of the sleep scoring setting json, taken from argv[1]
@@ -557,7 +561,7 @@ def load_data_for_sw(filename_sw):
 # Type argument is for the type of scoring as an unsinged int
 # 0 = corrected, 1 = scored w/ ML model, 2 = scored in legacy mode
 
-def log(log_dir, action, animal, mouse_name, mod_name, a):
+def model_log(log_dir, action, animal, mouse_name, mod_name, a):
 	log_file = os.path.join(log_dir, mod_name+'_scoringlog.txt')
 	if not os.path.exists(log_file):
 		print(log_file + ' does not exist. Making it now')
@@ -584,6 +588,17 @@ def log(log_dir, action, animal, mouse_name, mod_name, a):
 		state_dict[str(action)]  + " by " + whois + " on " + dt_string + "\n")
 	file.flush()
 	file.close()
+def personal_log(log_dir, mouse_name, save_dir, a):
+	log_file = os.path.join(log_dir, mod_name+'_personal_scoringlog.csv')
+	if not os.path.exists(log_file):
+		print(log_file + ' does not exist. Making it now')
+	    df = pd.DataFrame(data, columns=['Date', 'Mouse Name', 'Acquisition', 
+	        'State Array Location'])
+	    df.to_csv(log_file, mode='a', header=True, index=False)
+    d = {'Date': [pd.Timestamp.now()], 'Mouse Name': [mouse_name], 'Acquisition': [a],
+    		'State Array Location': [save_dir]}
+    df = pd.DataFrame(data=d)
+    df.to_csv(log_file, mode='a', header=False, index=False)
 
 if __name__ == "__main__":
 	args = sys.argv
