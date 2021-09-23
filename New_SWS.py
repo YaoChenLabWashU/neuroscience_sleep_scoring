@@ -16,7 +16,6 @@ from joblib import dump, load
 import pandas as pd
 import warnings
 from neuroscience_sleep_scoring import SWS_utils
-from neuroscience_sleep_scoring import train_model
 from datetime import datetime
 from neuroscience_sleep_scoring.SW_Cursor import Cursor
 from neuroscience_sleep_scoring.SW_Cursor import ScoringCursor
