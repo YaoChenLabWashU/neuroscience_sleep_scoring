@@ -10,7 +10,8 @@ To start a new project:
   "rawdat_dir": "/Volumes/yaochen/Active/Jacob Amme/jaLC_FLiPAKAREEGEMG004/jaLC_FLiPAKAREEGEMG004_data/", #This is where your raw EEG is
   "model_dir": "/Users/lizzie/Desktop/Remote_Git/neuroscience_sleep_scoring/model/", #This is the directory with the Sleep Scoring model
   "video_dir": "/Users/lizzie/Box/ChenLab/Jacob Amme/FLiP Videos/jaLC_FLiPAKAREEGEMG004/", #This is the directory wiht videos
-  "log_dir": "/Users/lizzie/Desktop/", #This is where the log file is saved
+  "modellog_dir": "/Users/lizzie/Desktop/", #This is where the model log is saved, will be the same as the model dir
+  "personallog_dir": "/Volumes/yaochen/Active/Jacob Amme/" #This is where your personal log file will be
   "species": "mouse", #species of animal used (just in case rats are eventually used in the future)
   "mod_name": "mouse", #I wouldn't change this
   "mouse_name": "1225-9", #Animal name (not experiment name)
