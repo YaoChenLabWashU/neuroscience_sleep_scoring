@@ -425,10 +425,10 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 							 delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
 							 theta_post3, EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, thet_delt, EEGfire, EEGamp, EEGmax,
 							 EEGmean, EMGamp, model_dir, mod_name, emg_flag, movement_flag, vid_flag, video_dir, acq, a, bonsai_v)
-					model_log(log_dir, 0, animal, mouse_name, mod_name, a)
+					model_log(modellog_dir, 0, animal, mouse_name, mod_name, a)
 				logq = input('Do you want to update your personal log?: y/n ') == 'y'
 				if logq:
-					personal_log(personallog_dir, mouse_name, save_dir, a)
+					personal_log(personallog_dir, mouse_name, extracted_dir, a)
 
 			except FileNotFoundError:
 				# if the file is a brand new one for scoring
@@ -492,6 +492,7 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 
 				Predict_y = clf.predict(Features)
 				Predict_y = SWS_utils.fix_states(Predict_y)
+				np.save(os.path.join(extracted_dir, 'model_prediction_Acq' + str(a) + '_hr' + str(h) + '.npy'), Predict_y)
 
 				Predict_y = display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, acq, h, emg_flag, 
 					movement_flag, this_emg, Predict_y, True, clf, Features, vid_flag, this_video, bonsai_v, v = v)
@@ -509,10 +510,10 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 							 delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
 							 theta_post3, EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, thet_delt, EEGfire, EEGamp, EEGmax,
 							 EEGmean, EMGamp, model_dir, mod_name, emg_flag, movement_flag, vid_flag, video_dir, acq, a, bonsai_v)
-					model_log(log_dir, 1, animal, mouse_name, mod_name, a)
+					model_log(modellog_dir, 1, animal, mouse_name, mod_name, a)
 				logq = input('Do you want to update your personal log?: y/n ') == 'y'
 				if logq:
-					personal_log(personallog_dir, mouse_name, save_dir, a)
+					personal_log(personallog_dir, mouse_name, extracted_dir, a)
 			# No model code
 			else:
 				State = manual_scoring(extracted_dir, a, acq, this_eeg, fsd, epochlen, emg_flag, 
@@ -525,10 +526,10 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 								 theta_post3, EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, thet_delt, EEGfire,
 								 EEGamp, EEGmax,
 								 EEGmean, EMGamp, model_dir, mod_name, emg_flag, movement_flag, vid_flag, video_dir, acq, a, bonsai_v)
-					model_log(log_dir, 2, animal, mouse_name, mod_name, a)
+					model_log(modellog_dir, 2, animal, mouse_name, mod_name, a)
 				logq = input('Do you want to update your personal log?: y/n ') == 'y'
 				if logq:
-					personal_log(personallog_dir, mouse_name, save_dir, a)
+					personal_log(personallog_dir, mouse_name, extracted_dir, a)
 
 
 
@@ -584,21 +585,19 @@ def model_log(log_dir, action, animal, mouse_name, mod_name, a):
 	dt_string = now.strftime("%m/%d/%Y %H:%M:%S")
 	
 	whois = input("What is your name?:")
-	file.write(animal + " " + mouse_name + "acquisition " + str(a) +  " was " + 
+	file.write(animal + " " + mouse_name + " acquisition " + str(a) +  " was " + 
 		state_dict[str(action)]  + " by " + whois + " on " + dt_string + "\n")
 	file.flush()
 	file.close()
 def personal_log(log_dir, mouse_name, save_dir, a):
-	log_file = os.path.join(log_dir, mod_name+'_personal_scoringlog.csv')
+	log_file = os.path.join(log_dir,'personal_scoringlog.csv')
 	if not os.path.exists(log_file):
 		print(log_file + ' does not exist. Making it now')
-	    df = pd.DataFrame(data, columns=['Date', 'Mouse Name', 'Acquisition', 
-	        'State Array Location'])
-	    df.to_csv(log_file, mode='a', header=True, index=False)
-    d = {'Date': [pd.Timestamp.now()], 'Mouse Name': [mouse_name], 'Acquisition': [a],
-    		'State Array Location': [save_dir]}
-    df = pd.DataFrame(data=d)
-    df.to_csv(log_file, mode='a', header=False, index=False)
+		df = pd.DataFrame(columns=['Date', 'Mouse Name', 'Acquisition', 'State Array Location'])
+		df.to_csv(log_file, mode='a', header=True, index=False)
+	d = {'Date': [pd.Timestamp.now()], 'Mouse Name': [mouse_name], 'Acquisition': [a],'State Array Location': [save_dir]}
+	df = pd.DataFrame(data=d)
+	df.to_csv(log_file, mode='a', header=False, index=False)
 
 if __name__ == "__main__":
 	args = sys.argv

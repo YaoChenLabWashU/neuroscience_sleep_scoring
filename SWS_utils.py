@@ -637,7 +637,10 @@ def initialize_vid_and_move(bonsai_v, vid_flag, movement_flag, video_dir, a, acq
             if len(video_list) < len(acq):
                 print('There are more acquisitions than videos. Only list acquisitions with videos in the Score_Settings.json file')
         vid_idx, = np.where(np.asarray(acq) == int(a))
-        this_video = video_list[int(vid_idx)]
+        if video_dir == "F:/FLiP_Videos/jaLC_FLiPAKAREEGEMG004/":
+            this_video = glob.glob(os.path.join(video_dir, '*_' + str(int(a)-1) +'.mp4'))[0]
+        else:
+            this_video = video_list[int(vid_idx)]
         print('This is your video file: ' + this_video)
     else:
         this_video = None
@@ -649,6 +652,8 @@ def initialize_vid_and_move(bonsai_v, vid_flag, movement_flag, video_dir, a, acq
             v = movement_processing(movement_df, time)
 
         if bonsai_v >= 6:
+            if video_dir[-1] != '/':
+                video_dir = video_dir + '/'
             top_directory = video_dir.replace(video_dir.split('/')[-2], '')[:-1]
             csv_dir = glob.glob(top_directory + '*csv')[0]
             movement_df = movement_extracting(csv_dir, acq, a, bonsai_v, this_video = None)
