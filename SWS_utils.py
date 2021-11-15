@@ -620,7 +620,7 @@ def load_video(this_video, bonsai_v, a, acq):
 
 def convert_timestamp(timestamp_df):
     ts_format = '%Y-%m-%dT%H:%M:%S.%f'
-    short_ts = [x.replace('-05:00', '') for x in list(timestamp_df['Timestamps'])]
+    short_ts = [x[:-6] for x in list(timestamp_df['Timestamps'])]
     datetimes = [datetime.strptime(short_ts[i][:-1], ts_format) for i in np.arange(len(short_ts))]
     offset_time = [(datetimes[i]-datetimes[0]).total_seconds() for i in np.arange(len(datetimes))]
     timestamp_df['Offset Time'] = offset_time
