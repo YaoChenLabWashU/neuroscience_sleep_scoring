@@ -38,11 +38,11 @@ def on_press(event):
 
 
 def manual_scoring(extracted_dir, a, acq, this_eeg, fsd, epochlen, emg_flag, this_emg, 
-	vid_flag, this_video, h, movement_flag, bonsai_v, v = None):
+	vid_flag, this_video, h, movement_flag, bonsai_v, maxfreq, minfreq, v = None):
 	# Manually score the entire file.
 	plt.ion()
 	fig, (ax1, ax2, ax4, axx) = plt.subplots(nrows=4, ncols=1, figsize=(11, 6))
-	fig2, ax5, ax6 = SWS_utils.create_scoring_figure(extracted_dir, a, eeg=this_eeg, fsd=fsd, movement_flag = movement_flag, v = v)
+	fig2, ax5, ax6 = SWS_utils.create_scoring_figure(extracted_dir, a, this_eeg, fsd, maxfreq, minfreq, movement_flag = movement_flag, v = v)
 	
 	cID2 = fig.canvas.mpl_connect('key_press_event', on_press)
 	cID3 = fig2.canvas.mpl_connect('key_press_event', on_press)
@@ -192,7 +192,8 @@ def update_model(this_eeg, fsd, epochlen, animal_name, State, delta_pre, delta_p
 
 
 def display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, acq, h, emg_flag, 
-	movement_flag, this_emg, State_input, is_predicted, clf, Features, vid_flag, this_video, bonsai_v, v = None):
+	movement_flag, this_emg, State_input, is_predicted, clf, Features, vid_flag, this_video, bonsai_v, 
+	maxfreq, minfreq, v = None):
 	plt.ion()
 	i = 0
 	this_bin = 1*fsd*epochlen
@@ -216,7 +217,7 @@ def display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, acq, h, e
 															 epochlen, this_emg)
 
 	fig, ax1, ax2, axx = SWS_utils.create_prediction_figure(State_input, is_predicted, clf, 
-			Features, fsd, this_eeg, this_emg, realtime, epochlen, start_trace, end_trace, movement_flag = movement_flag, v = v)
+			Features, fsd, this_eeg, this_emg, realtime, epochlen, start_trace, end_trace, maxfreq, minfreq, movement_flag = movement_flag, v = v)
 
 	marker = SWS_utils.make_marker(ax1, this_bin, realtime, fsd, epochlen)
 
@@ -301,7 +302,8 @@ def display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, acq, h, e
 
 
 def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_flag, 
-	movement_flag, mouse_name, animal, model_dir, mod_name, modellog_dir, personallog_dir, acq, video_dir, bonsai_v):
+	movement_flag, mouse_name, animal, model_dir, mod_name, modellog_dir, personallog_dir, acq, video_dir, bonsai_v,
+	maxfreq, minfreq):
 	# mostly for deprecated packages
 	print('this code is supressing warnings')
 	warnings.filterwarnings("ignore")
@@ -410,13 +412,13 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 							  '4': 'purple'}
 
 				State = display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, acq, h, emg_flag, movement_flag, this_emg, State, False, None,
-										None, vid_flag, this_video, bonsai_v, v = v)
+										None, vid_flag, this_video, bonsai_v, maxfreq, minfreq, v = v)
 				if np.any(State == 0):
 					print('The following bins are not scored: \n' + str(np.where(State == 0)[0])  )
 					zero_check = input('Do you want to go back and fix this right now? (y/n)' ) == 'y'
 					if zero_check:
 						State = display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, acq, h, emg_flag, movement_flag, this_emg, State, False, None,
-										None, vid_flag, this_video, bonsai_v, v = v)					
+										None, vid_flag, this_video, bonsai_v, maxfreq, minfreq, v = v)					
 					else:
 						print('Ok, but please do not update the model until you fix them')
 				update = input('Do you want to update the model?: y/n ') == 'y'
@@ -495,7 +497,7 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 				np.save(os.path.join(extracted_dir, 'model_prediction_Acq' + str(a) + '_hr' + str(h) + '.npy'), Predict_y)
 
 				Predict_y = display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, acq, h, emg_flag, 
-					movement_flag, this_emg, Predict_y, True, clf, Features, vid_flag, this_video, bonsai_v, v = v)
+					movement_flag, this_emg, Predict_y, True, clf, Features, vid_flag, this_video, bonsai_v, maxfreq, minfreq, v = v)
 
 
 				satisfaction = input('Satisfied?: y/n ') == 'y'
@@ -517,7 +519,7 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 			# No model code
 			else:
 				State = manual_scoring(extracted_dir, a, acq, this_eeg, fsd, epochlen, emg_flag, 
-					this_emg, vid_flag, this_video, h, movement_flag, bonsai_v, v = v)
+					this_emg, vid_flag, this_video, h, movement_flag, bonsai_v, maxfreq, minfreq, v = v)
 				update = input('Do you want to update the model?: y/n ') == 'y'
 				if update:
 					update_model(this_eeg, fsd, epochlen, animal_name, State, delta_pre, delta_pre2, delta_pre3, delta_post,
@@ -552,9 +554,12 @@ def load_data_for_sw(filename_sw):
 	acq = d['Acquisition']
 	video_dir = d['video_dir']
 	bonsai_v = d['Bonsai Version']
+	maxfreq = d['Maximum_Frequency']
+	minfreq = d['Minimum_Frequency']
 
 	start_swscoring(filename_sw, extracted_dir, epochlen, fsd, emg_flag, vid_flag, 
-		movement_flag, mouse_name, animal, model_dir, mod_name, modellog_dir, personallog_dir, acq, video_dir, bonsai_v)
+		movement_flag, mouse_name, animal, model_dir, mod_name, modellog_dir, personallog_dir, acq, video_dir, bonsai_v,
+		maxfreq, minfreq)
 
 
 # Arg 1 is the path of the sleep scoring setting json, taken from argv[1]

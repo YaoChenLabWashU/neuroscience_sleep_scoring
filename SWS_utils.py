@@ -92,7 +92,7 @@ def random_forest_classifier(features, target):
     clf.fit(features, target)
     return clf
 
-def plot_spectrogram(ax, eegdat, fsd):
+def plot_spectrogram(ax, eegdat, fsd, minfreq = 1, maxfreq = 16):
     ax.set_title('Spectrogram w/ EMG')
     window_length = 5 # n seconds in windowing segments
     noverlap = 4.9 # step size in sec
@@ -101,8 +101,6 @@ def plot_spectrogram(ax, eegdat, fsd):
     t = np.arange(0.0, t_elapsed, dt)
     noverlap = noverlap * fsd
     NFFT = window_length * fsd
-    minfreq = 1 # min freq in Hz
-    maxfreq = 16 # max freq in Hz
     ax.set_xlabel('Time (seconds)')
     ax.set_ylabel('Frequency (Hz)')
     # the minfreq and maxfreq args will limit the frequencies
@@ -230,7 +228,7 @@ def plot_predicted(ax, Predict_y, is_predicted, clf, Features):
 
 # This is the plotting collection function for the coarse prediction figure
 def create_prediction_figure(Predict_y, is_predicted, clf, Features, fs, eeg, this_emg, realtime, 
-    epochlen, start, end, movement_flag = False, v = None):
+    epochlen, start, end, maxfreq, minfreq, movement_flag = False, v = None):
     plt.ion()
     if movement_flag:
         #fig, (ax1, ax_move, ax2, ax3, axx) = plt.subplots(nrows = 5, ncols = 1, figsize = (11, 6))
@@ -242,7 +240,7 @@ def create_prediction_figure(Predict_y, is_predicted, clf, Features, fs, eeg, th
     else:
         #fig, (ax1, ax2, ax3, axx) = plt.subplots(nrows = 4, ncols = 1, figsize = (11, 6))
         fig, (ax1, ax2, axx) = plt.subplots(nrows = 3, ncols = 1, figsize = (11, 6))
-    plot_spectrogram(ax1, eeg, fs)
+    plot_spectrogram(ax1, eeg, fs, maxfreq = maxfreq, minfreq = minfreq)
     plot_predicted(ax2, Predict_y, is_predicted, clf, Features)
 
     plot_EMGFig2(axx, this_emg, epochlen, realtime, fs)
@@ -484,7 +482,7 @@ def correct_bins(start_bin, end_bin, ax2, new_state):
         print('loc: ', location)
         ax2.add_patch(rectangle)
 
-def create_scoring_figure(extracted_dir, a, eeg, fsd,  movement_flag = False, v = None):
+def create_scoring_figure(extracted_dir, a, eeg, fsd, maxfreq, minfreq, movement_flag = False, v = None):
     if movement_flag:
         fig = plt.figure(constrained_layout=True, figsize = (11, 6))
         widths = [1]
@@ -504,7 +502,7 @@ def create_scoring_figure(extracted_dir, a, eeg, fsd,  movement_flag = False, v 
         ax3 = fig.add_subplot(spec[2])    
 
     #fig, (ax1, ax2) = plt.subplots(nrows = 2, ncols = 1, figsize = (11, 6))
-    plot_spectrogram(ax1, eeg, fsd)
+    plot_spectrogram(ax1, eeg, fsd, maxfreq = maxfreq, minfreq = minfreq)
     if movement_flag:
         ax4.plot(v, color = 'k', linestyle = '--')
         ax4.set_ylim([0,25])
