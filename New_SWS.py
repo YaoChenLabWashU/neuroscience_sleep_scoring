@@ -20,6 +20,8 @@ from datetime import datetime
 from neuroscience_sleep_scoring.SW_Cursor import Cursor
 from neuroscience_sleep_scoring.SW_Cursor import ScoringCursor
 import pathlib
+import time
+from datetime import datetime
 
 key_stroke = 0
 
@@ -301,7 +303,7 @@ def display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, acq, h, e
 	return State
 
 
-def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_flag, 
+def start_swscoring(filename_sw, extracted_dir,  rawdat_dir, epochlen, fsd, emg_flag, vid_flag, 
 	movement_flag, mouse_name, animal, model_dir, mod_name, modellog_dir, personallog_dir, acq, video_dir, bonsai_v,
 	maxfreq, minfreq):
 	# mostly for deprecated packages
@@ -319,7 +321,10 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 	acq_len = np.size(downsampEEG)/fsd # fs: sampling rate, fsd: downsampled sampling rate
 	hour_segs = math.ceil(acq_len/3600) # acq_len in seconds, convert to hours
 	print('This acquisition has ' +str(hour_segs)+ ' segments.')
-
+	AD_file = os.path.join(rawdat_dir, 'AD0_'+str(a)+'.mat')
+	EEG_datestring = time.ctime(os.path.getmtime(AD_file))
+	ts_format = '%a %b %d %H:%M:%S %Y'
+	EEG_datetime = datetime.strptime(EEG_datestring, ts_format)
 	for h in np.arange(hour_segs):
 		this_eeg = np.load(os.path.join(extracted_dir, 'downsampEEG_Acq'+str(a) + '_hr' + str(h)+ '.npy'))
 		if emg_flag == 1:
@@ -333,7 +338,7 @@ def start_swscoring(filename_sw, extracted_dir,  epochlen, fsd, emg_flag, vid_fl
 		this_eeg = this_eeg[0:new_length]
 
 		this_video, v = SWS_utils.initialize_vid_and_move(bonsai_v, vid_flag, movement_flag, video_dir, a, 
-			acq, this_eeg, fsd)
+			acq, this_eeg, fsd, EEG_datetime, extracted_dir)
 
 		os.chdir(extracted_dir)
 		print('Generating EMG vectors...')
@@ -556,8 +561,9 @@ def load_data_for_sw(filename_sw):
 	bonsai_v = d['Bonsai Version']
 	maxfreq = d['Maximum_Frequency']
 	minfreq = d['Minimum_Frequency']
+	rawdat_dir = d['rawdat_dir']
 
-	start_swscoring(filename_sw, extracted_dir, epochlen, fsd, emg_flag, vid_flag, 
+	start_swscoring(filename_sw, extracted_dir, rawdat_dir, epochlen, fsd, emg_flag, vid_flag, 
 		movement_flag, mouse_name, animal, model_dir, mod_name, modellog_dir, personallog_dir, acq, video_dir, bonsai_v,
 		maxfreq, minfreq)
 

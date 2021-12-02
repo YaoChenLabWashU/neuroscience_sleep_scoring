@@ -94,8 +94,8 @@ def random_forest_classifier(features, target):
 
 def plot_spectrogram(ax, eegdat, fsd, minfreq = 1, maxfreq = 16):
     ax.set_title('Spectrogram w/ EMG')
-    window_length = 5 # n seconds in windowing segments
-    noverlap = 4.9 # step size in sec
+    window_length = 10 # n seconds in windowing segments
+    noverlap = 9.9 # step size in sec
     dt = 1/fsd
     t_elapsed = eegdat.shape[0]/fsd
     t = np.arange(0.0, t_elapsed, dt)
@@ -603,6 +603,7 @@ def load_video(this_video, bonsai_v, a, acq):
 
     timestamp_df = pd.read_csv(timestamp_file, delimiter = "\n", header=None) 
     timestamp_df.columns = ['Timestamps']
+    timestamp_df['Filename'] = timestamp_file
     cap = cv2.VideoCapture(this_video)
     fps = cap.get(cv2.CAP_PROP_FPS)
     frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
@@ -623,7 +624,7 @@ def convert_timestamp(timestamp_df):
     offset_time = [(datetimes[i]-datetimes[0]).total_seconds() for i in np.arange(len(datetimes))]
     timestamp_df['Offset Time'] = offset_time
     return timestamp_df
-def initialize_vid_and_move(bonsai_v, vid_flag, movement_flag, video_dir, a, acq, this_eeg, fsd):
+def initialize_vid_and_move(bonsai_v, vid_flag, movement_flag, video_dir, a, acq, this_eeg, fsd, EEG_datetime, extracted_dir):
     if vid_flag:
         video_list = glob.glob(os.path.join(video_dir, '*.mp4'))
         video_list.sort(key=lambda f: os.path.getmtime(os.path.join(video_dir, f)))
@@ -644,20 +645,20 @@ def initialize_vid_and_move(bonsai_v, vid_flag, movement_flag, video_dir, a, acq
         this_video = None
         print('no video available')
     if movement_flag:
-        if bonsai_v < 6:
-            movement_df = movement_extracting(video_dir, acq, a, bonsai_v, this_video = this_video)
-            time = np.size(this_eeg)/fsd
-            v = movement_processing(movement_df, time)
+        # if bonsai_v < 6:
+        #     movement_df = movement_extracting(video_dir, acq, a, bonsai_v, this_video = this_video)
+        #     time = np.size(this_eeg)/fsd
+        #     v = movement_processing(movement_df, time)
 
-        if bonsai_v >= 6:
-            if video_dir[-1] != '/':
-                video_dir = video_dir + '/'
-            top_directory = video_dir.replace(video_dir.split('/')[-2], '')[:-1]
-            csv_dir = glob.glob(top_directory + '*csv')[0]
-            movement_df = movement_extracting(csv_dir, acq, a, bonsai_v, this_video = None)
-            time = np.size(this_eeg)/fsd
-            movement_df.columns = ['Timestamp', 'X','Y']
-            v = movement_processing(movement_df, time)
+        # if bonsai_v >= 6:
+        #     if video_dir[-1] != '/':
+        #         video_dir = video_dir + '/'
+        #     top_directory = video_dir.replace(video_dir.split('/')[-2], '')[:-1]
+        #     csv_dir = glob.glob(top_directory + '*csv')[0]
+        #     movement_df = movement_extracting(csv_dir, acq, a, bonsai_v, this_video = None)
+        #     time = np.size(this_eeg)/fsd
+        #     v = movement_processing(movement_df, time)
+        movement_df = pd.read_csv(os.path.join(extracted_dir, 'All_movement.csv'))
     else:
         v = None
     return this_video, v
@@ -697,7 +698,10 @@ def movement_extracting(video_dir, acq, a, bonsai_v, this_video = None):
         file_idx, = np.where(np.asarray(acq) == int(a))
         movement_file = movement_files[int(file_idx)]
         print('This is your movement file: ' + movement_file)
-    movement_df = pd.read_csv(movement_file)
+    movement_df = pd.read_csv(movement_file, head    movement_df.columns = ['Timestamps', 'X','Y']
+er = None)
+    movement_df['Filename'] = movement_file
+
     return movement_df
 
 def movement_processing(movement_df, time):
