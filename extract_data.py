@@ -164,13 +164,12 @@ def combine_bonsai_data(filename_sw):
 	
 	for i, a in enumerate(acq):
 		this_video = videos[i]
-		cap, timestamp_df, fps = SWS_utils.load_video(this_video, bonsai_v, a, acq)
+		timestamp_df = SWS_utils.timestamp_extracting(this_video, bonsai_v, a, acq)
 		movement_df = SWS_utils.movement_extracting(csv_dir, acq, a, bonsai_v, this_video = this_video)
-		del cap
 		all_ts_df  = all_ts_df.append(timestamp_df)
 		all_move_df  = all_move_df.append(movement_df)
-	all_ts_df.to_csv(os.path.join(savedir, 'All_timestamps.csv'))
-	all_move_df.to_csv(os.path.join(savedir, 'All_movement.csv'))
+	all_ts_df.to_pickle(os.path.join(savedir, 'All_timestamps.pkl'))
+	all_move_df.to_pickle(os.path.join(savedir, 'All_movement.pkl'))
 
 	
 

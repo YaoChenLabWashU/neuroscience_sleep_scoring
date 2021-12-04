@@ -40,7 +40,7 @@ def on_press(event):
 
 
 def manual_scoring(extracted_dir, a, acq, this_eeg, fsd, epochlen, emg_flag, this_emg, 
-	vid_flag, this_video, h, movement_flag, bonsai_v, maxfreq, minfreq, v = None):
+	vid_flag, this_video, h, movement_flag, bonsai_v, maxfreq, minfreq, EEG_datetime, v = None):
 	# Manually score the entire file.
 	plt.ion()
 	fig, (ax1, ax2, ax4, axx) = plt.subplots(nrows=4, ncols=1, figsize=(11, 6))
@@ -59,8 +59,8 @@ def manual_scoring(extracted_dir, a, acq, this_eeg, fsd, epochlen, emg_flag, thi
 	DTh = SWS_utils.load_bands(this_eeg, fsd)
 	if vid_flag:
 		print('Loading video now, this might take a second....')
-		cap, timestamp_df, fps = SWS_utils.load_video(this_video, bonsai_v, a, acq)
-		timestamp_df = SWS_utils.convert_timestamp(timestamp_df)
+		cap, timestamp_df, fps = SWS_utils.load_video(this_video, a, acq, extracted_dir)
+		timestamp_df = SWS_utils.pulling_timestamp(timestamp_df)
 
 
 	line1, line2, line4, line5 = SWS_utils.raw_scoring_trace(ax1, ax2, ax4, axx, 
@@ -159,7 +159,7 @@ def update_model(this_eeg, fsd, epochlen, animal_name, State, delta_pre, delta_p
 	# Feed the data to retrain a model.
 	# Using EMG data by default. (No video for now)
 	if movement_flag:
-		this_video, v = SWS_utils.initialize_vid_and_move(bonsai_v, vid_flag, movement_flag, video_dir, a, 
+		this_video, v, this_motion = SWS_utils.initialize_vid_and_move(bonsai_v, vid_flag, movement_flag, video_dir, a, 
 			acq, this_eeg, fsd)		
 		v_reshape = np.reshape(v, (-1,epochlen))
 		mean_v = np.mean(v_reshape, axis = 1)
@@ -195,7 +195,7 @@ def update_model(this_eeg, fsd, epochlen, animal_name, State, delta_pre, delta_p
 
 def display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, acq, h, emg_flag, 
 	movement_flag, this_emg, State_input, is_predicted, clf, Features, vid_flag, this_video, bonsai_v, 
-	maxfreq, minfreq, v = None):
+	maxfreq, minfreq, EEG_datetime, v = None, movement_df = None):
 	plt.ion()
 	i = 0
 	this_bin = 1*fsd*epochlen
@@ -208,8 +208,8 @@ def display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, acq, h, e
 
 	if vid_flag:
 		print('Loading video now, this might take a second....')
-		cap, timestamp_df, fps = SWS_utils.load_video(this_video, bonsai_v, a, acq)
-		timestamp_df = SWS_utils.convert_timestamp(timestamp_df)
+		cap, timestamp_df, fps = SWS_utils.load_video(this_video, a, acq, extracted_dir)
+		this_timestamp = SWS_utils.pulling_timestamp(timestamp_df, EEG_datetime, this_eeg, fsd)
 
 	print('loading the theta ratio...')
 	DTh = SWS_utils.load_bands(this_eeg, fsd)
@@ -264,9 +264,15 @@ def display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, acq, h, e
 							int(end_trace+(cursor.replotx*fsd)), this_eeg, DTh, 
 							emg_flag, this_emg, realtime, fsd, epochlen)
 			if vid_flag:
-				vid_start = int(timestamp_df.index[timestamp_df['Offset Time']>(cursor.replotx)][0])
-				vid_end = int(timestamp_df.index[timestamp_df['Offset Time']<((cursor.replotx)+(epochlen*3))][-1])
-				SWS_utils.pull_up_movie(cap, fps, vid_start, vid_end, this_video, epochlen)
+				if cursor.replotx-epochlen < 0:
+					print('No video available for this bin')
+				else:
+					vid_start = int(this_timestamp.index[this_timestamp['Offset_Time']>(cursor.replotx-epochlen)][0])
+					vid_end = int(this_timestamp.index[this_timestamp['Offset_Time']<((cursor.replotx)+(epochlen*2))][-1])
+					if (vid_start < this_timestamp.index[0]) or (vid_end< this_timestamp.index[0]):
+						print('No video available for this bin')
+					else:
+						SWS_utils.pull_up_movie(cap, fps, vid_start, vid_end, this_video, epochlen)
 
 
 			plt.show()
@@ -337,7 +343,7 @@ def start_swscoring(filename_sw, extracted_dir,  rawdat_dir, epochlen, fsd, emg_
 		new_length = int(nearest_epoch*epochlen*fsd)
 		this_eeg = this_eeg[0:new_length]
 
-		this_video, v = SWS_utils.initialize_vid_and_move(bonsai_v, vid_flag, movement_flag, video_dir, a, 
+		this_video, v, this_motion = SWS_utils.initialize_vid_and_move(bonsai_v, vid_flag, movement_flag, video_dir, a, 
 			acq, this_eeg, fsd, EEG_datetime, extracted_dir)
 
 		os.chdir(extracted_dir)
@@ -417,13 +423,13 @@ def start_swscoring(filename_sw, extracted_dir,  rawdat_dir, epochlen, fsd, emg_
 							  '4': 'purple'}
 
 				State = display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, acq, h, emg_flag, movement_flag, this_emg, State, False, None,
-										None, vid_flag, this_video, bonsai_v, maxfreq, minfreq, v = v)
+										None, vid_flag, this_video, bonsai_v, maxfreq, minfreq, EEG_datetime, v = v, movement_df = this_motion)
 				if np.any(State == 0):
 					print('The following bins are not scored: \n' + str(np.where(State == 0)[0])  )
 					zero_check = input('Do you want to go back and fix this right now? (y/n)' ) == 'y'
 					if zero_check:
 						State = display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, acq, h, emg_flag, movement_flag, this_emg, State, False, None,
-										None, vid_flag, this_video, bonsai_v, maxfreq, minfreq, v = v)					
+										None, vid_flag, this_video, bonsai_v, maxfreq, minfreq, EEG_datetime, v = v, movement_df = this_motion)					
 					else:
 						print('Ok, but please do not update the model until you fix them')
 				update = input('Do you want to update the model?: y/n ') == 'y'
@@ -481,7 +487,7 @@ def start_swscoring(filename_sw, extracted_dir,  rawdat_dir, epochlen, fsd, emg_
 								   EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, thet_delt, EEGfire, EEGamp, EEGmax,
 								   EEGmean, nans]
 				if movement_flag:
-					this_video, v = SWS_utils.initialize_vid_and_move(bonsai_v, vid_flag, movement_flag, video_dir, a, 
+					this_video, v, this_motion = SWS_utils.initialize_vid_and_move(bonsai_v, vid_flag, movement_flag, video_dir, a, 
 						acq, this_eeg, fsd)
 					v_reshape = np.reshape(v, (-1,epochlen))
 					mean_v = np.mean(v_reshape, axis = 1)
@@ -502,7 +508,8 @@ def start_swscoring(filename_sw, extracted_dir,  rawdat_dir, epochlen, fsd, emg_
 				np.save(os.path.join(extracted_dir, 'model_prediction_Acq' + str(a) + '_hr' + str(h) + '.npy'), Predict_y)
 
 				Predict_y = display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, acq, h, emg_flag, 
-					movement_flag, this_emg, Predict_y, True, clf, Features, vid_flag, this_video, bonsai_v, maxfreq, minfreq, v = v)
+					movement_flag, this_emg, Predict_y, True, clf, Features, vid_flag, this_video, bonsai_v, maxfreq, minfreq, 
+					EEG_datetime, v = v, movement_df = this_motion)
 
 
 				satisfaction = input('Satisfied?: y/n ') == 'y'
@@ -524,7 +531,7 @@ def start_swscoring(filename_sw, extracted_dir,  rawdat_dir, epochlen, fsd, emg_
 			# No model code
 			else:
 				State = manual_scoring(extracted_dir, a, acq, this_eeg, fsd, epochlen, emg_flag, 
-					this_emg, vid_flag, this_video, h, movement_flag, bonsai_v, maxfreq, minfreq, v = v)
+					this_emg, vid_flag, this_video, h, movement_flag, bonsai_v, maxfreq, minfreq, EEG_datetime, v = v)
 				update = input('Do you want to update the model?: y/n ') == 'y'
 				if update:
 					update_model(this_eeg, fsd, epochlen, animal_name, State, delta_pre, delta_pre2, delta_pre3, delta_post,

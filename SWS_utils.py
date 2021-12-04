@@ -19,7 +19,7 @@ from matplotlib import *
 import time
 import glob
 from dateutil.parser import parse
-from datetime import datetime
+from datetime import datetime, timedelta
 from pandas.io.parsers import ParserError
 
 def generate_signal(downsamp_signal, epochlen, fs): # fs = fsd here
@@ -233,7 +233,7 @@ def create_prediction_figure(Predict_y, is_predicted, clf, Features, fs, eeg, th
     if movement_flag:
         #fig, (ax1, ax_move, ax2, ax3, axx) = plt.subplots(nrows = 5, ncols = 1, figsize = (11, 6))
         fig, (ax1, ax_move, ax2, axx) = plt.subplots(nrows = 4, ncols = 1, figsize = (11, 6))
-        ax_move.plot(v, color = 'k', linestyle = '--')
+        ax_move.plot(v[1], v[0], color = 'k', linestyle = '--')
         ax_move.set_ylim([0,25])
         ax_move.set_xlim([0,int(np.size(eeg)/fs)])
 
@@ -571,7 +571,14 @@ def raw_scoring_trace(ax1, ax2, ax4, axx, emg_flag, start, end, realtime, this_e
 
     return line1, line2, line4, line5
 
-def load_video(this_video, bonsai_v, a, acq):
+def load_video(this_video, a, acq, extracted_dir):
+    timestamp_df = pd.read_pickle(os.path.join(extracted_dir, 'All_timestamps.pkl'))
+    cap = cv2.VideoCapture(this_video)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+    return cap, timestamp_df, fps
+
+def timestamp_extracting(this_video, bonsai_v, a, acq):
     if bonsai_v < 6:
         bn_vid, ext_vid = os.path.splitext(this_video)
         if '_filled' in bn_vid:
@@ -604,26 +611,26 @@ def load_video(this_video, bonsai_v, a, acq):
     timestamp_df = pd.read_csv(timestamp_file, delimiter = "\n", header=None) 
     timestamp_df.columns = ['Timestamps']
     timestamp_df['Filename'] = timestamp_file
-    cap = cv2.VideoCapture(this_video)
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
-    try:
-        assert frames ==  timestamp_df.shape[0]
-    except AssertionError:
-        if abs(timestamp_df.shape[0]-frames) < fps:
-            print('The timestamp file and the video are a little different, but not much.')
-        else:
-            print('The timestamp file and the video seem very different.')
-            sys.exit()
-    return cap, timestamp_df, fps
 
-def convert_timestamp(timestamp_df):
     ts_format = '%Y-%m-%dT%H:%M:%S.%f'
     short_ts = [x[:-6] for x in list(timestamp_df['Timestamps'])]
-    datetimes = [datetime.strptime(short_ts[i][:-1], ts_format) for i in np.arange(len(short_ts))]
-    offset_time = [(datetimes[i]-datetimes[0]).total_seconds() for i in np.arange(len(datetimes))]
-    timestamp_df['Offset Time'] = offset_time
+    timestamp_df['Timestamps'] = [datetime.strptime(short_ts[i][:-1], ts_format) for i in np.arange(len(short_ts))]
+
     return timestamp_df
+
+def pulling_timestamp(timestamp_df, EEG_datetime, this_eeg, fsd):
+
+    acq_len = int(np.size(this_eeg)/fsd)
+    end_ts = EEG_datetime
+    start_ts = end_ts-timedelta(seconds=acq_len)
+    ts_idx, = np.where(np.logical_and(timestamp_df['Timestamps'] < end_ts, timestamp_df['Timestamps'] > start_ts))
+    this_timestamp = timestamp_df.iloc[ts_idx]
+    offset_times = this_timestamp['Timestamps']-this_timestamp['Timestamps'].iloc[0]
+    this_timestamp['Offset_Time'] = [offset_times.iloc[i].total_seconds() for i in range(len(offset_times))]
+
+
+    return this_timestamp
+
 def initialize_vid_and_move(bonsai_v, vid_flag, movement_flag, video_dir, a, acq, this_eeg, fsd, EEG_datetime, extracted_dir):
     if vid_flag:
         video_list = glob.glob(os.path.join(video_dir, '*.mp4'))
@@ -645,23 +652,18 @@ def initialize_vid_and_move(bonsai_v, vid_flag, movement_flag, video_dir, a, acq
         this_video = None
         print('no video available')
     if movement_flag:
-        # if bonsai_v < 6:
-        #     movement_df = movement_extracting(video_dir, acq, a, bonsai_v, this_video = this_video)
-        #     time = np.size(this_eeg)/fsd
-        #     v = movement_processing(movement_df, time)
+        movement_df = pd.read_pickle(os.path.join(extracted_dir, 'All_movement.pkl'))
+        acq_len = int(np.size(this_eeg)/fsd)
+        end_ts = EEG_datetime
+        start_ts = end_ts-timedelta(seconds=acq_len)
+        move_idx, = np.where(np.logical_and(movement_df['Timestamps'] < end_ts, movement_df['Timestamps'] > start_ts))
+        this_motion = movement_df.iloc[move_idx]
+        v = movement_processing(this_motion)
 
-        # if bonsai_v >= 6:
-        #     if video_dir[-1] != '/':
-        #         video_dir = video_dir + '/'
-        #     top_directory = video_dir.replace(video_dir.split('/')[-2], '')[:-1]
-        #     csv_dir = glob.glob(top_directory + '*csv')[0]
-        #     movement_df = movement_extracting(csv_dir, acq, a, bonsai_v, this_video = None)
-        #     time = np.size(this_eeg)/fsd
-        #     v = movement_processing(movement_df, time)
-        movement_df = pd.read_csv(os.path.join(extracted_dir, 'All_movement.csv'))
     else:
         v = None
-    return this_video, v
+        this_motion = None
+    return this_video, v, this_motion
 
 
 def load_bands(this_eeg, fsd):
@@ -698,32 +700,33 @@ def movement_extracting(video_dir, acq, a, bonsai_v, this_video = None):
         file_idx, = np.where(np.asarray(acq) == int(a))
         movement_file = movement_files[int(file_idx)]
         print('This is your movement file: ' + movement_file)
-    movement_df = pd.read_csv(movement_file, head    movement_df.columns = ['Timestamps', 'X','Y']
-er = None)
+    movement_df = pd.read_csv(movement_file, header = None)
+    movement_df.columns = ['Timestamps', 'X','Y']
     movement_df['Filename'] = movement_file
 
+    ts_format = '%Y-%m-%dT%H:%M:%S.%f'
+    short_ts = [x[:-6] for x in list(movement_df['Timestamps'])]
+    movement_df['Timestamps'] = [datetime.strptime(short_ts[i][:-1], ts_format) for i in np.arange(len(short_ts))]
     return movement_df
 
-def movement_processing(movement_df, time):
-
-    tot_frames = movement_df.index.stop
-    nearest_sec = np.round(tot_frames/time)
-    reshape_val = nearest_sec*time
-
-    diff = reshape_val-tot_frames
-    if diff > 0:
-        for i in np.arange(diff):
-            movement_df = movement_df.append(movement_df.iloc[-1])
-    if diff < 0:
-        drop_these = np.arange(movement_df.index.stop+diff, movement_df.index.stop)
-        movement_df = movement_df.drop(drop_these)
-    reshape_x = np.reshape(np.asarray(movement_df['X']), (int(time),-1))
-    reshape_y = np.reshape(np.asarray(movement_df['X']), (int(time),-1))
-
-    dx = [abs(reshape_x[i,-1]-reshape_x[i,0]) for i in range(np.shape(reshape_x)[0])]
-    dy = [abs(reshape_y[i,-1]-reshape_y[i,0]) for i in range(np.shape(reshape_y)[0])]
-
+def movement_processing(movement_df):
+    t_vect = movement_df['Timestamps']-movement_df['Timestamps'].iloc[0]
+    t_vect = [t_vect.iloc[i].total_seconds() for i in range(len(t_vect))]
+    bins = np.arange(0, t_vect[-1]+4, 4)
+    dx = []
+    dy = []
+    t = []
+    ts = []
+    for i in np.arange(0, np.size(bins)-1):
+        idxs, = np.where(np.logical_and(t_vect>=bins[i], t_vect<bins[i+1]))
+        temp_x = list(movement_df['X'].iloc[idxs])
+        dx.append(temp_x[-1]-temp_x[0])
+        temp_y = list(movement_df['Y'].iloc[idxs])
+        dy.append(temp_y[-1]-temp_y[0])
+        t.append(t_vect[idxs[-1]])
+        ts.append(movement_df['Timestamps'].iloc[idxs[-1]])
     v = np.sqrt((np.square(dx) + np.square(dy)))
+    v = np.vstack([v,t])
     return v
 
 
