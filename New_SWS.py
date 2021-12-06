@@ -13,6 +13,7 @@ import cv2
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
 from joblib import dump, load
+import joblib
 import pandas as pd
 import warnings
 from neuroscience_sleep_scoring import SWS_utils
@@ -155,15 +156,19 @@ def update_model(this_eeg, fsd, epochlen, animal_name, State, delta_pre, delta_p
 		delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
 		theta_post3,
 		EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, thet_delt, EEGfire, EEGamp, EEGmax,
-		EEGmean, EMGamp, model_dir, mod_name, emg_flag, movement_flag, vid_flag, video_dir, acq, a, bonsai_v):
+		EEGmean, EMGamp, model_dir, mod_name, emg_flag, movement_flag, vid_flag, video_dir, acq, a, bonsai_v, 
+		EEG_datetime, extracted_dir):
 	# Feed the data to retrain a model.
 	# Using EMG data by default. (No video for now)
 	if movement_flag:
 		this_video, v, this_motion = SWS_utils.initialize_vid_and_move(bonsai_v, vid_flag, movement_flag, video_dir, a, 
-			acq, this_eeg, fsd)		
-		v_reshape = np.reshape(v, (-1,epochlen))
-		mean_v = np.mean(v_reshape, axis = 1)
-		mean_v[np.isnan(mean_v)] = 0
+			acq, this_eeg, fsd, EEG_datetime, extracted_dir)
+		if np.shape(v)[1] != 900:
+			v_reshape = np.reshape(v[0], (-1,epochlen))
+			mean_v = np.mean(v_reshape, axis = 1)
+			mean_v[np.isnan(mean_v)] = 0
+		else:
+			mean_v = v[0]
 	else:
 		mean_v = np.zeros(900)
 
@@ -437,7 +442,8 @@ def start_swscoring(filename_sw, extracted_dir,  rawdat_dir, epochlen, fsd, emg_
 					update_model(this_eeg, fsd, epochlen, animal_name, State, delta_pre, delta_pre2, delta_pre3, delta_post,
 							 delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
 							 theta_post3, EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, thet_delt, EEGfire, EEGamp, EEGmax,
-							 EEGmean, EMGamp, model_dir, mod_name, emg_flag, movement_flag, vid_flag, video_dir, acq, a, bonsai_v)
+							 EEGmean, EMGamp, model_dir, mod_name, emg_flag, movement_flag, vid_flag, video_dir, acq, a, bonsai_v, 
+							 EEG_datetime, extracted_dir)
 					model_log(modellog_dir, 0, animal, mouse_name, mod_name, a)
 				logq = input('Do you want to update your personal log?: y/n ') == 'y'
 				if logq:
@@ -488,10 +494,13 @@ def start_swscoring(filename_sw, extracted_dir,  rawdat_dir, epochlen, fsd, emg_
 								   EEGmean, nans]
 				if movement_flag:
 					this_video, v, this_motion = SWS_utils.initialize_vid_and_move(bonsai_v, vid_flag, movement_flag, video_dir, a, 
-						acq, this_eeg, fsd)
-					v_reshape = np.reshape(v, (-1,epochlen))
-					mean_v = np.mean(v_reshape, axis = 1)
-					mean_v[np.isnan(mean_v)] = 0
+						acq, this_eeg, fsd, EEG_datetime, extracted_dir)
+					if np.shape(v)[1] != 900:
+						v_reshape = np.reshape(v[0], (-1,epochlen))
+						mean_v = np.mean(v_reshape, axis = 1)
+						mean_v[np.isnan(mean_v)] = 0
+					else:
+						mean_v = v[0]
 				else:
 					FeatureList.append(nans)
 					v = None
@@ -523,7 +532,8 @@ def start_swscoring(filename_sw, extracted_dir,  rawdat_dir, epochlen, fsd, emg_
 					update_model(this_eeg, fsd, epochlen, animal_name, Predict_y, delta_pre, delta_pre2, delta_pre3, delta_post,
 							 delta_post2, delta_post3, EEGdelta, theta_pre, theta_pre2, theta_pre3, theta_post, theta_post2,
 							 theta_post3, EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, thet_delt, EEGfire, EEGamp, EEGmax,
-							 EEGmean, EMGamp, model_dir, mod_name, emg_flag, movement_flag, vid_flag, video_dir, acq, a, bonsai_v)
+							 EEGmean, EMGamp, model_dir, mod_name, emg_flag, movement_flag, vid_flag, video_dir, acq, a, bonsai_v, 
+							 EEG_datetime, extracted_dir)
 					model_log(modellog_dir, 1, animal, mouse_name, mod_name, a)
 				logq = input('Do you want to update your personal log?: y/n ') == 'y'
 				if logq:
@@ -539,7 +549,8 @@ def start_swscoring(filename_sw, extracted_dir,  rawdat_dir, epochlen, fsd, emg_
 								 theta_post2,
 								 theta_post3, EEGtheta, EEGalpha, EEGbeta, EEGgamma, EEGnb, nb_pre, thet_delt, EEGfire,
 								 EEGamp, EEGmax,
-								 EEGmean, EMGamp, model_dir, mod_name, emg_flag, movement_flag, vid_flag, video_dir, acq, a, bonsai_v)
+								 EEGmean, EMGamp, model_dir, mod_name, emg_flag, movement_flag, vid_flag, video_dir, acq, a, 
+								 bonsai_v, EEG_datetime, extracted_dir)
 					model_log(modellog_dir, 2, animal, mouse_name, mod_name, a)
 				logq = input('Do you want to update your personal log?: y/n ') == 'y'
 				if logq:
