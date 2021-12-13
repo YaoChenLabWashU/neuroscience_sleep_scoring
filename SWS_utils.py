@@ -504,7 +504,7 @@ def create_scoring_figure(extracted_dir, a, eeg, fsd, maxfreq, minfreq, movement
     #fig, (ax1, ax2) = plt.subplots(nrows = 2, ncols = 1, figsize = (11, 6))
     plot_spectrogram(ax1, eeg, fsd, maxfreq = maxfreq, minfreq = minfreq)
     if movement_flag:
-        ax4.plot(v, color = 'k', linestyle = '--')
+        ax4.plot(v[1], v[0], color = 'k', linestyle = '--')
         ax4.set_ylim([0,25])
         ax4.set_xlim([0,int(np.size(eeg)/fsd)])
     ax2.set_ylim(0.3, 1)
@@ -522,7 +522,7 @@ def create_scoring_figure(extracted_dir, a, eeg, fsd, maxfreq, minfreq, movement
     fig.tight_layout()
     return fig, ax1, ax2
 
-def update_raw_trace(line1, line2, line4, marker, fig, fig2, start, end, 
+def update_raw_trace(line1, line2, line4, marker1, marker2, fig, fig2, start, end, 
     this_eeg, DTh, emg_flag, this_emg, realtime, fsd, epochlen):
 
     extra_eeg = 5*fsd*epochlen
@@ -536,7 +536,10 @@ def update_raw_trace(line1, line2, line4, marker, fig, fig2, start, end,
     line2.set_ydata(long_DTh[int(start/fsd):int(end/fsd)])
     # line2.set_ydata(delt[start:end])
     # line3.set_ydata(thet[start:end])
-    marker.set_xdata([realtime[int(start+(fsd*epochlen))],realtime[int(start+(fsd*epochlen))]])
+    this_bin = int(realtime[int(start+(fsd*epochlen))]/epochlen)
+    marker1.set_xdata([realtime[int(start+(fsd*epochlen))],realtime[int(start+(fsd*epochlen))]])
+    if marker2:
+        marker2.set_xdata([this_bin, this_bin])
     if emg_flag:
         long_emg = np.concatenate((np.full(extra_eeg, 0),this_emg, np.full(extra_eeg, 0)))
         line4.set_ydata(this_emg[start:end])
@@ -544,11 +547,18 @@ def update_raw_trace(line1, line2, line4, marker, fig, fig2, start, end,
         line4.set_ydata([1,1])
     fig.canvas.draw()
     fig2.canvas.draw()
-def make_marker(ax, this_bin, realtime, fsd, epochlen):
-    ymin = ax.get_ylim()[0]
-    ymax = ax.get_ylim()[1]
-    marker, = ax.plot([realtime[this_bin], realtime[this_bin]], [ymin, ymax], color = 'k')
-    return marker
+def make_marker(ax, ax2, this_bin, realtime, fsd, epochlen, num_markers = 2):
+    ymin1 = ax.get_ylim()[0]
+    ymax1 = ax.get_ylim()[1]
+    if num_markers == 2:
+        ymin2 = ax2.get_ylim()[0]
+        ymax2 = ax2.get_ylim()[1]
+    marker1, = ax.plot([realtime[this_bin], realtime[this_bin]], [ymin1, ymax1], color = 'k')
+    if num_markers == 2:
+        marker2, = ax2.plot([1,1], [ymin2, ymax2], color = 'k')
+    else:
+        marker2 = None
+    return marker1, marker2
 
 def raw_scoring_trace(ax1, ax2, ax4, axx, emg_flag, start, end, realtime, this_eeg, fsd,
                         LFP_ylim, DTh, epochlen, this_emg):

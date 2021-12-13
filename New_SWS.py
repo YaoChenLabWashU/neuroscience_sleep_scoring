@@ -61,14 +61,14 @@ def manual_scoring(extracted_dir, a, acq, this_eeg, fsd, epochlen, emg_flag, thi
 	if vid_flag:
 		print('Loading video now, this might take a second....')
 		cap, timestamp_df, fps = SWS_utils.load_video(this_video, a, acq, extracted_dir)
-		timestamp_df = SWS_utils.pulling_timestamp(timestamp_df)
+		timestamp_df = SWS_utils.pulling_timestamp(timestamp_df, EEG_datetime, this_eeg, fsd)
 
 
 	line1, line2, line4, line5 = SWS_utils.raw_scoring_trace(ax1, ax2, ax4, axx, 
 															 emg_flag, start_trace, end_trace, realtime, this_eeg, fsd,
 															 LFP_ylim, DTh, epochlen, this_emg)
 
-	marker = SWS_utils.make_marker(ax5, this_bin, realtime, fsd, epochlen)
+	marker1, marker2 = SWS_utils.make_marker(ax5, None, this_bin, realtime, fsd, epochlen, num_markers = 1)
 
 	fig.show()
 	fig2.show()
@@ -111,7 +111,7 @@ def manual_scoring(extracted_dir, a, acq, this_eeg, fsd, epochlen, emg_flag, thi
 		if vid_flag:
 			vid_start = timestamp_df.index[timestamp_df['Offset Time']>(i*epochlen)][0]
 			vid_end = timestamp_df.index[timestamp_df['Offset Time']<((i*epochlen)+(epochlen*3))][-1]
-		SWS_utils.update_raw_trace(line1, line2, line4, marker, fig, fig2, start_trace, end_trace,
+		SWS_utils.update_raw_trace(line1, line2, line4, marker1, marker2, fig, fig2, start_trace, end_trace,
 								   this_eeg, DTh, emg_flag, this_emg, realtime, fsd, epochlen)
 		color_dict = {'0': 'white',
 					  '1': 'green',
@@ -163,10 +163,15 @@ def update_model(this_eeg, fsd, epochlen, animal_name, State, delta_pre, delta_p
 	if movement_flag:
 		this_video, v, this_motion = SWS_utils.initialize_vid_and_move(bonsai_v, vid_flag, movement_flag, video_dir, a, 
 			acq, this_eeg, fsd, EEG_datetime, extracted_dir)
-		if np.shape(v)[1] != 900:
+		if np.shape(v)[1] > 900:
 			v_reshape = np.reshape(v[0], (-1,epochlen))
 			mean_v = np.mean(v_reshape, axis = 1)
 			mean_v[np.isnan(mean_v)] = 0
+		elif np.shape(v)[1] < 900:
+			diff = 900 - np.shape(v)[1]
+			nans = np.empty(diff)
+			nans[:] = 0
+			mean_v = np.concatenate((v[0], nans))
 		else:
 			mean_v = v[0]
 	else:
@@ -186,6 +191,7 @@ def update_model(this_eeg, fsd, epochlen, animal_name, State, delta_pre, delta_p
 
 	EMGamp[np.isnan(EMGamp)] = 0
 	data.append(EMGamp)
+	mean_v[np.isnan(mean_v)] = 0
 	data.append(mean_v)
 	data_dict = dict(zip(final_features, data))
 	df_additions = pd.DataFrame(data_dict)
@@ -226,7 +232,7 @@ def display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, acq, h, e
 	fig, ax1, ax2, axx = SWS_utils.create_prediction_figure(State_input, is_predicted, clf, 
 			Features, fsd, this_eeg, this_emg, realtime, epochlen, start_trace, end_trace, maxfreq, minfreq, movement_flag = movement_flag, v = v)
 
-	marker = SWS_utils.make_marker(ax1, this_bin, realtime, fsd, epochlen)
+	marker1, marker2 = SWS_utils.make_marker(ax1, ax2, this_bin, realtime, fsd, epochlen)
 
 
 	plt.ion()	
@@ -265,7 +271,7 @@ def display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, acq, h, e
 			print('eindex = ' + str((end_trace + (cursor.replotx * fsd))))
 
 			#Bumping up by x3 to test if this is all that's needed
-			SWS_utils.update_raw_trace(line1, line2, line4, marker, fig, fig2, int(start_trace+(cursor.replotx*fsd)), 
+			SWS_utils.update_raw_trace(line1, line2, line4, marker1, marker2, fig, fig2, int(start_trace+(cursor.replotx*fsd)), 
 							int(end_trace+(cursor.replotx*fsd)), this_eeg, DTh, 
 							emg_flag, this_emg, realtime, fsd, epochlen)
 			if vid_flag:
@@ -300,7 +306,7 @@ def display_and_fix_scoring(fsd, epochlen, this_eeg, extracted_dir, a, acq, h, e
 				new_state = int(input('What state should these be?: '))
 			SWS_utils.correct_bins(start_bin, end_bin, ax2, new_state)
 			fig.canvas.draw()
-			State[start_bin:end_bin] = new_state
+			State[start_bin:end_bin+1] = new_state
 			cursor.bins = []
 			cursor.change_bins = False
 		if cursor.DONE:
@@ -495,10 +501,15 @@ def start_swscoring(filename_sw, extracted_dir,  rawdat_dir, epochlen, fsd, emg_
 				if movement_flag:
 					this_video, v, this_motion = SWS_utils.initialize_vid_and_move(bonsai_v, vid_flag, movement_flag, video_dir, a, 
 						acq, this_eeg, fsd, EEG_datetime, extracted_dir)
-					if np.shape(v)[1] != 900:
+					if np.shape(v)[1] > 900:
 						v_reshape = np.reshape(v[0], (-1,epochlen))
 						mean_v = np.mean(v_reshape, axis = 1)
 						mean_v[np.isnan(mean_v)] = 0
+					elif np.shape(v)[1] < 900:
+						diff = 900 - np.shape(v)[1]
+						nans = np.empty(diff)
+						nans[:] = np.NaN
+						mean_v = np.concatenate((v[0], nans))
 					else:
 						mean_v = v[0]
 				else:
