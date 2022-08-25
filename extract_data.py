@@ -147,6 +147,7 @@ def combine_bonsai_data(filename_sw):
 	bonsai_v = d['Bonsai Version']
 	acq = d['Acquisition']
 	savedir = d['savedir']
+	movement = d['movement']
 
 	if bonsai_v < 6:
 		csv_dir = video_dir
@@ -158,18 +159,28 @@ def combine_bonsai_data(filename_sw):
 		csv_dir = glob.glob(top_directory + '*csv')[0]
 
 	videos = glob.glob(os.path.join(video_dir, '*.mp4'))
+	if len(videos) == 0:
+		videos = glob.glob(os.path.join(video_dir, '*.avi'))
+	if len(videos) == 0:
+		print('No videos found! Please check directory')
+		sys.exit()
 	videos.sort(key=lambda f: os.path.getmtime(os.path.join(video_dir, f)))
 	all_ts_df  = pd.DataFrame(columns = ['Timestamps', 'Filename'])
-	all_move_df = pd.DataFrame(columns = ['Timestamps', 'X','Y', 'Filename'])
+	if movement:
+		all_move_df = pd.DataFrame(columns = ['Timestamps', 'X','Y', 'Filename'])
 	
 	for i, a in enumerate(acq):
 		this_video = videos[i]
 		timestamp_df = SWS_utils.timestamp_extracting(this_video, bonsai_v, a, acq)
-		movement_df = SWS_utils.movement_extracting(csv_dir, acq, a, bonsai_v, this_video = this_video)
 		all_ts_df  = all_ts_df.append(timestamp_df)
-		all_move_df  = all_move_df.append(movement_df)
+		if movement:
+			movement_df = SWS_utils.movement_extracting(csv_dir, acq, a, bonsai_v, this_video = this_video)
+			if 'Timestamps' not in movement_df.columns:
+				movement_df['Timestamps'] = timestamp_df['Timestamps']
+			all_move_df  = all_move_df.append(movement_df)
 	all_ts_df.to_pickle(os.path.join(savedir, 'All_timestamps.pkl'))
-	all_move_df.to_pickle(os.path.join(savedir, 'All_movement.pkl'))
+	if movement:
+		all_move_df.to_pickle(os.path.join(savedir, 'All_movement.pkl'))
 
 	
 

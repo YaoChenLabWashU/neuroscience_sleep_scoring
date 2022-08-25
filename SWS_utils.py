@@ -4,13 +4,14 @@ import sys
 from scipy.integrate import simps
 import scipy.signal as signal
 import matplotlib.pyplot as plt
+plt.ion()
 import matplotlib.image as mpimg
 import matplotlib.patches as patch
 import copy as cp
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score
 from sklearn import preprocessing
-from joblib import dump, load
+import joblib
 import pandas as pd
 import cv2
 import math
@@ -21,27 +22,29 @@ import glob
 from dateutil.parser import parse
 from datetime import datetime, timedelta
 from pandas.io.parsers import ParserError
+import json
+import seaborn as sns
 
 def generate_signal(downsamp_signal, epochlen, fs): # fs = fsd here
     # mean of 4 seconds
     normmean = np.mean(downsamp_signal)
     normstd = np.std(downsamp_signal)
     binl = epochlen * fs  # bin size in array slots | number of points in an epoch; a bin == an epoch
-    sig_amp = np.zeros(int(np.size(downsamp_signal) / (epochlen * fs)))
+    sig_var = np.zeros(int(np.size(downsamp_signal) / (epochlen * fs)))
     sig_mean = np.zeros(int(np.size(downsamp_signal) / (epochlen  * fs)))
-    for i in np.arange(np.size(sig_amp)):
-        sig_amp[i] = np.var(downsamp_signal[epochlen  * fs * (i):(epochlen  * fs * (i + 1))])
-        sig_mean[i] = np.mean(np.abs(downsamp_signal[epochlen  * fs * (i):(epochlen  * fs * (i + 1))]))
-    sig_amp = (sig_amp - normmean) / normstd # normalization
-    # we do not normalize mean (for some reason)
-
-    # TODO: for weird reason they are not in the same loop...; can potentially combine
     sig_max = np.zeros(int(np.size(downsamp_signal) / (epochlen  * fs)))
-    for i in np.arange(np.size(sig_max)):
+
+    for i in np.arange(np.size(sig_var)):
+        sig_var[i] = np.var(downsamp_signal[epochlen  * fs * (i):(epochlen  * fs * (i + 1))])
+        sig_mean[i] = np.mean(np.abs(downsamp_signal[epochlen  * fs * (i):(epochlen  * fs * (i + 1))]))
         sig_max[i] = np.max(downsamp_signal[epochlen  * fs * (i):(epochlen  * fs * (i + 1))])
+
+    sig_var = (sig_var - normmean) / normstd # normalization
     sig_max = (sig_max - np.average(sig_max)) / np.std(sig_max)
+
+    # we do not normalize mean (for some reason)
     
-    return sig_amp, sig_max, sig_mean
+    return sig_var, sig_max, sig_mean
 
 def bandPower(low, high, downsamp_EEG, epochlen, fsd):
 	win = epochlen * fsd # window == bin
@@ -52,7 +55,7 @@ def bandPower(low, high, downsamp_EEG, epochlen, fsd):
 	idx_max = np.argmax(freqs > high) - 1
 	idx = np.zeros(dtype=bool, shape=freqs.shape)
 	idx[idx_min:idx_max] = True
-	EEG = simps(psd[:,idx], freqs[idx])
+	EEG = simps(psd[:,idx], freqs[idx])/simps(psd, freqs)
 	return EEG, idx
 
 def normalize(toNorm):
@@ -250,7 +253,7 @@ def create_prediction_figure(Predict_y, is_predicted, clf, Features, fs, eeg, th
     fig.tight_layout()
     #return fig, ax1, ax2, ax3, axx
     return fig, ax1, ax2, axx
-def update_sleep_model(model_dir, mod_name, df_additions):
+def update_sleep_df(model_dir, mod_name, df_additions):
     try:
         Sleep_Model = np.load(file = model_dir + mod_name + '_model.pkl', allow_pickle = True)
         Sleep_Model = Sleep_Model.append(df_additions, ignore_index = True)
@@ -261,9 +264,16 @@ def update_sleep_model(model_dir, mod_name, df_additions):
     Sleep_Model.to_pickle(model_dir + mod_name + '_model.pkl')
     return Sleep_Model
 
-def load_joblib(FeatureList, emg_flag, movement_flag, mod_name):
-    x_features = cp.deepcopy(FeatureList)
-    [x_features.remove(i) for i in ['Animal_Name', 'State']]
+def load_joblib(FeatureDict, emg_flag, movement_flag, mod_name):
+    try:
+        del FeatureDict['animal_name']
+    except KeyError:
+        pass 
+
+    try:
+        del FeatureDict['State']
+    except KeyError:
+        pass
 
     if emg_flag:
         jobname = mod_name + '_EMG'
@@ -277,7 +287,7 @@ def load_joblib(FeatureList, emg_flag, movement_flag, mod_name):
     else:
         jobname = jobname + '_no_movement'
     jobname = jobname + '.joblib'
-    return jobname, x_features
+    return jobname, list(FeatureDict.keys())
 
 def retrain_model(Sleep_Model, x_features, model_dir, jobname):
     print("Retrain model")
@@ -297,22 +307,25 @@ def retrain_model(Sleep_Model, x_features, model_dir, jobname):
     print("Train Accuracy :: ", accuracy_score(train_y, clf.predict(train_x)))
     print("Test Accuracy :: ", accuracy_score(test_y, clf.predict(test_x)))
 
-    Satisfaction = input('Satisfied? (y/n): ')
-    if Satisfaction == 'y':
-        clf = random_forest_classifier(Sleep_Model[x_features].apply(pd.to_numeric).values,
-                                       Sleep_Model['State'].apply(pd.to_numeric).values)
-        print("Train Accuracy :: ", accuracy_score(Sleep_Model['State'].apply(pd.to_numeric).values,
-                                                   clf.predict(Sleep_Model[x_features].apply(pd.to_numeric).values)))
-        dump(clf, model_dir + jobname)
+
+    clf = random_forest_classifier(Sleep_Model[x_features].apply(pd.to_numeric).values,
+                                   Sleep_Model['State'].apply(pd.to_numeric).values)
+    print("Train Accuracy :: ", accuracy_score(Sleep_Model['State'].apply(pd.to_numeric).values,
+                                               clf.predict(Sleep_Model[x_features].apply(pd.to_numeric).values)))
+    joblib.dump(clf, model_dir + jobname)
 
 
-def pull_up_movie(cap, fps, start, end, vid_file, epochlen):
+def pull_up_movie(cap, start, end, vid_file, epochlen, this_timestamp):
     print('Pulling up video ....')
-    print('starting at ' + str(start/fps) + ' seconds')
+    start_sec = this_timestamp['Offset_Time'][start]
+    print('starting at ' + str(start_sec) + ' seconds')
     if not cap.isOpened():
         print("Error opening video stream or file")
-    score_win = np.arange(int(start+fps*1*epochlen), int(start+fps*2*epochlen))
-    for f in np.arange(start, end):
+    score_win_sec = [start_sec + epochlen, start_sec + epochlen*2]
+    score_win_idx1 = int(this_timestamp.index[this_timestamp['Offset_Time']>(score_win_sec[0])][0])
+    score_win_idx2 = int(this_timestamp.index[this_timestamp['Offset_Time']>(score_win_sec[1])][0])
+    score_win = np.arange(score_win_idx1, int(score_win_idx2))
+    for f in np.arange(start, end+200):
         cap.set(1, f)
         ret, frame = cap.read()
         if ret:
@@ -612,8 +625,17 @@ def timestamp_extracting(this_video, bonsai_v, a, acq):
         video_dir  = os.path.dirname(this_video)
         top_directory = video_dir.replace(video_dir.split('/')[-1], '')
         csv_dir = glob.glob(top_directory + '*csv')[0]
-        timestamp_files = glob.glob(os.path.join(csv_dir, '*timestamp*.csv'))
-        timestamp_files.sort(key=lambda f: os.path.getmtime(os.path.join(csv_dir, f)))
+        video_files = glob.glob(os.path.join(video_dir, '*.mp4'))
+        if len(video_files) == 0:
+            video_files = glob.glob(os.path.join(video_dir, '*.avi'))
+        if len(video_files) == 0:
+            print('No videos found! Please check directory')
+            sys.exit()
+        timestamp_files = glob.glob(os.path.join(csv_dir, '*imestamp*.csv'))
+        timestamp_files.sort(key=lambda f: os.path.getctime(os.path.join(csv_dir, f)))
+        if len(timestamp_files) == 2*len(video_files):
+            timestamp_files = glob.glob(os.path.join(csv_dir, '*sidetimestamp*.csv'))
+            timestamp_files.sort(key=lambda f: os.path.getmtime(os.path.join(csv_dir, f)))
         file_idx, = np.where(np.asarray(acq) == int(a))
         timestamp_file = timestamp_files[int(file_idx)]
         print('Timestamp file: ' + timestamp_file)
@@ -641,29 +663,35 @@ def pulling_timestamp(timestamp_df, EEG_datetime, this_eeg, fsd):
 
     return this_timestamp
 
-def initialize_vid_and_move(bonsai_v, vid_flag, movement_flag, video_dir, a, acq, this_eeg, fsd, EEG_datetime, extracted_dir):
-    if vid_flag:
-        video_list = glob.glob(os.path.join(video_dir, '*.mp4'))
-        video_list.sort(key=lambda f: os.path.getmtime(os.path.join(video_dir, f)))
+def initialize_vid_and_move(d, a, EEG_datetime, acq_len, this_eeg):
+    if d['vid']:
+        video_list = glob.glob(os.path.join(d['video_dir'], '*.mp4'))
+        if len(video_list) == 0:
+            video_list = glob.glob(os.path.join(d['video_dir'], '*.avi'))
+        if len(video_list) == 0:
+            print('No videos found! Please check directory')
+            sys.exit()
+
+        video_list.sort(key=lambda f: os.path.getmtime(os.path.join(d['video_dir'], f)))
         try:
-            assert len(video_list) == len(acq)
+            assert len(video_list) == len(d['Acquisition'])
         except AssertionError:
-            if len(video_list) > len(acq):
-                print('There are more videos than aquisitions. Please move any videos that do not have a corresponding acquisition out of this directory: ' + str(video_dir))
-            if len(video_list) < len(acq):
+            if len(video_list) > len(d['Acquisition']):
+                print('There are more videos than aquisitions. Please move any videos that do not have a corresponding acquisition out of this directory: ' + str(d['video_dir']))
+            if len(video_list) < len(d['Acquisition']):
                 print('There are more acquisitions than videos. Only list acquisitions with videos in the Score_Settings.json file')
-        vid_idx, = np.where(np.asarray(acq) == int(a))
-        if video_dir == "F:/FLiP_Videos/jaLC_FLiPAKAREEGEMG004/":
-            this_video = glob.glob(os.path.join(video_dir, '*_' + str(int(a)-1) +'.mp4'))[0]
+        vid_idx, = np.where(np.asarray(d['Acquisition']) == int(a))
+        if d['video_dir'] == "F:/FLiP_Videos/jaLC_FLiPAKAREEGEMG004/":
+            this_video = glob.glob(os.path.join(d['video_dir'], '*_' + str(int(a)-1) +'.mp4'))[0]
         else:
             this_video = video_list[int(vid_idx)]
         print('This is your video file: ' + this_video)
     else:
         this_video = None
         print('no video available')
-    if movement_flag:
-        movement_df = pd.read_pickle(os.path.join(extracted_dir, 'All_movement.pkl'))
-        acq_len = int(np.size(this_eeg)/fsd)
+    if d['movement']:
+        movement_df = pd.read_pickle(os.path.join(d['savedir'], 'All_movement.pkl'))
+        acq_len = int(np.size(this_eeg)/d['fsd'])
         end_ts = EEG_datetime
         start_ts = end_ts-timedelta(seconds=acq_len)
         move_idx, = np.where(np.logical_and(movement_df['Timestamps'] < end_ts, movement_df['Timestamps'] > start_ts))
@@ -706,20 +734,31 @@ def movement_extracting(video_dir, acq, a, bonsai_v, this_video = None):
     elif bonsai_v >= 6:
         movement_filedir = video_dir
         movement_files = glob.glob(os.path.join(movement_filedir, '*motion*.csv'))
-        movement_files.sort(key=lambda f: os.path.getmtime(os.path.join(movement_filedir, f)))
+        if len(movement_files) == 0:
+            movement_files = glob.glob(os.path.join(movement_filedir, '*movement*.csv'))
+        this_idx = movement_files[0].find('motion')+6
+        basename = movement_files[0][:this_idx]
         file_idx, = np.where(np.asarray(acq) == int(a))
-        movement_file = movement_files[int(file_idx)]
+        movement_file =  basename + str(int(file_idx)) + '.csv'
         print('This is your movement file: ' + movement_file)
     movement_df = pd.read_csv(movement_file, header = None)
-    movement_df.columns = ['Timestamps', 'X','Y']
-    movement_df['Filename'] = movement_file
+    if len(movement_df.columns) == 2:
+        movement_df.columns = ['X','Y']
+        if movement_df['X'].iloc[0] == 'X':
+            movement_df = movement_df.drop(0)
+            movement_df = movement_df.reset_index(drop = True)
+    else:
+        movement_df.columns = ['Timestamps', 'X','Y']
+        ts_format = '%Y-%m-%dT%H:%M:%S.%f'
+        short_ts = [x[:-6] for x in list(movement_df['Timestamps'])]
+        movement_df['Timestamps'] = [datetime.strptime(short_ts[i][:-1], ts_format) for i in np.arange(len(short_ts))]
 
-    ts_format = '%Y-%m-%dT%H:%M:%S.%f'
-    short_ts = [x[:-6] for x in list(movement_df['Timestamps'])]
-    movement_df['Timestamps'] = [datetime.strptime(short_ts[i][:-1], ts_format) for i in np.arange(len(short_ts))]
+    movement_df['Filename'] = movement_file
     return movement_df
 
 def movement_processing(movement_df):
+    movement_df['X'] = movement_df['X'].fillna(0)
+    movement_df['Y'] = movement_df['Y'].fillna(0)
     t_vect = movement_df['Timestamps']-movement_df['Timestamps'].iloc[0]
     t_vect = [t_vect.iloc[i].total_seconds() for i in range(len(t_vect))]
     bins = np.arange(0, t_vect[-1]+4, 4)
@@ -730,14 +769,135 @@ def movement_processing(movement_df):
     for i in np.arange(0, np.size(bins)-1):
         idxs, = np.where(np.logical_and(t_vect>=bins[i], t_vect<bins[i+1]))
         temp_x = list(movement_df['X'].iloc[idxs])
-        dx.append(temp_x[-1]-temp_x[0])
+        dx.append(int(float(temp_x[-1]))-int(float(temp_x[0])))
         temp_y = list(movement_df['Y'].iloc[idxs])
-        dy.append(temp_y[-1]-temp_y[0])
+        dy.append(int(float(temp_y[-1]))-int(float(temp_y[0])))
         t.append(t_vect[idxs[-1]])
         ts.append(movement_df['Timestamps'].iloc[idxs[-1]])
     v = np.sqrt((np.square(dx) + np.square(dy)))
     v = np.vstack([v,t])
     return v
+
+def prepare_feature_data(FeatureDict, movement_flag, smooth = False):
+    del FeatureDict['animal_name']
+    FeatureDict = adjust_movement(FeatureDict, movement_flag)
+    if smooth:
+        FeatureList = []
+        for f in FeatureDict.keys():
+            FeatureList_smoothed.append(signal.medfilt(FeatureDict[f], 5))
+    else:
+        FeatureList = list(FeatureDict.values())
+    Features = np.column_stack((FeatureList))
+    Features = np.nan_to_num(Features)
+    return Features
+
+def build_feature_dict(this_eeg, fsd, epochlen, this_emg = None):
+    FeatureDict = {}
+    print('Generating EMG vectors...')
+    if this_emg is not None:
+        FeatureDict['EMGvar'], EMGmax, EMGmean = generate_signal(this_emg, epochlen, fsd)
+
+    print('Generating EEG vectors...')
+    FeatureDict['EEGvar'], EEGmax, EEGmean = generate_signal(this_eeg, epochlen, fsd)
+
+    print('Extracting delta bandpower...') # non REM (slow wave) sleep value | per epoch
+    FeatureDict['EEGdelta'], idx_delta = bandPower(0.5, 4, this_eeg, epochlen, fsd)
+
+    print('Extracting theta bandpower...') # awake / REM sleep
+    FeatureDict['EEGtheta'], idx_theta = bandPower(5, 8, this_eeg, epochlen, fsd)
+
+    print('Extracting alpha bandpower...') # awake / RAM; not use a lot
+    FeatureDict['EEGalpha'], idx_alpha = bandPower(8, 12, this_eeg, epochlen, fsd)
+    print('Extracting narrow-band theta bandpower...') # broad-band theta
+    EEG_broadtheta, idx_broadtheta = bandPower(2, 16, this_eeg, epochlen, fsd)
+
+    print('Boom. Boom. FIYA POWER...')
+    FeatureDict['EEGfire'], idx_fire = bandPower(4, 20, this_eeg, epochlen, fsd)
+
+    FeatureDict['EEGnb'] = FeatureDict['EEGtheta'] / EEG_broadtheta # narrow-band theta
+    # delt_thet = EEGdelta / EEGtheta # ratio; esp. important
+    FeatureDict['thet_delt'] = FeatureDict['EEGtheta'] / FeatureDict['EEGdelta']
+
+
+    # frame shifting
+    FeatureDict['delta_post'], FeatureDict['delta_pre'] = post_pre(FeatureDict['EEGdelta'], 
+        FeatureDict['EEGdelta'])
+    FeatureDict['theta_post'], FeatureDict['theta_pre'] = post_pre(FeatureDict['EEGtheta'], 
+        FeatureDict['EEGtheta'])
+    FeatureDict['delta_post2'], FeatureDict['delta_pre2'] = post_pre(FeatureDict['delta_post'], 
+        FeatureDict['delta_pre'])
+    FeatureDict['theta_post2'], FeatureDict['theta_pre2'] = post_pre(FeatureDict['theta_post'], 
+        FeatureDict['theta_pre'])
+    FeatureDict['delta_post3'], FeatureDict['delta_pre3'] = post_pre(FeatureDict['delta_post2'], 
+        FeatureDict['delta_pre2'])
+    FeatureDict['theta_post3'], FeatureDict['theta_pre3'] = post_pre(FeatureDict['theta_post2'], 
+        FeatureDict['theta_pre2'])
+    FeatureDict['nb_post'], FeatureDict['nb_pre'] = post_pre(FeatureDict['EEGnb'], 
+        FeatureDict['EEGnb'])
+   
+    return FeatureDict
+
+def adjust_movement(FeatureDict, movement_flag):
+    if movement_flag:
+        # this_video, v, this_motion = SWS_utils.initialize_vid_and_move(bonsai_v, vid_flag, movement_flag, video_dir, a, 
+        #   acq, this_eeg, fsd, EEG_datetime, extracted_dir)
+        v = FeatureDict['Velocity']
+        if np.size(v) > 900:
+            v_reshape = np.reshape(v, (-1,epochlen))
+            mean_v = np.mean(v_reshape, axis = 1)
+            mean_v[np.isnan(mean_v)] = 0
+        elif np.size(v) < 900:
+            diff = 900 - np.size(v)
+            nans = np.empty(diff)
+            nans[:] = 0
+            mean_v = np.concatenate((v, nans))
+        else:
+            mean_v = v
+    else:
+        mean_v = np.zeros(900)
+    mean_v[np.isnan(mean_v)] = 0
+    FeatureDict['Velocity'] = mean_v
+    return FeatureDict
+
+def model_feature_importance(filename_sw):
+    with open(filename_sw, 'r') as f:
+        d = json.load(f)
+
+    emg_flag = int(d['emg'])
+    movement_flag = int(d['movement'])
+    model_dir = str(d['model_dir'])
+    mod_name = str(d['mod_name'])
+
+    if emg_flag:
+        jobname = mod_name + '_EMG'
+        print("EMG flag on")
+    else:
+        x_features.remove('EMG')
+        jobname = mod_name + '_no_EMG'
+        print('Just so you know...this model has no EMG')
+    if movement_flag:
+        jobname = jobname + '_movement'
+    else:
+        jobname = jobname + '_no_movement'
+    jobname = jobname + '.joblib'
+
+    clf = joblib.load(os.path.join(model_dir, jobname))
+    Sleep_Model = np.load(file = model_dir + mod_name + '_model.pkl', allow_pickle = True)
+    del Sleep_Model['State']
+    del Sleep_Model['animal_name']
+
+    fig,ax = plt.subplots(figsize = (14,8))
+    y = clf.feature_importances_
+    x = np.arange(len(y))
+   
+    ax.bar(x, y, color = 'k')
+    ax.set_xticks(x)
+    ax.set_xticklabels(list(Sleep_Model.columns), rotation = 45)
+    ax.set_xlabel('Features')
+    ax.set_ylabel('Feature Importance')
+    sns.despine()
+    return fig
+
 
 
 def print_instructions():
