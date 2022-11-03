@@ -1,12 +1,12 @@
 {
-  "rawdat_dir": "/Volumes/yaochen/Active/Lizzie/FLP_data/ltFLiPAKAREEGEMG0014/",
-  "model_dir": "/Volumes/yaochen/Active/CENTRAL_CODE/neuroscience_sleep_scoring/model/",
-  "video_dir": "/Volumes/ChenLabHDDC/FLiP_Videos/ltFLiPAKAREEGEMG0014/ltFLiPAKAREEGEMG0014_video/",
-  "modellog_dir": "/Volumes/yaochen/Active/CENTRAL_CODE/neuroscience_sleep_scoring/model/",
+  "rawdat_dir": "/Volumes/yaochen/Active/Lizzie/FLP_data/ltFLiPAKAREEGEMG0006/",
+  "model_dir": "/Volumes/yaochen/Active/CENTRAL_CODE/neuroscience_sleep_scoring_model/model/",
+  "video_dir": "/Volumes/ChenLabHDDC/FLiP_Videos/ltFLiPAKAREEGEMG0006/ltFLiPAKAREEGEMG0006_video/",
+  "modellog_dir": "/Volumes/yaochen/Active/CENTRAL_CODE/neuroscience_sleep_scoring_model/model/",
   "personallog_dir": "/Volumes/yaochen/Active/Lizzie/FLP_data/",
   "species": "mouse",
   "mod_name": "mouse",
-  "mouse_name": "1368-NEP",
+  "mouse_name": "1902",
   "epochlen": 4,
   "fs": 400,
   "fsd": 200,
@@ -42,8 +42,10 @@
   ],
   "Filter High": 100,
   "Filter Low": 0.5,
-  "savedir": "/Volumes/yaochen/Active/Lizzie/FLP_data/ltFLiPAKAREEGEMG0014/ltFLiPAKAREEGEMG0014_extracted_data/",
+  "savedir": "/Volumes/yaochen/Active/Lizzie/FLP_data/ltFLiPAKAREEGEMG0006/ltFLiPAKAREEGEMG0006_extracted_data/",
   "Bonsai Version": 6,
-  "Minimum_Frequency": 1, 
-  "Maximum_Frequency": 16 
+  "DLC": 1,
+  "DLC Label": "center",
+  "Minimum_Frequency": 1,
+  "Maximum_Frequency": 16
 }
