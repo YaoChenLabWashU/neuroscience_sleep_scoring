@@ -12,6 +12,9 @@ import json
 import sys
 from neuroscience_sleep_scoring import SWS_utils
 import pandas as pd
+import time
+from datetime import datetime
+
 
 
 def choosing_acquisition(filename_sw):
@@ -114,7 +117,8 @@ def downsample_filter(filename_sw):
 			#emg_abs = np.absolute(emg_downsamp)
 		eeg_downsamp = signal.resample(eegfilt, int(new_len))
 		np.save(os.path.join(savedir, 'downsampEEG_Acq'+str(a)), eeg_downsamp)
-		np.save(os.path.join(savedir, 'downsampEMG_Acq'+str(a)), emg_downsamp)
+		if int(d['emg']) == 1:
+			np.save(os.path.join(savedir, 'downsampEMG_Acq'+str(a)), emg_downsamp)
 
 		acq_len = np.size(eeg_downsamp)/fsd
 		hour_segs = math.ceil(acq_len/3600)
@@ -137,7 +141,8 @@ def downsample_filter(filename_sw):
 			new_length = int(nearest_epoch*epochlen*fsd)
 			this_eeg = this_eeg[0:new_length]			
 			np.save(os.path.join(savedir, 'downsampEEG_Acq'+str(a) + '_hr' + str(h)+ '.npy'), this_eeg)
-			np.save(os.path.join(savedir, 'downsampEMG_Acq'+str(a) + '_hr' + str(h)+ '.npy'), this_emg)
+			if int(d['emg']) == 1:
+				np.save(os.path.join(savedir, 'downsampEMG_Acq'+str(a) + '_hr' + str(h)+ '.npy'), this_emg)
 
 def combine_bonsai_data(filename_sw):
 	with open(filename_sw, 'r') as f:
@@ -167,90 +172,65 @@ def combine_bonsai_data(filename_sw):
 	videos.sort(key=lambda f: os.path.getmtime(os.path.join(video_dir, f)))
 	all_ts_df  = pd.DataFrame(columns = ['Timestamps', 'Filename'])
 	if movement:
-		all_move_df = pd.DataFrame(columns = ['Timestamps', 'X','Y', 'Filename'])
+		if d['DLC']:
+			all_move_df = pd.DataFrame(columns = ['Timestamps', 'X','Y','Likelihood','Filename'])
+		else:
+			all_move_df = pd.DataFrame(columns = ['Timestamps', 'X','Y', 'Filename'])
 	
 	for i, a in enumerate(acq):
 		this_video = videos[i]
 		timestamp_df = SWS_utils.timestamp_extracting(this_video, bonsai_v, a, acq)
+		video_create_time = time.ctime(os.path.getmtime(this_video))
+		last_ts = timestamp_df['Timestamps'].iloc[-1]
+		ts_format = '%a %b %d %H:%M:%S %Y'
+		video_datetime = datetime.strptime(video_create_time, ts_format)
+		time_diff = last_ts-video_datetime
+		timestamp_df['Timestamps'] = timestamp_df['Timestamps']-time_diff
 		all_ts_df  = all_ts_df.append(timestamp_df)
 		if movement:
-			movement_df = SWS_utils.movement_extracting(csv_dir, acq, a, bonsai_v, this_video = this_video)
-			if 'Timestamps' not in movement_df.columns:
-				movement_df['Timestamps'] = timestamp_df['Timestamps']
+			movement_df = SWS_utils.movement_extracting(csv_dir, acq, a, bonsai_v, 
+				d['DLC'], d['DLC Label'], this_video = this_video)
+			bad_frames, = np.where(movement_df['Likelihood'] < 0.8)
+			perc_bad = np.size(bad_frames)/len(movement_df.index)
+			if perc_bad > 0.15:
+				new_label = alternate_label(this_video, csv_dir, i)
+				movement_df = SWS_utils.movement_extracting(csv_dir, acq, a, bonsai_v, 
+				d['DLC'], new_label, this_video = this_video)
+			
+			movement_df['Timestamps'] = timestamp_df['Timestamps']
 			all_move_df  = all_move_df.append(movement_df)
 	all_ts_df.to_pickle(os.path.join(savedir, 'All_timestamps.pkl'))
 	if movement:
 		all_move_df.to_pickle(os.path.join(savedir, 'All_movement.pkl'))
+def pulling_acqs(filename_sw):
+	with open(filename_sw, 'r') as f:
+			d = json.load(f)
+	AD_file = glob.glob(os.path.join(d['rawdat_dir'], 'AD0_*'))
+	acqs = []
+	for fn in AD_file:
+		filename = os.path.split(fn)[1]
+		idx1 = filename.find('_')
+		idx2 = filename.find('.mat')
+		try:
+			acq_num = int(filename[idx1+1:idx2])
+		except ValueError:
+			continue
+		acqs.append(acq_num)
+	d['Acquisition'] = sorted(acqs)
+	with open(filename_sw, 'w') as f:
+		json.dump(d, f, indent=2)
 
-	
+def alternate_label(this_video, csv_dir, i):
+	this_dir,fn = os.path.split(this_video)
+	labeled_fn = glob.glob(os.path.join(os.path.split(this_dir)[0], 
+		'DLC_outputs', fn[:fn.find('.')] + '*labeled.mp4'))[0]
+	print('Pull up this video file: '+ labeled_fn)
+	csv_file = glob.glob(os.path.join(csv_dir, '*_motion'+ str(i) + '.csv'))[0]
+	SWS_utils.DLC_check_fig(csv_file)
+	new_label = input('What label do you want to use?')
+	return new_label
 
-
-
-
-
-
-
-
-# def create_spectrogram(filename_sw):
-# 	with open(filename_sw, 'r') as f:
-# 	       d = json.load(f)
-# 	extract_dir = str(d['savedir'])
-# 	acq = d['Acquisition']
-# 	epochlen = int(d['epochlen'])
-# 	fsd = int(d['fsd'])
-
-# 	fmax = 24
-# 	fmin = 1
-
-# 	for a in acq:
-# 		EEG = np.load(os.path.join(extract_dir, 'downsampEEG_Acq'+str(a)+'.npy'))
-# 		if int(d['emg']) == 1:
-# 			EMG = np.load(os.path.join(extract_dir, 'downsampEMG_Acq'+str(a)+'.npy'))
-# 			assert np.size(EEG) == np.size(EMG)
-
-# 		acq_len = np.size(EEG)/fsd
-# 		hour_segs = math.ceil(acq_len/3600)
-
-# 		for h in np.arange(hour_segs):
-# 			if hour_segs == 1:
-# 				this_eeg = EEG
-# 				if int(d['emg']) == 1:
-# 					this_emg = EMG
-# 			elif h == hour_segs-1:
-# 				this_eeg = EEG[h*3600*fsd:]
-# 				if int(d['emg']) == 1:
-# 					this_emg = EMG[h*3600*fsd:]
-# 			else:
-# 				this_eeg = EEG[h*3600*fsd:(h+1)*3600*fsd]
-# 				if int(d['emg']) == 1:
-# 					this_emg = EMG[h*3600*fsd:(h+1)*3600*fsd]
-# 			seg_len = np.size(this_eeg)/fsd
-# 			nearest_epoch = math.floor(seg_len/epochlen)
-# 			new_length = int(nearest_epoch*epochlen*fsd)
-# 			this_eeg = this_eeg[0:new_length]
-# 			t_vect = np.linspace(0,nearest_epoch*epochlen, np.size(this_eeg))
-# 			freq, t_spec, x_spec = signal.spectrogram(this_eeg, fs=fsd, window='hanning', 
-# 				nperseg=1000, noverlap=1000-1, mode='psd')
-			
-# 			delt = sum(x_spec[np.where(np.logical_and(freq>=1,freq<=4))])
-# 			thetw = sum(x_spec[np.where(np.logical_and(freq>=2,freq<=16))])
-# 			thetn = sum(x_spec[np.where(np.logical_and(freq>=5,freq<=10))])
-# 			thet = thetn/thetw
-# 			delt = (delt-np.average(delt))/np.std(delt)
-# 			thet = (thet-np.average(thet))/np.std(thet)
-# 			delt_time = np.vstack((delt, t_spec))
-# 			thet_time = np.vstack((thet, t_spec))
-# 			np.save(os.path.join(extract_dir,'delt' + str(a) + '_hr' + str(h)+ '.npy'),delt_time)
-# 			np.save(os.path.join(extract_dir,'thet' + str(a) + '_hr' + str(h)+ '.npy'),thet_time)
-# 			np.save(os.path.join(extract_dir, 'downsampEEG_Acq'+str(a) + '_hr' + str(h)+ '.npy'), this_eeg)
-# 			np.save(os.path.join(extract_dir, 'downsampEMG_Acq'+str(a) + '_hr' + str(h)+ '.npy'), this_emg)
-
-# 			del(x_spec)
-# 			del(freq)
-# 			del(t_spec)
-# 			del(this_eeg)
-# 			del(this_emg)
-	
+	return
 if __name__ == "__main__":
 	args = sys.argv
 	# Why do we need to assert this??? Why the heck would you care if you execute from the same dir if we don't use relative paths anywhere else in the code

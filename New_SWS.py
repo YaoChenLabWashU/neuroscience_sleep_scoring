@@ -245,11 +245,11 @@ def display_and_fix_scoring(d, this_eeg, a, h, this_emg, State_input, is_predict
 				else:
 					vid_start = int(this_timestamp.index[this_timestamp['Offset_Time']>(cursor.replotx-d['epochlen'])][0])
 					vid_end = int(this_timestamp.index[this_timestamp['Offset_Time']<((cursor.replotx)+(d['epochlen']*2))][-1])
-					if (vid_start < this_timestamp.index[0]) or (vid_end< this_timestamp.index[0]):
-						print('No video available for this bin')
-					else:
-						SWS_utils.pull_up_movie(cap, vid_start, vid_end, 
-							this_video, d['epochlen'], this_timestamp)
+					# if (vid_start < this_timestamp.index[0]) or (vid_end< this_timestamp.index[0]):
+					# 	print('No video available for this bin')
+					# else:
+					SWS_utils.pull_up_movie(cap, vid_start, vid_end, 
+						this_video, d['epochlen'], this_timestamp)
 
 
 			plt.show()
@@ -291,6 +291,18 @@ def start_swscoring(filename_sw, d):
 	print('this code is supressing warnings')
 	warnings.filterwarnings("ignore")
 	print('These are the available acquisitions: '+ str(d['Acquisition']))
+	state_files = glob.glob(os.path.join(d['savedir'], 'StatesAcq*.npy'))
+	scored_acqs = []
+	for sf in state_files:
+		filename = os.path.split(sf)[1]
+		idx1 = filename.find('q')
+		idx2 = filename.find('_')
+		try:
+			acq_num = int(filename[idx1+1:idx2])
+		except ValueError:
+			continue
+		scored_acqs.append(acq_num)
+	print('These are the acquisitions that have a previous State file: ' + str(sorted(scored_acqs)))
 	a = input('Which acqusition do you want to score?')
 
 	print('Loading EEG and EMG....')

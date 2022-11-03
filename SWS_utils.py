@@ -714,7 +714,7 @@ def load_bands(this_eeg, fsd):
 
     return theta_band/delta_band
 
-def movement_extracting(video_dir, acq, a, bonsai_v, this_video = None):
+def movement_extracting(video_dir, acq, a, bonsai_v, DLC, DLC_label = None, this_video = None):
     if bonsai_v < 6:    
         movement_filedir = video_dir
         movement_files = glob.glob(os.path.join(movement_filedir, '*.csv'))
@@ -741,18 +741,24 @@ def movement_extracting(video_dir, acq, a, bonsai_v, this_video = None):
         file_idx, = np.where(np.asarray(acq) == int(a))
         movement_file =  basename + str(int(file_idx)) + '.csv'
         print('This is your movement file: ' + movement_file)
-    movement_df = pd.read_csv(movement_file, header = None)
-    if len(movement_df.columns) == 2:
-        movement_df.columns = ['X','Y']
-        if movement_df['X'].iloc[0] == 'X':
-            movement_df = movement_df.drop(0)
-            movement_df = movement_df.reset_index(drop = True)
+    
+    if DLC:
+        movement_df_full = pd.read_csv(movement_file)
+        movement_df = movement_df_full[[DLC_label+'_x', DLC_label+'_y', DLC_label+'_likelihood']]
+        # movement_df = movement_df_full[[DLC_label+'_x', DLC_label+'_y']]
+        movement_df.columns = ['X', 'Y', 'Likelihood']
     else:
-        movement_df.columns = ['Timestamps', 'X','Y']
-        ts_format = '%Y-%m-%dT%H:%M:%S.%f'
-        short_ts = [x[:-6] for x in list(movement_df['Timestamps'])]
-        movement_df['Timestamps'] = [datetime.strptime(short_ts[i][:-1], ts_format) for i in np.arange(len(short_ts))]
-
+        movement_df = pd.read_csv(movement_file, header = None)
+        if len(movement_df.columns) == 2:
+            movement_df.columns = ['X','Y']
+            if movement_df['X'].iloc[0] == 'X':
+                movement_df = movement_df.drop(0)
+                movement_df = movement_df.reset_index(drop = True)
+        else:
+            movement_df.columns = ['Timestamps', 'X','Y']
+            ts_format = '%Y-%m-%dT%H:%M:%S.%f'
+            short_ts = [x[:-6] for x in list(movement_df['Timestamps'])]
+            movement_df['Timestamps'] = [datetime.strptime(short_ts[i][:-1], ts_format) for i in np.arange(len(short_ts))]
     movement_df['Filename'] = movement_file
     return movement_df
 
@@ -899,7 +905,50 @@ def model_feature_importance(filename_sw):
     return fig
 
 
+def rename_DLC_csvs(csv_dir, basename):
+    DLC_coords_files = glob.glob(os.path.join(csv_dir, 'Coord*.csv'))
+    for f in DLC_coords_files:
+        fname = os.path.split(f)[1]
+        substring_1 = 'Coord'
+        idx = fname.find('DLC')
+        fname_new = fname[:idx]
+        fname_new = fname_new.replace(substring_1, "")
+        insert_idx = fname_new.find(basename) + len(basename)
+        fname_change = fname_new[:insert_idx]+'_motion'+fname_new[insert_idx:]+'.csv'
+        os.rename(f,os.path.join(csv_dir, fname_change))
 
+def DLC_check_fig(csv_file):
+    coords_df = pd.read_csv(csv_file)
+    color_dict = {}
+    labels = ['center', 'ear1', 'ear2', 'nose', 'baseoftail']
+    color_dict['center'] = '#fffd01'
+    color_dict['ear1'] = '#7e1e9c'
+    color_dict['ear2'] = '#cb416b'
+    color_dict['nose'] = '#2000b1'
+    color_dict['baseoftail'] = '#f0944d'
+
+    fig, ax = plt.subplots(nrows = len(labels), figsize = (15, 8))
+    vel_dict = {}
+    x = np.linspace(0, 3600, len(coords_df[labels[0]+'_x']))
+    bins = np.arange(0, 3601)
+    for i,l in enumerate(labels):
+        dx = []
+        dy = []
+        for ii in np.arange(0, np.size(bins)-1):
+            idxs, = np.where(np.logical_and(x>=bins[ii], x<bins[ii+1]))
+            temp_x = list(coords_df[l+'_x'].iloc[idxs])
+            dx.append(temp_x[-1]-temp_x[0])
+            temp_y = list(coords_df[l+'_y'].iloc[idxs])
+            dy.append(temp_y[-1]-temp_y[0])
+        vel_dict[l] = np.sqrt((np.square(dx) + np.square(dy)))
+        ax[i].plot(bins[1:]/60, vel_dict[l], color = color_dict[l], label = l)
+        ax[i].set_title(l)
+        ax[i].set_xlim([0,60])
+        ax[i].set_xticks(np.arange(0, 60))
+        ax[i].set_yticklabels([])
+        sns.despine()
+
+    fig.tight_layout()
 def print_instructions():
     print('''\
 
