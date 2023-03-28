@@ -57,11 +57,10 @@ def manual_scoring(d, a, this_eeg, this_emg, this_video, h, EEG_datetime, v = No
 	LFP_ylim = 5
 
 	DTh = SWS_utils.load_bands(this_eeg, d['fsd'])
-	if vid_flag:
-		print('Loading video now, this might take a second....')
-		cap, timestamp_df, fps = SWS_utils.load_video(this_video, a, d['Acquisition'], d['savedir'])
-		timestamp_df = SWS_utils.pulling_timestamp(timestamp_df, EEG_datetime, this_eeg, d['fsd'])
-
+	if d['vid']:
+		timestamp_df = pd.read_pickle(os.path.join(d['savedir'], 'All_timestamps.pkl'))
+		this_timestamp = SWS_utils.pulling_timestamp(timestamp_df, EEG_datetime, this_eeg, d['fsd'])
+		cap, fps = SWS_utils.load_video(d, this_timestamp)
 
 	line1, line2, line4, line5 = SWS_utils.raw_scoring_trace(ax1, ax2, ax4, axx, d['emg'], start_trace, 
 								end_trace, realtime, this_eeg, d['fsd'], LFP_ylim, DTh, 
@@ -136,7 +135,7 @@ def manual_scoring(d, a, this_eeg, this_emg, this_video, h, EEG_datetime, v = No
 			if not button:
 				print('you clicked')
 				if d['vid']:
-					SWS_utils.pull_up_movie(cap, fps, vid_start, vid_end, this_video, d['epochlen'])
+					SWS_utils.pull_up_movie(d, cap, vid_start, vid_end, this_video, d['epochlen'], this_timestamp)
 				else:
 					print('...but you do not have videos available')
 		global key_stroke
@@ -183,9 +182,9 @@ def display_and_fix_scoring(d, this_eeg, a, h, this_emg, State_input, is_predict
 	LFP_ylim = 5
 
 	if d['vid']:
-		print('Loading video now, this might take a second....')
-		cap, timestamp_df, fps = SWS_utils.load_video(this_video, a, d['Acquisition'], d['savedir'])
+		timestamp_df = pd.read_pickle(os.path.join(d['savedir'], 'All_timestamps.pkl'))
 		this_timestamp = SWS_utils.pulling_timestamp(timestamp_df, EEG_datetime, this_eeg, d['fsd'])
+		cap, fps = SWS_utils.load_video(d, this_timestamp)
 
 	print('loading the theta ratio...')
 	DTh = SWS_utils.load_bands(this_eeg, d['fsd'])
@@ -245,10 +244,11 @@ def display_and_fix_scoring(d, this_eeg, a, h, this_emg, State_input, is_predict
 				else:
 					vid_start = int(this_timestamp.index[this_timestamp['Offset_Time']>(cursor.replotx-d['epochlen'])][0])
 					vid_end = int(this_timestamp.index[this_timestamp['Offset_Time']<((cursor.replotx)+(d['epochlen']*2))][-1])
+					this_timestamp['Offset_Time'][vid_start]
 					# if (vid_start < this_timestamp.index[0]) or (vid_end< this_timestamp.index[0]):
 					# 	print('No video available for this bin')
 					# else:
-					SWS_utils.pull_up_movie(cap, vid_start, vid_end, 
+					SWS_utils.pull_up_movie(d, cap, vid_start, vid_end, 
 						this_video, d['epochlen'], this_timestamp)
 
 

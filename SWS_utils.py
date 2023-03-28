@@ -21,9 +21,9 @@ import time
 import glob
 from dateutil.parser import parse
 from datetime import datetime, timedelta
-from pandas.io.parsers import ParserError
 import json
 import seaborn as sns
+import shutil
 
 def generate_signal(downsamp_signal, epochlen, fs): # fs = fsd here
     # mean of 4 seconds
@@ -109,8 +109,8 @@ def plot_spectrogram(ax, eegdat, fsd, minfreq = 1, maxfreq = 16):
     # the minfreq and maxfreq args will limit the frequencies
     Pxx, freqs, bins, im = my_specgram(eegdat, ax = ax, NFFT=NFFT, Fs=fsd, noverlap=noverlap,
                                 cmap=cm.get_cmap('jet'), minfreq = minfreq, maxfreq = maxfreq,
-                                xextent = (0,np.int(t_elapsed)) )
-
+                                xextent = (0,int(t_elapsed)))
+    return Pxx, freqs, bins, im
 def my_specgram(x, ax = None, NFFT=400, Fs=200, Fc=0, detrend=mlab.detrend_none,
              window=mlab.window_hanning, noverlap=200,
              cmap=None, xextent=None, pad_to=None, sides='default',
@@ -243,7 +243,7 @@ def create_prediction_figure(Predict_y, is_predicted, clf, Features, fs, eeg, th
     else:
         #fig, (ax1, ax2, ax3, axx) = plt.subplots(nrows = 4, ncols = 1, figsize = (11, 6))
         fig, (ax1, ax2, axx) = plt.subplots(nrows = 3, ncols = 1, figsize = (11, 6))
-    plot_spectrogram(ax1, eeg, fs, maxfreq = maxfreq, minfreq = minfreq)
+    Pxx, freqs, bins, im = plot_spectrogram(ax1, eeg, fs, maxfreq = maxfreq, minfreq = minfreq)
     plot_predicted(ax2, Predict_y, is_predicted, clf, Features)
 
     plot_EMGFig2(axx, this_emg, epochlen, realtime, fs)
@@ -315,19 +315,22 @@ def retrain_model(Sleep_Model, x_features, model_dir, jobname):
     joblib.dump(clf, model_dir + jobname)
 
 
-def pull_up_movie(cap, start, end, vid_file, epochlen, this_timestamp):
-    print('Pulling up video ....')
+def pull_up_movie(d, cap, start, end, vid_file, epochlen, this_timestamp):
+    v = get_videofn_from_csv(d, this_timestamp['Filename'][start])
+    print('Pulling up video: '+v)
+    print('starting on frame '+str(start))
     start_sec = this_timestamp['Offset_Time'][start]
-    print('starting at ' + str(start_sec) + ' seconds')
-    if not cap.isOpened():
+    print('starting at second '+str(start_sec))
+    print('starting '+ v + ' at ' + str(start_sec) + ' seconds')
+    if not cap[v].isOpened():
         print("Error opening video stream or file")
     score_win_sec = [start_sec + epochlen, start_sec + epochlen*2]
     score_win_idx1 = int(this_timestamp.index[this_timestamp['Offset_Time']>(score_win_sec[0])][0])
     score_win_idx2 = int(this_timestamp.index[this_timestamp['Offset_Time']>(score_win_sec[1])][0])
     score_win = np.arange(score_win_idx1, int(score_win_idx2))
     for f in np.arange(start, end+200):
-        cap.set(1, f)
-        ret, frame = cap.read()
+        cap[v].set(1, f)
+        ret, frame = cap[v].read()
         if ret:
             if f in score_win:
                 cv2.putText(frame, "SCORE WINDOW", (50, 105), cv2.FONT_HERSHEY_PLAIN, 4, (225, 0, 0), 2)
@@ -344,17 +347,8 @@ def pull_up_raw_trace(ax1, ax2,ax4, emg, start, end, realtime,
     length = np.arange(int(end / x - start / x))
     bottom = np.zeros(int(end / x - start / x))
 
-    #assert np.size(delt) == np.size(this_eeg) == np.size(thet)
-
-    #print("Made it past assertions")
-
     line1 = plot_LFP(start, end, ax1, this_eeg, realtime, fsd, LFP_ylim, epochlen)
     line2 = plot_DTh_ratio(DTh, start, end, fsd, ax2, epochlen)
-    # line2 = plot_delta(delt, start, end, fsd, ax2, epochlen, realtime)
-    # line3 = plot_theta(ax3, start, end, fsd, thet, epochlen, realtime)
-
-    #plot spectrogram here
-    #line5 = plot_spectrogram(ax5, this_eeg, fsd)
 
     if not emg:
         ax4.text(0.5, 0.5, 'There is no EMG')
@@ -515,7 +509,7 @@ def create_scoring_figure(extracted_dir, a, eeg, fsd, maxfreq, minfreq, movement
         ax3 = fig.add_subplot(spec[2])    
 
     #fig, (ax1, ax2) = plt.subplots(nrows = 2, ncols = 1, figsize = (11, 6))
-    plot_spectrogram(ax1, eeg, fsd, maxfreq = maxfreq, minfreq = minfreq)
+    Pxx, freqs, bins, im = plot_spectrogram(ax1, eeg, fsd, maxfreq = maxfreq, minfreq = minfreq)
     if movement_flag:
         ax4.plot(v[1], v[0], color = 'k', linestyle = '--')
         ax4.set_ylim([0,25])
@@ -594,12 +588,17 @@ def raw_scoring_trace(ax1, ax2, ax4, axx, emg_flag, start, end, realtime, this_e
 
     return line1, line2, line4, line5
 
-def load_video(this_video, a, acq, extracted_dir):
-    timestamp_df = pd.read_pickle(os.path.join(extracted_dir, 'All_timestamps.pkl'))
-    cap = cv2.VideoCapture(this_video)
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
-    return cap, timestamp_df, fps
+def load_video(d, this_timestamp):
+    print('Loading video now, this might take a second....')
+    cap = {}
+    fps = {}
+    these_ts_files = np.unique(this_timestamp['Filename'])
+    for ts in these_ts_files:
+        v = get_videofn_from_csv(d, ts)
+        print('Loading '+v+'...')
+        cap[v] = cv2.VideoCapture(v)
+        fps[v] = cap[v].get(cv2.CAP_PROP_FPS)
+    return cap, fps
 
 def timestamp_extracting(this_video, bonsai_v, a, acq):
     if bonsai_v < 6:
@@ -640,7 +639,7 @@ def timestamp_extracting(this_video, bonsai_v, a, acq):
         timestamp_file = timestamp_files[int(file_idx)]
         print('Timestamp file: ' + timestamp_file)
 
-    timestamp_df = pd.read_csv(timestamp_file, delimiter = "\n", header=None) 
+    timestamp_df = pd.read_csv(timestamp_file, header=None) 
     timestamp_df.columns = ['Timestamps']
     timestamp_df['Filename'] = timestamp_file
 
@@ -685,7 +684,6 @@ def initialize_vid_and_move(d, a, EEG_datetime, acq_len, this_eeg):
             this_video = glob.glob(os.path.join(d['video_dir'], '*_' + str(int(a)-1) +'.mp4'))[0]
         else:
             this_video = video_list[int(vid_idx)]
-        print('This is your video file: ' + this_video)
     else:
         this_video = None
         print('no video available')
@@ -762,10 +760,10 @@ def movement_extracting(video_dir, acq, a, bonsai_v, DLC, DLC_label = None, this
     movement_df['Filename'] = movement_file
     return movement_df
 
-def movement_processing(movement_df):
-    movement_df['X'] = movement_df['X'].fillna(0)
-    movement_df['Y'] = movement_df['Y'].fillna(0)
-    t_vect = movement_df['Timestamps']-movement_df['Timestamps'].iloc[0]
+def movement_processing(this_motion):
+    this_motion['X'] = this_motion['X'].fillna(0)
+    this_motion['Y'] = this_motion['Y'].fillna(0)
+    t_vect = this_motion['Timestamps']-this_motion['Timestamps'].iloc[0]
     t_vect = [t_vect.iloc[i].total_seconds() for i in range(len(t_vect))]
     bins = np.arange(0, t_vect[-1]+4, 4)
     dx = []
@@ -774,12 +772,12 @@ def movement_processing(movement_df):
     ts = []
     for i in np.arange(0, np.size(bins)-1):
         idxs, = np.where(np.logical_and(t_vect>=bins[i], t_vect<bins[i+1]))
-        temp_x = list(movement_df['X'].iloc[idxs])
+        temp_x = list(this_motion['X'].iloc[idxs])
         dx.append(int(float(temp_x[-1]))-int(float(temp_x[0])))
-        temp_y = list(movement_df['Y'].iloc[idxs])
+        temp_y = list(this_motion['Y'].iloc[idxs])
         dy.append(int(float(temp_y[-1]))-int(float(temp_y[0])))
         t.append(t_vect[idxs[-1]])
-        ts.append(movement_df['Timestamps'].iloc[idxs[-1]])
+        ts.append(this_motion['Timestamps'].iloc[idxs[-1]])
     v = np.sqrt((np.square(dx) + np.square(dy)))
     v = np.vstack([v,t])
     return v
@@ -949,6 +947,50 @@ def DLC_check_fig(csv_file):
         sns.despine()
 
     fig.tight_layout()
+def transfer_DLC_files(transfer_directory, basenames):
+    for b in basenames:
+        try:
+            os.rename(os.path.join(transfer_directory, b,b+'_csv'), os.path.join(transfer_directory, b,b+'_csv_old2'))
+        except OSError:
+            pass
+        try:
+            os.mkdir(os.path.join(transfer_directory, b, 'DLC_Outputs'))
+        except FileExistsError:
+            pass
+        try:
+            os.mkdir(os.path.join(transfer_directory, b, b+'_csv'))
+        except FileExistsError:
+            pass
+        files_to_move = []
+        coord_files = []
+        for i in ['day', 'night']:
+            files_to_move.append(glob.glob(os.path.join('/Volumes/yaochen/Active/DLC/Final_Models/', i, 'Testing', b+'*labeled.mp4')))
+            files_to_move.append(glob.glob(os.path.join('/Volumes/yaochen/Active/DLC/Final_Models/', i, 'Testing', b+'*.pickle')))
+            files_to_move.append(glob.glob(os.path.join('/Volumes/yaochen/Active/DLC/Final_Models/', i, 'Testing', b+'*.h5')))
+            files_to_move.append(glob.glob(os.path.join('/Volumes/yaochen/Active/DLC/Final_Models/', i, 'Testing', b+'*.csv')))
+            coord_files.append(glob.glob(os.path.join('/Volumes/yaochen/Active/DLC/Final_Models/', i, 'Testing/coords_csv', '*'+b+'*.csv')))
+        files_to_move = np.concatenate(files_to_move)
+        coord_files = np.concatenate(coord_files)
+        timestamp_files = glob.glob(os.path.join(transfer_directory, b, b+'_csv_old2', '*timestamp*'))
+        for f in timestamp_files:
+            directory, fname = os.path.split(f)
+            shutil.move(f, os.path.join(transfer_directory, b, b+'_csv', fname))
+        for f in files_to_move:
+            directory, fname = os.path.split(f)
+            shutil.move(f, os.path.join(transfer_directory, b, 'DLC_Outputs', fname))
+        for f in coord_files:
+            directory, fname = os.path.split(f)
+            shutil.move(f, os.path.join(transfer_directory, b, b+'_csv'))
+        rename_DLC_csvs(os.path.join(transfer_directory, b, b+'_csv'), b)
+    print('Done :)')
+
+def get_videofn_from_csv(d, csv_filename):
+    str_idx1 = csv_filename.find('timestamp')+len('timestamp')
+    str_idx2 = csv_filename.find('.csv')
+    num = csv_filename[str_idx1:str_idx2]
+    fn = os.path.split(csv_filename)[1]
+    v = os.path.join(d['video_dir'], fn[:fn.find('_')]+num+'.mp4')
+    return v
 def print_instructions():
     print('''\
 
