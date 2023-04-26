@@ -24,6 +24,7 @@ from datetime import datetime, timedelta
 import json
 import seaborn as sns
 import shutil
+import PKA_Sleep as PKA
 
 def generate_signal(downsamp_signal, epochlen, fs): # fs = fsd here
     # mean of 4 seconds
@@ -96,7 +97,6 @@ def random_forest_classifier(features, target):
     return clf
 
 def plot_spectrogram(ax, eegdat, fsd, minfreq = 1, maxfreq = 16):
-    ax.set_title('Spectrogram w/ EMG')
     window_length = 10 # n seconds in windowing segments
     noverlap = 9.9 # step size in sec
     dt = 1/fsd
@@ -104,13 +104,21 @@ def plot_spectrogram(ax, eegdat, fsd, minfreq = 1, maxfreq = 16):
     t = np.arange(0.0, t_elapsed, dt)
     noverlap = noverlap * fsd
     NFFT = window_length * fsd
-    ax.set_xlabel('Time (seconds)')
-    ax.set_ylabel('Frequency (Hz)')
+    if ax:
+        ax.set_title('Spectrogram w/ EMG')
+        ax.set_xlabel('Time (seconds)')
+        ax.set_ylabel('Frequency (Hz)')
     # the minfreq and maxfreq args will limit the frequencies
-    Pxx, freqs, bins, im = my_specgram(eegdat, ax = ax, NFFT=NFFT, Fs=fsd, noverlap=noverlap,
-                                cmap=cm.get_cmap('jet'), minfreq = minfreq, maxfreq = maxfreq,
-                                xextent = (0,int(t_elapsed)))
-    return Pxx, freqs, bins, im
+        Pxx, freqs, bins, im = my_specgram(eegdat, ax = ax, NFFT=NFFT, Fs=fsd, noverlap=noverlap,
+                                    cmap=cm.get_cmap('jet'), minfreq = minfreq, maxfreq = maxfreq,
+                                    xextent = (0,int(t_elapsed)))
+        return Pxx, freqs, bins, im
+    else:
+        Pxx, freqs = my_specgram(eegdat, ax = ax, NFFT=NFFT, Fs=fsd, noverlap=noverlap,
+                                    cmap=cm.get_cmap('jet'), minfreq = minfreq, maxfreq = maxfreq,
+                                    xextent = (0,int(t_elapsed)))
+        return Pxx, freqs
+
 def my_specgram(x, ax = None, NFFT=400, Fs=200, Fc=0, detrend=mlab.detrend_none,
              window=mlab.window_hanning, noverlap=200,
              cmap=None, xextent=None, pad_to=None, sides='default',
@@ -964,6 +972,7 @@ def transfer_DLC_files(transfer_directory, basenames):
         files_to_move = []
         coord_files = []
         for i in ['day', 'night']:
+        # for i in ['day']:
             files_to_move.append(glob.glob(os.path.join('/Volumes/yaochen/Active/DLC/Final_Models/', i, 'Testing', b+'*labeled.mp4')))
             files_to_move.append(glob.glob(os.path.join('/Volumes/yaochen/Active/DLC/Final_Models/', i, 'Testing', b+'*.pickle')))
             files_to_move.append(glob.glob(os.path.join('/Volumes/yaochen/Active/DLC/Final_Models/', i, 'Testing', b+'*.h5')))
@@ -991,6 +1000,29 @@ def get_videofn_from_csv(d, csv_filename):
     fn = os.path.split(csv_filename)[1]
     v = os.path.join(d['video_dir'], fn[:fn.find('_')]+num+'.mp4')
     return v
+def define_microarousals(sleep_states, epoch_len):
+    wake_idx = PKA.find_continuous(sleep_states, [1,4])
+    for w in wake_idx:
+        if len(w)*epoch_len <= 16:
+            sleep_states[w] = 5
+    return sleep_states
+def get_eeg_segment(basename, time_window):
+    file_num, sec_in = divmod(time_window[0], 3600)
+    time_diff = time_window[-1]-time_window[0]
+    eeg_file = get_eeg_file(basename, file_num)
+    eeg = np.load(eeg_file)
+    eeg_t = np.linspace(0, 3600, np.size(eeg))
+    seg_idx, = np.where(np.logical_and(eeg_t>=sec_in, eeg_t<sec_in+time_diff))
+    eeg_seg = eeg[seg_idx]
+    return eeg_seg
+
+def get_eeg_file(basename, file_num):
+    extracted_dir = os.path.join('/Volumes/yaochen/Active/Lizzie/FLP_data', basename, basename+'_extracted_data')
+    downsampled_files = glob.glob(os.path.join(extracted_dir, 'downsampEEG*_hr0.npy'))
+    acqs = np.sort([int(d[d.find('Acq')+3:d.find('_hr0')]) for d in downsampled_files])
+    this_file = os.path.join(extracted_dir, 'downsampEEG_Acq'+str(acqs[file_num])+'_hr0.npy')
+    return this_file
+
 def print_instructions():
     print('''\
 

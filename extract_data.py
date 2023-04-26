@@ -229,6 +229,11 @@ def alternate_label(this_video, csv_dir, i):
 	SWS_utils.DLC_check_fig(csv_file)
 	new_label = input('What label do you want to use?')
 	return new_label
+def make_full_velocity_array(savedir):
+	movement_df = pd.read_pickle(os.path.join(savedir, 'All_movement.pkl'))
+	v = SWS_utils.movement_processing(movement_df)
+	np.save(os.path.join(savedir, 'velocity_vector.npy'), v)
+
 
 	return
 if __name__ == "__main__":
@@ -247,6 +252,10 @@ if __name__ == "__main__":
 		downsample_filter(args[1])
 		if movement:
 			combine_bonsai_data(args[1])
+			plt.close('all')
+			velocity_curve = input('Do you want to make the full velocity array (y/n)?')
+			if velocity_curve == 'y':
+				make_full_velocity_array(d['savedir'])
 
 
 
