@@ -109,12 +109,12 @@ def plot_spectrogram(ax, eegdat, fsd, minfreq = 1, maxfreq = 16):
         ax.set_xlabel('Time (seconds)')
         ax.set_ylabel('Frequency (Hz)')
     # the minfreq and maxfreq args will limit the frequencies
-        Pxx, freqs, bins, im = my_specgram(eegdat, ax = ax, NFFT=NFFT, Fs=fsd, noverlap=noverlap,
+        Pxx, freqs, bins, im = my_specgram(eegdat, ax = ax, NFFT=int(NFFT), Fs=fsd, noverlap=int(noverlap),
                                     cmap=cm.get_cmap('jet'), minfreq = minfreq, maxfreq = maxfreq,
                                     xextent = (0,int(t_elapsed)))
         return Pxx, freqs, bins, im
     else:
-        Pxx, freqs = my_specgram(eegdat, ax = ax, NFFT=NFFT, Fs=fsd, noverlap=noverlap,
+        Pxx, freqs = my_specgram(eegdat, ax = ax, NFFT=int(NFFT), Fs=fsd, noverlap=int(noverlap),
                                     cmap=cm.get_cmap('jet'), minfreq = minfreq, maxfreq = maxfreq,
                                     xextent = (0,int(t_elapsed)))
         return Pxx, freqs

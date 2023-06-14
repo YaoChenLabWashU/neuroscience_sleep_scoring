@@ -185,7 +185,7 @@ def combine_bonsai_data(filename_sw):
 		ts_format = '%a %b %d %H:%M:%S %Y'
 		video_datetime = datetime.strptime(video_create_time, ts_format)
 		time_diff = last_ts-video_datetime
-		timestamp_df['Timestamps'] = timestamp_df['Timestamps']-time_diff
+		# timestamp_df['Timestamps'] = timestamp_df['Timestamps']-time_diff
 		all_ts_df  = all_ts_df.append(timestamp_df)
 		if movement:
 			movement_df = SWS_utils.movement_extracting(csv_dir, acq, a, bonsai_v, 
