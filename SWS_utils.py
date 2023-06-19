@@ -13,6 +13,7 @@ from sklearn.metrics import accuracy_score
 from sklearn import preprocessing
 import joblib
 import pandas as pd
+pd.options.mode.chained_assignment = None
 import cv2
 import math
 from pylab import *
@@ -608,13 +609,10 @@ def load_video(d, this_timestamp):
         fps[v] = cap[v].get(cv2.CAP_PROP_FPS)
     return cap, fps
 
-def timestamp_extracting(this_video, bonsai_v, a, acq):
-    if bonsai_v < 6:
-        bn_vid, ext_vid = os.path.splitext(this_video)
-        if '_filled' in bn_vid:
-            bn_vid = bn_vid.replace('_filled', '')
-        timestamps = glob.glob(bn_vid+'*.txt')
-        timestamps_csv = glob.glob(bn_vid+'*.csv')
+def timestamp_extracting(d, a):
+    if d['Bonsai Version'] < 6:
+        timestamps = glob.glob(d['csv_dir']+'*.txt')
+        timestamps_csv = glob.glob(d['csv_dir']+'*.csv')
         for t in timestamps_csv:
             timestamps.append(t)
         for tf in timestamps:
@@ -628,22 +626,13 @@ def timestamp_extracting(this_video, bonsai_v, a, acq):
             except Exception:
                 print('This is not a timestamp file. Help.')
 
-    if bonsai_v >= 6:
-        video_dir  = os.path.dirname(this_video)
-        top_directory = video_dir.replace(video_dir.split('/')[-1], '')
-        csv_dir = glob.glob(top_directory + '*csv')[0]
-        video_files = glob.glob(os.path.join(video_dir, '*.mp4'))
-        if len(video_files) == 0:
-            video_files = glob.glob(os.path.join(video_dir, '*.avi'))
-        if len(video_files) == 0:
-            print('No videos found! Please check directory')
-            sys.exit()
-        timestamp_files = glob.glob(os.path.join(csv_dir, '*imestamp*.csv'))
-        timestamp_files.sort(key=lambda f: os.path.getctime(os.path.join(csv_dir, f)))
-        if len(timestamp_files) == 2*len(video_files):
-            timestamp_files = glob.glob(os.path.join(csv_dir, '*sidetimestamp*.csv'))
-            timestamp_files.sort(key=lambda f: os.path.getmtime(os.path.join(csv_dir, f)))
-        file_idx, = np.where(np.asarray(acq) == int(a))
+    if d['Bonsai Version'] >= 6:
+        timestamp_files = glob.glob(os.path.join(d['csv_dir'], '*imestamp*.csv'))
+        timestamp_files = sort_files(timestamp_files, d['basename'])
+        if len(timestamp_files) == 2*len(d['Acquisition']):
+            timestamp_files = glob.glob(os.path.join(d['csv_dir'], '*sidetimestamp*.csv'))
+            timestamp_files = sort_files(timestamp_files, d['basename'])
+        file_idx = d['Acquisition'].index(int(a))
         timestamp_file = timestamp_files[int(file_idx)]
         print('Timestamp file: ' + timestamp_file)
 
@@ -679,7 +668,7 @@ def initialize_vid_and_move(d, a, EEG_datetime, acq_len, this_eeg):
             print('No videos found! Please check directory')
             sys.exit()
 
-        video_list.sort(key=lambda f: os.path.getmtime(os.path.join(d['video_dir'], f)))
+        video_list = sort_files(video_list, d['basename'])
         try:
             assert len(video_list) == len(d['Acquisition'])
         except AssertionError:
@@ -687,7 +676,7 @@ def initialize_vid_and_move(d, a, EEG_datetime, acq_len, this_eeg):
                 print('There are more videos than aquisitions. Please move any videos that do not have a corresponding acquisition out of this directory: ' + str(d['video_dir']))
             if len(video_list) < len(d['Acquisition']):
                 print('There are more acquisitions than videos. Only list acquisitions with videos in the Score_Settings.json file')
-        vid_idx, = np.where(np.asarray(d['Acquisition']) == int(a))
+        vid_idx = d['Acquisition'].index(int(a))
         if d['video_dir'] == "F:/FLiP_Videos/jaLC_FLiPAKAREEGEMG004/":
             this_video = glob.glob(os.path.join(d['video_dir'], '*_' + str(int(a)-1) +'.mp4'))[0]
         else:
@@ -720,38 +709,21 @@ def load_bands(this_eeg, fsd):
 
     return theta_band/delta_band
 
-def movement_extracting(video_dir, acq, a, bonsai_v, DLC, DLC_label = None, this_video = None):
-    if bonsai_v < 6:    
-        movement_filedir = video_dir
-        movement_files = glob.glob(os.path.join(movement_filedir, '*.csv'))
-        temp = [movement_files[i] for i in range(len(movement_files)) if (os.path.splitext(this_video)[0]) in movement_files[i]]
-        print('I think I found some movements file(s): ')
-        print(temp)
-        for f in temp:
-            with open(f, "r") as file:
-                first_line = file.readline()
-                if first_line == 'X,Y\n':
-                    print('This is your movement file: ' + f)
-                    movement_file = f
-                    break
-                else:
-                    print(f + 'is actually not a movement file.')
-
-    elif bonsai_v >= 6:
-        movement_filedir = video_dir
-        movement_files = glob.glob(os.path.join(movement_filedir, '*motion*.csv'))
+def movement_extracting(d, a):
+    if d['Bonsai Version'] >= 6:
+        movement_files = glob.glob(os.path.join(d['csv_dir'], '*motion*.csv'))
         if len(movement_files) == 0:
             movement_files = glob.glob(os.path.join(movement_filedir, '*movement*.csv'))
-        this_idx = movement_files[0].find('motion')+6
-        basename = movement_files[0][:this_idx]
-        file_idx, = np.where(np.asarray(acq) == int(a))
-        movement_file =  basename + str(int(file_idx)) + '.csv'
+        movement_files = sort_files(movement_files, d['basename'])
+        file_idx = d['Acquisition'].index(int(a))
+        movement_file =  movement_files[file_idx]
         print('This is your movement file: ' + movement_file)
+    else:
+        print('This scoring engine no longer supports Bonsai version < 6. Please run DLC.')
     
-    if DLC:
+    if d['DLC']:
         movement_df_full = pd.read_csv(movement_file)
-        movement_df = movement_df_full[[DLC_label+'_x', DLC_label+'_y', DLC_label+'_likelihood']]
-        # movement_df = movement_df_full[[DLC_label+'_x', DLC_label+'_y']]
+        movement_df = movement_df_full[[d['DLC Label']+'_x', d['DLC Label']+'_y', d['DLC Label']+'_likelihood']]
         movement_df.columns = ['X', 'Y', 'Likelihood']
     else:
         movement_df = pd.read_csv(movement_file, header = None)
@@ -955,7 +927,8 @@ def DLC_check_fig(csv_file):
         sns.despine()
 
     fig.tight_layout()
-def transfer_DLC_files(transfer_directory, basenames):
+    
+def transfer_DLC_files(transfer_directory, basenames, DLC_model_dir):
     for b in basenames:
         try:
             os.rename(os.path.join(transfer_directory, b,b+'_csv'), os.path.join(transfer_directory, b,b+'_csv_old2'))
@@ -971,13 +944,12 @@ def transfer_DLC_files(transfer_directory, basenames):
             pass
         files_to_move = []
         coord_files = []
-        for i in ['day', 'night']:
-        # for i in ['day']:
-            files_to_move.append(glob.glob(os.path.join('/Volumes/yaochen/Active/DLC/Final_Models/', i, 'Testing', b+'*labeled.mp4')))
-            files_to_move.append(glob.glob(os.path.join('/Volumes/yaochen/Active/DLC/Final_Models/', i, 'Testing', b+'*.pickle')))
-            files_to_move.append(glob.glob(os.path.join('/Volumes/yaochen/Active/DLC/Final_Models/', i, 'Testing', b+'*.h5')))
-            files_to_move.append(glob.glob(os.path.join('/Volumes/yaochen/Active/DLC/Final_Models/', i, 'Testing', b+'*.csv')))
-            coord_files.append(glob.glob(os.path.join('/Volumes/yaochen/Active/DLC/Final_Models/', i, 'Testing/coords_csv', '*'+b+'*.csv')))
+        for i in ['up_day_t/Test_day_updated-Samarth-2023-05-17', 'up_night_t/Test_night_updated-Samarth-2023-05-17']:
+            files_to_move.append(glob.glob(os.path.join(DLC_model_dir, i, 'Testing', b+'*labeled.mp4')))
+            files_to_move.append(glob.glob(os.path.join(DLC_model_dir, i, 'Testing', b+'*.pickle')))
+            files_to_move.append(glob.glob(os.path.join(DLC_model_dir, i, 'Testing', b+'*.h5')))
+            files_to_move.append(glob.glob(os.path.join(DLC_model_dir, i, 'Testing', b+'*.csv')))
+            coord_files.append(glob.glob(os.path.join(DLC_model_dir, i, 'Testing/coords_csv', '*'+b+'*.csv')))
         files_to_move = np.concatenate(files_to_move)
         coord_files = np.concatenate(coord_files)
         timestamp_files = glob.glob(os.path.join(transfer_directory, b, b+'_csv_old2', '*timestamp*'))
@@ -1022,6 +994,27 @@ def get_eeg_file(basename, file_num):
     acqs = np.sort([int(d[d.find('Acq')+3:d.find('_hr0')]) for d in downsampled_files])
     this_file = os.path.join(extracted_dir, 'downsampEEG_Acq'+str(acqs[file_num])+'_hr0.npy')
     return this_file
+
+def sort_files(file_list, basename):
+    fn_only = [os.path.splitext(os.path.basename(l))[0] for l in file_list]
+    ext = os.path.splitext(file_list[0])[1]
+    if ext == '.mp4':
+        file_nums = [int(i[i.find(basename)+len(basename):]) for i in fn_only]
+    if ext == '.csv':
+        if 'timestamp' in file_list[0]:
+            file_nums = [int(i[i.find('timestamp')+len('timestamp'):]) for i in fn_only]
+        elif 'motion' in file_list[0]:
+            file_nums = [int(i[i.find('motion')+len('motion'):]) for i in fn_only]
+        else:
+            print('I do not know what type of files these are....')
+    ordered_idx = [file_nums.index(ii) for ii in np.arange(min(file_nums), max(file_nums)+1)]
+    sorted_files = [file_list[idx] for idx in ordered_idx]
+
+    return sorted_files
+
+
+
+
 
 def print_instructions():
     print('''\

@@ -144,64 +144,38 @@ def downsample_filter(filename_sw):
 			if int(d['emg']) == 1:
 				np.save(os.path.join(savedir, 'downsampEMG_Acq'+str(a) + '_hr' + str(h)+ '.npy'), this_emg)
 
-def combine_bonsai_data(filename_sw):
-	with open(filename_sw, 'r') as f:
-			d = json.load(f)
-	vid = d['vid']
-	video_dir = d['video_dir']
-	bonsai_v = d['Bonsai Version']
-	acq = d['Acquisition']
-	savedir = d['savedir']
-	movement = d['movement']
-
-	if bonsai_v < 6:
-		csv_dir = video_dir
-
-	if bonsai_v >= 6:
-		if video_dir[-1] != '/':
-		    video_dir = video_dir + '/'
-		top_directory = video_dir.replace(video_dir.split('/')[-2], '')[:-1]
-		csv_dir = glob.glob(top_directory + '*csv')[0]
-
-	videos = glob.glob(os.path.join(video_dir, '*.mp4'))
+def combine_bonsai_data(filename_sw, d):
+	videos = glob.glob(os.path.join(d['video_dir'], '*.mp4'))
 	if len(videos) == 0:
-		videos = glob.glob(os.path.join(video_dir, '*.avi'))
+		videos = glob.glob(os.path.join(d['video_dir'], '*.avi'))
 	if len(videos) == 0:
 		print('No videos found! Please check directory')
 		sys.exit()
-	videos.sort(key=lambda f: os.path.getmtime(os.path.join(video_dir, f)))
+	videos = SWS_utils.sort_files(videos, d['basename'])
 	all_ts_df  = pd.DataFrame(columns = ['Timestamps', 'Filename'])
-	if movement:
+	if d['movement']:
 		if d['DLC']:
 			all_move_df = pd.DataFrame(columns = ['Timestamps', 'X','Y','Likelihood','Filename'])
 		else:
 			all_move_df = pd.DataFrame(columns = ['Timestamps', 'X','Y', 'Filename'])
 	
-	for i, a in enumerate(acq):
-		this_video = videos[i]
-		timestamp_df = SWS_utils.timestamp_extracting(this_video, bonsai_v, a, acq)
-		video_create_time = time.ctime(os.path.getmtime(this_video))
-		last_ts = timestamp_df['Timestamps'].iloc[-1]
-		ts_format = '%a %b %d %H:%M:%S %Y'
-		video_datetime = datetime.strptime(video_create_time, ts_format)
-		time_diff = last_ts-video_datetime
-		# timestamp_df['Timestamps'] = timestamp_df['Timestamps']-time_diff
-		all_ts_df  = all_ts_df.append(timestamp_df)
-		if movement:
-			movement_df = SWS_utils.movement_extracting(csv_dir, acq, a, bonsai_v, 
-				d['DLC'], d['DLC Label'], this_video = this_video)
+	for i, a in enumerate(d['Acquisition']):
+		timestamp_df = SWS_utils.timestamp_extracting(d, a)
+		all_ts_df  = pd.concat([all_ts_df, timestamp_df])
+		if d['movement']:
+			movement_df = SWS_utils.movement_extracting(d, a)
 			bad_frames, = np.where(movement_df['Likelihood'] < 0.8)
 			perc_bad = np.size(bad_frames)/len(movement_df.index)
 			if perc_bad > 0.15:
 				new_label = alternate_label(this_video, csv_dir, i)
-				movement_df = SWS_utils.movement_extracting(csv_dir, acq, a, bonsai_v, 
+				movement_df = SWS_utils.movement_extracting(csv_dir, d['Acquisition'], a, bonsai_v, 
 				d['DLC'], new_label, this_video = this_video)
 			
 			movement_df['Timestamps'] = timestamp_df['Timestamps']
-			all_move_df  = all_move_df.append(movement_df)
-	all_ts_df.to_pickle(os.path.join(savedir, 'All_timestamps.pkl'))
-	if movement:
-		all_move_df.to_pickle(os.path.join(savedir, 'All_movement.pkl'))
+			all_move_df  = pd.concat([all_move_df, movement_df])
+	all_ts_df.to_pickle(os.path.join(d['savedir'], 'All_timestamps.pkl'))
+	if d['movement']:
+		all_move_df.to_pickle(os.path.join(d['savedir'], 'All_movement.pkl'))
 def pulling_acqs(filename_sw):
 	with open(filename_sw, 'r') as f:
 			d = json.load(f)
@@ -247,11 +221,10 @@ if __name__ == "__main__":
 	else:
 		with open(args[1], 'r') as f:
 				d = json.load(f)
-		movement = d['movement']
 		choosing_acquisition(args[1])
 		downsample_filter(args[1])
-		if movement:
-			combine_bonsai_data(args[1])
+		if d['movement']:
+			combine_bonsai_data(args[1], d)
 			plt.close('all')
 			velocity_curve = input('Do you want to make the full velocity array (y/n)?')
 			if velocity_curve == 'y':
