@@ -25,6 +25,7 @@ from datetime import datetime, timedelta
 import json
 import seaborn as sns
 import shutil
+import matplotlib.colors as mcolors
 import PKA_Sleep as PKA
 
 def generate_signal(downsamp_signal, epochlen, fs): # fs = fsd here
@@ -106,19 +107,18 @@ def plot_spectrogram(ax, eegdat, fsd, minfreq = 1, maxfreq = 16):
     noverlap = noverlap * fsd
     NFFT = window_length * fsd
     if ax:
-        ax.set_title('Spectrogram w/ EMG')
         ax.set_xlabel('Time (seconds)')
         ax.set_ylabel('Frequency (Hz)')
     # the minfreq and maxfreq args will limit the frequencies
         Pxx, freqs, bins, im = my_specgram(eegdat, ax = ax, NFFT=int(NFFT), Fs=fsd, noverlap=int(noverlap),
-                                    cmap=cm.get_cmap('jet'), minfreq = minfreq, maxfreq = maxfreq,
+                                    cmap=cm.get_cmap('plasma'), minfreq = minfreq, maxfreq = maxfreq,
                                     xextent = (0,int(t_elapsed)))
         return Pxx, freqs, bins, im
     else:
-        Pxx, freqs = my_specgram(eegdat, ax = ax, NFFT=int(NFFT), Fs=fsd, noverlap=int(noverlap),
-                                    cmap=cm.get_cmap('jet'), minfreq = minfreq, maxfreq = maxfreq,
+        Pxx, freqs, bins = my_specgram(eegdat, ax = ax, NFFT=int(NFFT), Fs=fsd, noverlap=int(noverlap),
+                                    cmap=cm.get_cmap('plasma'), minfreq = minfreq, maxfreq = maxfreq,
                                     xextent = (0,int(t_elapsed)))
-        return Pxx, freqs
+        return Pxx, freqs, bins
 
 def my_specgram(x, ax = None, NFFT=400, Fs=200, Fc=0, detrend=mlab.detrend_none,
              window=mlab.window_hanning, noverlap=200,
@@ -205,12 +205,14 @@ def my_specgram(x, ax = None, NFFT=400, Fs=200, Fc=0, detrend=mlab.detrend_none,
     xmin, xmax = xextent
     freqs += Fc
     extent = xmin, xmax, freqs[0], freqs[-1]
+    vmin = np.percentile(np.concatenate(Z), 2)
+    vmax = np.percentile(np.concatenate(Z), 98)
     if ax:
-        im = ax.imshow(Z, cmap, extent=extent, **kwargs)
+        im = ax.imshow(Z, cmap, extent=extent, **kwargs, vmin = -50, vmax = -10)
         ax.axis('auto')
         return Pxx, freqs, bins, im
     else:
-        return Pxx, freqs
+        return Pxx, freqs, bins
 
 def plot_predicted(ax, Predict_y, is_predicted, clf, Features):
     ax.set_title('Predicted States')
@@ -703,7 +705,7 @@ def load_bands(this_eeg, fsd):
 
     minfreq = 0.5 # min freq in Hz
     maxfreq = 35 # max freq in Hz
-    Pxx, freqs = my_specgram(this_eeg, Fs = fsd)
+    Pxx, freqs, bins = my_specgram(this_eeg, Fs = fsd)
     delta_band = np.sum(Pxx[np.where(np.logical_and(freqs>=1,freqs<=4))],axis = 0)
     theta_band = np.sum(Pxx[np.where(np.logical_and(freqs>=5,freqs<=8))],axis = 0)
 
@@ -981,7 +983,7 @@ def define_microarousals(sleep_states, epoch_len):
 def get_eeg_segment(basename, time_window):
     file_num, sec_in = divmod(time_window[0], 3600)
     time_diff = time_window[-1]-time_window[0]
-    eeg_file = get_eeg_file(basename, file_num)
+    eeg_file = get_eeg_file(basename, int(file_num))
     eeg = np.load(eeg_file)
     eeg_t = np.linspace(0, 3600, np.size(eeg))
     seg_idx, = np.where(np.logical_and(eeg_t>=sec_in, eeg_t<sec_in+time_diff))
