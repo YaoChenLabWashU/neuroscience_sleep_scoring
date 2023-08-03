@@ -98,7 +98,7 @@ def random_forest_classifier(features, target):
     clf.fit(features, target)
     return clf
 
-def plot_spectrogram(ax, eegdat, fsd, minfreq = 1, maxfreq = 16):
+def plot_spectrogram(ax, eegdat, fsd, minfreq = 1, maxfreq = 16, additional_ax = None):
     window_length = 10 # n seconds in windowing segments
     noverlap = 9.9 # step size in sec
     dt = 1/fsd
@@ -106,24 +106,29 @@ def plot_spectrogram(ax, eegdat, fsd, minfreq = 1, maxfreq = 16):
     t = np.arange(0.0, t_elapsed, dt)
     noverlap = noverlap * fsd
     NFFT = window_length * fsd
+
+    if additional_ax:
+        additional_ax.set_xlabel('Time (seconds)')
+        additional_ax.set_ylabel('Frequency (Hz)')      
+
     if ax:
         ax.set_xlabel('Time (seconds)')
         ax.set_ylabel('Frequency (Hz)')
     # the minfreq and maxfreq args will limit the frequencies
         Pxx, freqs, bins, im = my_specgram(eegdat, ax = ax, NFFT=int(NFFT), Fs=fsd, noverlap=int(noverlap),
                                     cmap=cm.get_cmap('plasma'), minfreq = minfreq, maxfreq = maxfreq,
-                                    xextent = (0,int(t_elapsed)))
+                                    xextent = (0,int(t_elapsed)), additional_ax = additional_ax)
         return Pxx, freqs, bins, im
     else:
         Pxx, freqs, bins = my_specgram(eegdat, ax = ax, NFFT=int(NFFT), Fs=fsd, noverlap=int(noverlap),
                                     cmap=cm.get_cmap('plasma'), minfreq = minfreq, maxfreq = maxfreq,
-                                    xextent = (0,int(t_elapsed)))
+                                    xextent = (0,int(t_elapsed)), additional_ax = additional_ax)
         return Pxx, freqs, bins
 
 def my_specgram(x, ax = None, NFFT=400, Fs=200, Fc=0, detrend=mlab.detrend_none,
              window=mlab.window_hanning, noverlap=200,
              cmap=None, xextent=None, pad_to=None, sides='default',
-             scale_by_freq=None, minfreq = None, maxfreq = None, **kwargs):
+             scale_by_freq=None, minfreq = None, maxfreq = None, additional_ax = None, **kwargs):
     """
     call signature::
 
@@ -210,12 +215,18 @@ def my_specgram(x, ax = None, NFFT=400, Fs=200, Fc=0, detrend=mlab.detrend_none,
     if ax:
         im = ax.imshow(Z, cmap, extent=extent, **kwargs, vmin = -50, vmax = -10)
         ax.axis('auto')
+        xticks = np.arange(100,900,100)*4
+        ax.set_xticks(xticks)
+        if additional_ax:
+            im = additional_ax.imshow(Z, cmap, extent=extent, **kwargs, vmin = -50, vmax = -10)
+            additional_ax.axis('auto')
+            additional_ax.set_xticks(xticks)
         return Pxx, freqs, bins, im
     else:
         return Pxx, freqs, bins
 
 def plot_predicted(ax, Predict_y, is_predicted, clf, Features):
-    ax.set_title('Predicted States')
+    ax.set_title('Predicted States', x=0.5, y=0.7)
     for state in np.arange(np.size(Predict_y)):
         if Predict_y[state] == 1:
             rect7 = patch.Rectangle((state, 0), 3.8, height = 1, color = 'green')
@@ -232,7 +243,10 @@ def plot_predicted(ax, Predict_y, is_predicted, clf, Features):
         else:
             print("Model predicted an unknown state.")
     ax.set_ylim(0.3, 1)
+    ax.set_yticklabels([])
     ax.set_xlim(0, np.size(Predict_y))
+    ax.set_xticks(np.arange(100, np.size(Predict_y), 100))
+    ax.tick_params(axis="x",direction="in", pad=-15)
     if is_predicted:
         predictions = clf.predict_proba(Features)
         confidence = np.max(predictions, 1)
@@ -241,29 +255,32 @@ def plot_predicted(ax, Predict_y, is_predicted, clf, Features):
     ax.plot(confidence, color = 'k')
 
 # This is the plotting collection function for the coarse prediction figure
-def create_prediction_figure(Predict_y, is_predicted, clf, Features, fs, eeg, this_emg, realtime, 
-    epochlen, start, end, maxfreq, minfreq, movement_flag = False, v = None):
+def create_prediction_figure(Predict_y, is_predicted, clf, Features, fs, eeg, this_emg, EEG_t, 
+    epochlen, start, end, maxfreq, minfreq, movement_flag = False, v = None, additional_ax = None):
     plt.ion()
     if movement_flag:
-        #fig, (ax1, ax_move, ax2, ax3, axx) = plt.subplots(nrows = 5, ncols = 1, figsize = (11, 6))
-        fig, (ax1, ax_move, ax2, axx) = plt.subplots(nrows = 4, ncols = 1, figsize = (11, 6))
-        ax_move.plot(v[1], v[0], color = 'k', linestyle = '--')
-        ax_move.set_ylim([0,25])
-        ax_move.set_xlim([0,int(np.size(eeg)/fs)])
-
+        fig, (ax1, ax2, ax3, axx) = plt.subplots(nrows = 4, ncols = 1, figsize = (11, 6))
+        ax3.plot(v[1], v[0], color = 'k', linestyle = '--')
+        ax3.set_ylabel('Velocity')
+        ax3.set_ylim([0,40])
+        ax3.set_xlim([0,int(np.size(eeg)/fs)])
+        ax3.set_yticklabels([])
+        ax3.set_xticklabels([])
     else:
-        #fig, (ax1, ax2, ax3, axx) = plt.subplots(nrows = 4, ncols = 1, figsize = (11, 6))
         fig, (ax1, ax2, axx) = plt.subplots(nrows = 3, ncols = 1, figsize = (11, 6))
-    Pxx, freqs, bins, im = plot_spectrogram(ax1, eeg, fs, maxfreq = maxfreq, minfreq = minfreq)
+    Pxx, freqs, bins, im = plot_spectrogram(ax1, eeg, fs, maxfreq = maxfreq, minfreq = minfreq, 
+        additional_ax = additional_ax)
+    ax1.xaxis.set_ticks_position('top')
     plot_predicted(ax2, Predict_y, is_predicted, clf, Features)
-
-    plot_EMGFig2(axx, this_emg, epochlen, realtime, fs)
-
-    #fs = fsd
-    #plot_EMGFig2(axx, this_emg, epochlen, x, start, end, realtime, fs)
+    axx.plot(EEG_t, this_emg, color= 'r')
+    axx.set_xlim([EEG_t[0],EEG_t[-1]])
+    axx.set_ylabel('EMG Amplitude')
     fig.tight_layout()
-    #return fig, ax1, ax2, ax3, axx
-    return fig, ax1, ax2, axx
+    fig.subplots_adjust(wspace=0, hspace=0)
+    if movement_flag:
+        return fig, ax1, ax2, ax3, axx
+    else:
+        return fig, ax1, ax2, axx
 def update_sleep_df(model_dir, mod_name, df_additions):
     try:
         Sleep_Model = np.load(file = model_dir + mod_name + '_model.pkl', allow_pickle = True)
@@ -352,130 +369,89 @@ def pull_up_movie(d, cap, start, end, vid_file, epochlen, this_timestamp):
     cv2.destroyAllWindows()
 
     #Creates line objects for the fine graph that plots data over 12s intervals
-def pull_up_raw_trace(ax1, ax2,ax4, emg, start, end, realtime,
-    this_eeg, fsd, LFP_ylim, DTh, epochlen, this_emg):
-    x = (end - start)
-    length = np.arange(int(end / x - start / x))
-    bottom = np.zeros(int(end / x - start / x))
+def create_zoomed_fig(ax6, ax7, ax8, this_emg, EMG_t, DTh, DTh_t, v, v_t, 
+    start_trace, end_trace, epochlen, DTh_ylims = None, emg_ylims = None, v_ylims = None):
+    #Delta-Theta
+    line1 = plot_zoomed_data(ax6, DTh, DTh_t, start_trace, end_trace, color = '#5170d7', 
+        epochlen = epochlen, ylabel = 'Delta/Theta\nRatio', ylims = DTh_ylims)
 
-    line1 = plot_LFP(start, end, ax1, this_eeg, realtime, fsd, LFP_ylim, epochlen)
-    line2 = plot_DTh_ratio(DTh, start, end, fsd, ax2, epochlen)
-
-    if not emg:
-        ax4.text(0.5, 0.5, 'There is no EMG')
-        line4 = plt.plot([0,0], [1,1], linewidth = 0, color = 'w')
+    if this_emg is None:
+        ax7.text(0.5, 0.5, 'There is no EMG')
+        line2 = ax7.plot([0,0], [1,1], linewidth = 0, color = 'w')
     else:
-        line4 = plot_EMG(ax4, length, bottom, this_emg, epochlen, x, start, end, realtime, fsd)
-        #line5 = plot_EMGFig2(ax5, this_emg, epochlen, realtime, fsd)
+        line2 = plot_zoomed_data(ax7, this_emg, EMG_t, start_trace, end_trace, color = '#fd411e',
+            epochlen = epochlen, ylabel = 'EMG Amplitude', linewidth = 2, ylims = emg_ylims)
+    if v is None:
+        line3 = ax8.plot([0,0], [1,1], linewidth = 0, color = 'w')
+        ax8.text(0.5, 0.5, 'There is no DLC')
+    else:
+        line3 = plot_zoomed_data(ax8, v, v_t, start_trace, end_trace, color = '#a87dc2',
+            epochlen = epochlen, ylabel = 'Velocity', ylims = v_ylims)
     plt.show()
 
-    return line1, line2, line4
+    return line1, line2, line3
 
-def plot_DTh_ratio(DTh, start, end, fsd, ax, epochlen):
-    start = int(start/fsd)
-    end = int(end/fsd)
-    extra = 5*epochlen
-    long_DTh = np.concatenate((np.full(extra, 0),DTh, np.full(extra+1, 0)))
-    time = np.arange(extra*-1, np.size(DTh)+extra+1)
-    line2, = ax.plot(time[start:end], long_DTh[start:end])
-    ax.set_xlim(time[start], time[end])
-    ax.set_title('Theta/Delta Ratio')
-    ax.set_ylim([0,30])
-    top = ax.get_ylim()[1]
-    rectangle = patch.Rectangle((time[start]+(5*epochlen), top),epochlen,height=-top / 5)
-    ax.add_patch(rectangle)
-    
-    return line2
-
-def plot_delta(delt, start, end, fsd, ax, epochlen, realtime):
-    line2, = ax.plot(realtime[start:end], delt[start:end])
-    ax.set_xlim(start/fsd, end/fsd)
-    ax.set_ylim(-2, 2)
-    bottom_2 = ax.get_ylim()[0]
-    rectangle_2 = patch.Rectangle((start/fsd+epochlen,bottom_2),epochlen,height=float(-bottom_2/5))
-    ax.add_patch(rectangle_2)
-    ax.set_title('Delta power (0.5 - 4 Hz)')
-    return line2
-
-def plot_theta(ax, start, end, fsd, theta, epochlen, realtime):
-    line3, = ax.plot(realtime[start:end], theta[start:end])
-    ax.set_xlim(start/fsd, end/fsd)
-    ax.set_ylim(-2,2)
-    ax.set_title('Theta power (4 - 8 Hz)')
-    bottom_3 = ax.get_ylim()[0]
-    rectangle_3 = patch.Rectangle((start/fsd+epochlen, bottom_3), epochlen, height = -bottom_3 / 5)
-    ax.add_patch(rectangle_3)
-    return line3
-
-def plot_LFP(start, end, ax, this_eeg, realtime, fsd, LFP_ylim, epochlen):
-    extra = 5*fsd*epochlen
-    long_eeg = np.concatenate((np.full(extra, 0),this_eeg, np.full(extra, 0)))
-    long_time = np.concatenate((np.arange(extra*-1, 0)/fsd,realtime[0:-1], np.arange(realtime[-1]*fsd, realtime[-1]*fsd+extra+1)/fsd))
-    line1, = ax.plot(long_time[start:end], long_eeg[start:end])
-    ax.set_xlim(long_time[start], long_time[end])
-    ax.set_title('LFP')
-    ax.set_ylim(-LFP_ylim, LFP_ylim)
-    bottom = -LFP_ylim
-    rectangle = patch.Rectangle((long_time[start]+(5*epochlen), bottom),epochlen,height=-bottom/5)
-    ax.add_patch(rectangle)
-    return line1
-
-def plot_EMG(ax, length, bottom, this_emg, epochlen, x, start, end, realtime, fsd):
-    # anything with EMG will error
-    extra = 5*fsd*epochlen
-    long_emg = np.concatenate((np.full(extra, 0),this_emg, np.full(extra, 0)))
-    long_time = np.concatenate((np.arange(extra*-1, 0)/fsd,realtime[0:-1], np.arange(realtime[-1]*fsd, realtime[-1]*fsd+extra+1)/fsd))
-    line4, = ax.plot(long_time[start:end], long_emg[start:end], color = 'r')    
-    ax.set_title('EMG Amplitde')
-    ax.set_xlim(long_time[start], long_time[end])
-    ax.set_ylim(-2.5, 2.5)
-    bottom = ax.get_ylim()[0]
-    rectangle_4 = patch.Rectangle((long_time[start]+(epochlen*5), bottom), epochlen, height = -bottom / 5, color = 'r')
-    ax.add_patch(rectangle_4)
-    return line4
-
-def plot_EMGFig2(ax, this_emg, epochlen, realtime, fsd):
-    # anything with EMG will error
-
-#    end = end * 300
-    start = 0
-    end = np.size(this_emg)
-    x = (end - start)
-    length = np.arange(int(end / x - start / x))
-    bottom = np.zeros(int(end / x - start / x))
-    # If length error pops up
-    # try:
-    print("realtime len: " + str(len(realtime)))
-    print("this_emg len: " + str(len(this_emg)))
-
-    if len(realtime) != len(this_emg):
-        line4, = ax.plot(realtime[start: (min( len(this_emg), len(realtime)) ) ], this_emg[start: (min( len(this_emg), len(realtime)) )  ], color='r')
+def plot_zoomed_data(ax, data, t, start_trace, end_trace, color, epochlen, ylabel = None, 
+    ylims = None, linewidth = 3):
+    start_idx = np.where(t>=start_trace)[0][0]
+    end_idx = np.where(t<=end_trace)[0][-1]
+    line, = ax.plot(t[start_idx:end_idx+1], data[start_idx:end_idx+1], 
+        color = color, linewidth = linewidth)
+    ax.set_xlim(t[start_idx], t[end_idx])
+    if ylabel:
+        ax.set_ylabel(ylabel)
+    if ylims:
+        ax.set_ylim(ylims)
     else:
-        line4, = ax.plot(realtime[start:end], this_emg[start:end], color = 'r')
+        ylims = list(ax.get_ylim())
+    h = ylims[-1]-ylims[0]
+    rect = patch.Rectangle((0, ylims[0]),epochlen, h, color='#fac205', alpha = 0.3)
+    ax.add_patch(rect)    
+    return line
 
 
-        # Evin's y-axis scaling
-        # Median x2 method
-    # except:
-    #     print("Errored out")
+# def plot_velocity(ax, v, t, start_trace, end_trace):
+#     start_idx = np.where(t>=start_trace)[0][0]
+#     end_idx = np.where(t<=end_trace)[0][-1]
+#     line3, = ax.plot(t[start_idx:end_idx+1], v[start_idx:end_idx+1], 
+#         color = '#ff724c', linewidth = 3)
+#     ax.set_xlim(t[start_idx], t[end_idx])
+#     ax.set_ylabel('Velocity')
+#     # ax.set_ylim([0,20])
+#     return line3
 
-    ax.set_title('Full-Length EMG')
-    ax.set_xlim(start / fsd, end / fsd)
+# def plot_DTh_ratio(ax, DTh, t, start_trace, end_trace):
+#     start_idx = np.where(t>=start_trace)[0][0]
+#     end_idx = np.where(t<=end_trace)[0][-1]
+#     line1, = ax.plot(t[start_idx:end_idx+1], DTh[start_idx:end_idx+1], 
+#         color = '#464196', linewidth = 3)
+#     ax.set_xlim(t[start_idx], t[end_idx])
+#     ax.set_ylabel('Theta/Delta Ratio')
+#     ax.set_ylim([0,30])
 
-    median = np.percentile(this_emg[start:end], 95)
-
-    print('Median: '+str(median))
-
-    ax.set_ylim(-median*4, median*4)
+#     return line1
 
 
+# def plot_EMG(ax, this_emg, t, start_trace, end_trace):
+#     start_idx = np.where(t>=start_trace)[0][0]
+#     end_idx = np.where(t<=end_trace)[0][-1]
+#     line2, = ax.plot(t[start_idx:end_idx+1], this_emg[start_idx:end_idx+1], color = 'r', linewidth = 3)    
+#     ax.set_ylabel('EMG Amplitde')
+#     ax.set_xlim(t[start_idx], t[end_idx])
+#     ax.set_ylim(-2.5, 2.5)
+#     return line2
 
-    #ax.autoscale()
-    # top = ax.get_ylim()[1]
-    # rectangle_4 = patch.Rectangle((start/fsd+epochlen, top), epochlen, height = -top / 5, color = 'r')
-    # ax.add_patch(rectangle_4)
-    return line4
-
+def add_buffer(data_array, t_array, buffer_seconds, fs):
+    if data_array is None:
+        buffered_data = None
+        buffered_t = None
+    else:
+        buffered_data = np.concatenate((np.full(int(buffer_seconds*fs), 0),data_array, np.full(int(buffer_seconds*fs), 0)))
+        pre_buffer = np.arange(-buffer_seconds, 0, 1/fs)
+        post_buffer = np.arange(t_array[-1]+1/fs, t_array[-1]+buffer_seconds+1/fs, 1/fs)
+        buffered_t = np.concatenate([pre_buffer, t_array, post_buffer])
+        assert np.size(buffered_data) == np.size(buffered_t)
+    return buffered_data, buffered_t
 def clear_bins(bins, ax2):
     for b in np.arange(bins[0], bins[1]):
         b = math.floor(b)
@@ -500,31 +476,23 @@ def correct_bins(start_bin, end_bin, ax2, new_state):
         print('loc: ', location)
         ax2.add_patch(rectangle)
 
-def create_scoring_figure(extracted_dir, a, eeg, fsd, maxfreq, minfreq, movement_flag = False, v = None):
-    if movement_flag:
-        fig = plt.figure(constrained_layout=True, figsize = (11, 6))
-        widths = [1]
-        heights = [2,1,1,0.5]
-        spec = fig.add_gridspec(ncols=1, nrows=4, width_ratios=widths, height_ratios=heights)
-        ax1 = fig.add_subplot(spec[0])
-        ax2 = fig.add_subplot(spec[2])
-        ax3 = fig.add_subplot(spec[3])
-        ax4 = fig.add_subplot(spec[1])
+def create_scoring_figure(extracted_dir, a, eeg, fsd, maxfreq, minfreq, movement_flag = False, v = None, 
+    additional_ax = None):
+    plt.ion()
+    if v is not None:
+        fig, (ax1, ax2, ax3, axx) = plt.subplots(nrows = 4, ncols = 1, figsize = (11, 6))
+        ax3.plot(v[1], v[0], color = 'k', linestyle = '--')
+        ax3.set_ylabel('Velocity')
+        ax3.set_ylim([0,40])
+        ax3.set_xlim([0,int(np.size(eeg)/fsd)])
+        ax3.set_yticklabels([])
+        ax3.set_xticklabels([])
     else:
-        fig = plt.figure(constrained_layout=True, figsize = (11, 6))
-        widths = [1]
-        heights = [2,1,0.5]
-        spec = fig.add_gridspec(ncols=1, nrows=4, width_ratios=widths, height_ratios=heights)
-        ax1 = fig.add_subplot(spec[0])
-        ax2 = fig.add_subplot(spec[1])
-        ax3 = fig.add_subplot(spec[2])    
-
-    #fig, (ax1, ax2) = plt.subplots(nrows = 2, ncols = 1, figsize = (11, 6))
-    Pxx, freqs, bins, im = plot_spectrogram(ax1, eeg, fsd, maxfreq = maxfreq, minfreq = minfreq)
-    if movement_flag:
-        ax4.plot(v[1], v[0], color = 'k', linestyle = '--')
-        ax4.set_ylim([0,25])
-        ax4.set_xlim([0,int(np.size(eeg)/fsd)])
+        fig, (ax1, ax2, axx) = plt.subplots(nrows = 3, ncols = 1, figsize = (11, 6))
+    Pxx, freqs, bins, im = plot_spectrogram(ax1, eeg, fsd, maxfreq = maxfreq, minfreq = minfreq, 
+        additional_ax = additional_ax)
+    ax1.xaxis.set_ticks_position('top')
+    
     ax2.set_ylim(0.3, 1)
     ax2.set_xlim(0, int(np.size(eeg)/fsd))
     ax3.set_xlim([0,1])
@@ -540,64 +508,84 @@ def create_scoring_figure(extracted_dir, a, eeg, fsd, maxfreq, minfreq, movement
     fig.tight_layout()
     return fig, ax1, ax2
 
-def update_raw_trace(line1, line2, line4, marker1, marker2, fig, fig2, start, end, 
-    this_eeg, DTh, emg_flag, this_emg, realtime, fsd, epochlen):
+def update_raw_trace(fig1, fig2, line1, line2, line3, line4, this_emg, EMG_t, DTh, DTh_t, v, v_t, markers, this_epoch_t, 
+    start_trace, end_trace, epochlen):
 
-    extra_eeg = 5*fsd*epochlen
-    long_eeg = np.concatenate((np.full(extra_eeg, 0),this_eeg, np.full(extra_eeg, 0)))
+    start_idx_DTh = np.where(DTh_t>=start_trace)[0][0]
+    end_idx_DTh = np.where(DTh_t<=end_trace)[0][-1]
 
-    extra_DTh = 5*epochlen
-    long_DTh = np.concatenate((np.full(extra_DTh, 0),DTh, np.full(extra_DTh+1, 0)))
-    time_DTh = np.arange(extra_DTh*-1, np.size(DTh)+extra_DTh+1)
+    try:
+        assert np.size(line1.get_ydata()) == (end_idx_DTh-start_idx_DTh)+1
+    except AssertionError:
+        diff = ((end_idx_DTh-start_idx_DTh)+1)-np.size(line1.get_ydata())
+        end_idx_DTh = end_idx_DTh-diff
 
-    line1.set_ydata(long_eeg[start:end])
-    line2.set_ydata(long_DTh[int(start/fsd):int(end/fsd)])
-    # line2.set_ydata(delt[start:end])
-    # line3.set_ydata(thet[start:end])
-    this_bin = int(realtime[int(start+(fsd*epochlen))]/epochlen)
-    marker1.set_xdata([realtime[int(start+(fsd*epochlen))],realtime[int(start+(fsd*epochlen))]])
-    if marker2:
-        marker2.set_xdata([this_bin, this_bin])
-    if emg_flag:
-        long_emg = np.concatenate((np.full(extra_eeg, 0),this_emg, np.full(extra_eeg, 0)))
-        line4.set_ydata(this_emg[start:end])
-    else:
-        line4.set_ydata([1,1])
-    fig.canvas.draw()
+    line1.set_ydata(DTh[start_idx_DTh:end_idx_DTh+1])
+    if this_emg is not None: 
+        start_idx_emg = np.where(EMG_t>=start_trace)[0][0]
+        end_idx_emg = np.where(EMG_t<=end_trace)[0][-1]
+        try:
+            assert np.size(line2.get_ydata()) == (end_idx_emg-start_idx_emg)+1
+        except AssertionError:
+            diff = ((end_idx_emg-start_idx_emg)+1)-np.size(line2.get_ydata())
+            end_idx_emg = end_idx_emg-diff
+
+        line2.set_ydata(this_emg[start_idx_emg:end_idx_emg+1])
+
+    if v is not None:
+        start_idx_v = np.where(v_t>=start_trace)[0][0]
+        end_idx_v = np.where(v_t<=end_trace)[0][-1]
+
+        try:
+            assert np.size(line3.get_ydata()) == (end_idx_v-start_idx_v)+1
+        except AssertionError:
+            diff = ((end_idx_v-start_idx_v)+1)-np.size(line3.get_ydata())
+            end_idx_v= end_idx_v-diff
+
+        line3.set_ydata(v[start_idx_v:end_idx_v+1])
+
+    for i,m in enumerate(markers):
+        if i == 1:
+            m.set_xdata([int(this_epoch_t/epochlen),int(this_epoch_t/epochlen)])
+        else:
+            m.set_xdata([this_epoch_t,this_epoch_t])
+    fig2.axes[0].set_xlim([this_epoch_t-600, this_epoch_t+600])
+    line4.set_xdata([this_epoch_t,this_epoch_t])
+    fig1.canvas.draw()
     fig2.canvas.draw()
-def make_marker(ax, ax2, this_bin, realtime, fsd, epochlen, num_markers = 2):
-    ymin1 = ax.get_ylim()[0]
-    ymax1 = ax.get_ylim()[1]
-    if num_markers == 2:
-        ymin2 = ax2.get_ylim()[0]
-        ymax2 = ax2.get_ylim()[1]
-    marker1, = ax.plot([realtime[this_bin], realtime[this_bin]], [ymin1, ymax1], color = 'k')
-    if num_markers == 2:
-        marker2, = ax2.plot([1,1], [ymin2, ymax2], color = 'k')
-    else:
-        marker2 = None
-    return marker1, marker2
+def make_marker(fig, x, epochlen):
+    markers = []
+    for i,a in enumerate(fig.axes):
+        ylims = list(a.get_ylim())
+        xlims = list(a.get_xlim())
+        if i == 1:
+            marker, = a.plot([x/epochlen, x/epochlen], ylims, color = 'k')
+        else:
+            marker, = a.plot([x, x], ylims, color = 'k')
+        a.set_ylim(ylims)
+        markers.append(marker)
+    return markers
 
-def raw_scoring_trace(ax1, ax2, ax4, axx, emg_flag, start, end, realtime, this_eeg, fsd,
-                        LFP_ylim, DTh, epochlen, this_emg):
-    x = (end - start)
-    length = np.arange(int(end / x - start / x))
-    bottom = np.zeros(int(end / x - start / x))
+# def raw_scoring_trace(ax1, ax2, ax4, axx, emg_flag, start, end, realtime, this_eeg, fsd,
+#                         LFP_ylim, DTh, epochlen, this_emg):
+#     x = (end - start)
+#     length = np.arange(int(end / x - start / x))
+#     bottom = np.zeros(int(end / x - start / x))
 
-    #assert np.size(delt) == np.size(this_eeg) == np.size(thet)
+#     #assert np.size(delt) == np.size(this_eeg) == np.size(thet)
 
-    line1 = plot_LFP(start, end, ax1, this_eeg, realtime, fsd, LFP_ylim, epochlen)
-    line2 = plot_DTh_ratio(DTh, start, end, fsd, ax2, epochlen)
-    # line3 = plot_theta(ax3, start, end, fsd, thet, epochlen, realtime)
+#     line1 = plot_LFP(start, end, ax1, this_eeg, realtime, fsd, LFP_ylim, epochlen)
+#     line2 = plot_DTh_ratio(DTh, start, end, fsd, ax2, epochlen)
+#     # line3 = plot_theta(ax3, start, end, fsd, thet, epochlen, realtime)
 
-    if not emg_flag:
-        ax4.text(0.5, 0.5, 'There is no EMG')
-        line4 = plt.plot([0,0], [1,1], linewidth = 0, color = 'w')
-    else:
-        line4 = plot_EMG(ax4, length, bottom, this_emg, epochlen, x, start, end, realtime, fsd)
-        line5 = plot_EMGFig2(axx, this_emg, epochlen, realtime, fsd)
+#     if not emg_flag:
+#         ax4.text(0.5, 0.5, 'There is no EMG')
+#         line4 = plt.plot([0,0], [1,1], linewidth = 0, color = 'w')
+#     else:
+#         line4 = plot_EMG(ax4, length, bottom, this_emg, epochlen, x, start, end, realtime, fsd)
+#         line5 = plot_EMGFig2(axx, this_emg, epochlen, realtime, fsd)
 
-    return line1, line2, line4, line5
+#     return line1, line2, line4, line5
 
 def load_video(d, this_timestamp):
     print('Loading video now, this might take a second....')
@@ -701,10 +689,7 @@ def initialize_vid_and_move(d, a, EEG_datetime, acq_len, this_eeg):
     return this_video, v, this_motion
 
 
-def load_bands(this_eeg, fsd):
-
-    minfreq = 0.5 # min freq in Hz
-    maxfreq = 35 # max freq in Hz
+def get_DTh(this_eeg, fsd):
     Pxx, freqs, bins = my_specgram(this_eeg, Fs = fsd)
     delta_band = np.sum(Pxx[np.where(np.logical_and(freqs>=1,freqs<=4))],axis = 0)
     theta_band = np.sum(Pxx[np.where(np.logical_and(freqs>=5,freqs<=8))],axis = 0)
@@ -1013,10 +998,6 @@ def sort_files(file_list, basename):
     sorted_files = [file_list[idx] for idx in ordered_idx]
 
     return sorted_files
-
-
-
-
 
 def print_instructions():
     print('''\

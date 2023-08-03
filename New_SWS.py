@@ -42,25 +42,28 @@ def on_press(event):
 def manual_scoring(d, a, this_eeg, this_emg, this_video, h, EEG_datetime, v = None):
 	# Manually score the entire file.
 	plt.ion()
-	fig, (ax1, ax2, ax4, axx) = plt.subplots(nrows=4, ncols=1, figsize=(11, 6))
-	fig2, ax5, ax6 = SWS_utils.create_scoring_figure(d['savedir'], a, this_eeg, d['fsd'], d['Maximum_Frequency'], 
-		d['Minimum_Frequency'], movement_flag = d['movement'], v = v)
+	fig2, (ax5, ax6, ax7, ax8) = plt.subplots(nrows=4, ncols=1, figsize=(14, 6)) #Zoomed in figure
+	fig1, ax5, ax6 = SWS_utils.create_scoring_figure(d['savedir'], a, this_eeg, d['fsd'], d['Maximum_Frequency'], 
+		d['Minimum_Frequency'], v = v)
+
 	
 	cID2 = fig.canvas.mpl_connect('key_press_event', on_press)
 	cID3 = fig2.canvas.mpl_connect('key_press_event', on_press)
 	i = 0
-	this_bin = 1*d['fsd']*d['epochlen']
-	realtime = np.arange(np.size(this_eeg)) / d['fsd']
+	this_bin = 1*d['fsd']*d['epochlen'] #number of EEG data points in one epoch
+	EEG_t = np.arange(np.size(this_eeg)) / d['fsd']
 
-	start_trace = int(i * d['fsd'] * d['epochlen'])
-	end_trace = int(start_trace + d['fsd'] * 11 * d['epochlen'])
-	LFP_ylim = 5
+	start_trace = int(i-(4*d['epochlen'])) #timepoint in seconds that the plotted trace will start
+	end_trace = int(i + (5*d['epochlen'])) #timepoint in seconds that the plotted trace will end
 
-	DTh = SWS_utils.load_bands(this_eeg, d['fsd'])
 	if d['vid']:
 		timestamp_df = pd.read_pickle(os.path.join(d['savedir'], 'All_timestamps.pkl'))
 		this_timestamp = SWS_utils.pulling_timestamp(timestamp_df, EEG_datetime, this_eeg, d['fsd'])
 		cap, fps = SWS_utils.load_video(d, this_timestamp)
+		
+	DTh = SWS_utils.get_DTh(this_eeg, d['fsd']) #array of DTh values per second
+	DTh_t = np.arange(0, np.size(DTh))
+
 
 	line1, line2, line4, line5 = SWS_utils.raw_scoring_trace(ax1, ax2, ax4, axx, d['emg'], start_trace, 
 								end_trace, realtime, this_eeg, d['fsd'], LFP_ylim, DTh, 
@@ -171,15 +174,14 @@ def update_model(d, this_eeg, FeatureDict, a, EEG_datetime):
 
 
 def display_and_fix_scoring(d, this_eeg, a, h, this_emg, State_input, is_predicted, clf, Features, this_video,
-	EEG_datetime, v = None, movement_df = None):
+	EEG_datetime, v = None, movement_df = None, buffer = 4):
 	plt.ion()
 	i = 0
-	this_bin = 1*d['fsd']*d['epochlen']
-	realtime = np.arange(np.size(this_eeg))/d['fsd']
+	this_bin = 1*d['fsd']*d['epochlen'] #number of EEG data points in one epoch
+	EEG_t = np.arange(np.size(this_eeg))/d['fsd'] #time array for EEG data
 
-	start_trace = int(i * d['fsd'] * d['epochlen'])
-	end_trace = int(start_trace + d['fsd'] * 11 * d['epochlen'])
-	LFP_ylim = 5
+	start_trace = int(i-(4*d['epochlen'])) #timepoint in seconds that the plotted trace will start
+	end_trace = int(i + (5*d['epochlen'])) #timepoint in seconds that the plotted trace will end
 
 	if d['vid']:
 		timestamp_df = pd.read_pickle(os.path.join(d['savedir'], 'All_timestamps.pkl'))
@@ -187,17 +189,37 @@ def display_and_fix_scoring(d, this_eeg, a, h, this_emg, State_input, is_predict
 		cap, fps = SWS_utils.load_video(d, this_timestamp)
 
 	print('loading the theta ratio...')
-	DTh = SWS_utils.load_bands(this_eeg, d['fsd'])
-	fig2, (ax4, ax5, ax7) = plt.subplots(nrows=3, ncols=1, figsize=(11, 6))
-	line1, line2, line4 = SWS_utils.pull_up_raw_trace(ax4, ax5, ax7, d['emg'], start_trace, end_trace, realtime,
-															 this_eeg, d['fsd'], LFP_ylim, DTh,
-															 d['epochlen'], this_emg)
+	DTh = SWS_utils.get_DTh(this_eeg, d['fsd']) #array of DTh values per second
+	DTh_t = np.arange(0, np.size(DTh))
+	fig2, (ax5, ax6, ax7, ax8) = plt.subplots(nrows=4, ncols=1, figsize=(14, 6)) #Zoomed in figure
 
-	fig, ax1, ax2, axx = SWS_utils.create_prediction_figure(State_input, is_predicted, clf, 
-			Features, d['fsd'], this_eeg, this_emg, realtime, d['epochlen'], start_trace, end_trace, 
-			d['Maximum_Frequency'], d['Minimum_Frequency'], movement_flag = d['movement'], v = v)
+	if d['movement']:
+		fig1, ax1, ax2, ax3, axx = SWS_utils.create_prediction_figure(State_input, is_predicted, clf, 
+			Features, d['fsd'], this_eeg, this_emg, EEG_t, d['epochlen'], start_trace, end_trace, 
+			d['Maximum_Frequency'], d['Minimum_Frequency'], movement_flag = d['movement'], v = v,
+			additional_ax = ax5)
+		v_ylims = list(ax3.get_ylim())
+	else:
+		fig1, ax1, ax2, axx = SWS_utils.create_prediction_figure(State_input, is_predicted, clf, 
+				Features, d['fsd'], this_eeg, this_emg, EEG_t, d['epochlen'], start_trace, end_trace, 
+				d['Maximum_Frequency'], d['Minimum_Frequency'], movement_flag = d['movement'], v = v,
+				additional_ax = ax5)
+		v_ylims = None
+	emg_ylims = list(axx.get_ylim())
 
-	marker1, marker2 = SWS_utils.make_marker(ax1, ax2, this_bin, realtime, d['fsd'], d['epochlen'])
+	buffer_seconds = buffer*d['epochlen'] #amount of time in seconds added to beginning and end of trace to accomodate looking at early and late epochs
+	long_DTh, long_DTh_t = SWS_utils.add_buffer(DTh, DTh_t, buffer_seconds, fs = 1)
+	long_emg, long_emg_t = SWS_utils.add_buffer(this_emg, EEG_t, buffer_seconds, fs = 200)
+	long_v, long_v_t = SWS_utils.add_buffer(np.insert(v[0],0,0), np.insert(v[1],0,0), buffer_seconds, fs = 1/int(d['epochlen']))
+	line1, line2, line3 = SWS_utils.create_zoomed_fig(ax6, ax7, ax8, long_emg, long_emg_t, long_DTh, 
+		long_DTh_t, long_v, long_v_t, start_trace, end_trace, epochlen = d['epochlen'],
+		DTh_ylims = [0,30], emg_ylims = emg_ylims, v_ylims = v_ylims)
+
+
+	ax5.set_xlim([-600, 600])
+	line4 = ax5.axvline(0, linewidth = 2, color = 'k')
+	fig2.tight_layout()
+	markers = SWS_utils.make_marker(fig1, this_bin/d['fsd'], d['epochlen'])
 
 
 	plt.ion()	
@@ -205,15 +227,15 @@ def display_and_fix_scoring(d, this_eeg, a, h, this_emg, State_input, is_predict
 	#init cursor and it's libraries from SW_Cursor.py
 	cursor = Cursor(ax1, ax2, axx)	
 
-	cID = fig.canvas.mpl_connect('button_press_event', cursor.on_click)
+	cID = fig1.canvas.mpl_connect('button_press_event', cursor.on_click)
 
 
-	cID4 = fig.canvas.mpl_connect('motion_notify_event', cursor.on_mouse_move)
-	cID4 = fig.canvas.mpl_connect('motion_notify_event', cursor.on_mouse_move)
+	cID4 = fig1.canvas.mpl_connect('motion_notify_event', cursor.on_mouse_move)
+	cID4 = fig1.canvas.mpl_connect('motion_notify_event', cursor.on_mouse_move)
 
 	#Ok so I think that the quotes is the specific event to trigger and the second arg is the function to run when that happens?
-	cID2 = fig.canvas.mpl_connect('axes_enter_event', cursor.in_axes)
-	cID3 = fig.canvas.mpl_connect('key_press_event', cursor.on_press)
+	cID2 = fig1.canvas.mpl_connect('axes_enter_event', cursor.in_axes)
+	cID3 = fig1.canvas.mpl_connect('key_press_event', cursor.on_press)
 
 
 
@@ -225,29 +247,23 @@ def display_and_fix_scoring(d, this_eeg, a, h, this_emg, State_input, is_predict
 
 		if cursor.replot:
 			print("Replot of fig 1. called!")
+			this_epoch_t = math.floor(cursor.replotx/d['epochlen'])*d['epochlen']
+			replot_start = start_trace + this_epoch_t
+			replot_end = end_trace + this_epoch_t
+			print('Epoch Start Time = ' + str(this_epoch_t) + ' seconds')
+			print('Start Trace = '+str(replot_start) + ' seconds')
+			print('End Trace = ' + str(replot_end) + ' seconds')
 
-			# Call a replot of the graph here
-
-			print('start = '+str(start_trace))
-			print('end = '+str(end_trace))
-			print('fsd = '+str(d['fsd']))
-			print('sindex = '+str((start_trace+(cursor.replotx*d['fsd']))))
-			print('eindex = ' + str((end_trace + (cursor.replotx * d['fsd']))))
-
-			#Bumping up by x3 to test if this is all that's needed
-			SWS_utils.update_raw_trace(line1, line2, line4, marker1, marker2, fig, fig2, int(start_trace+(cursor.replotx*d['fsd'])), 
-							int(end_trace+(cursor.replotx*d['fsd'])), this_eeg, DTh, 
-							d['emg'], this_emg, realtime, d['fsd'], d['epochlen'])
+			SWS_utils.update_raw_trace(fig1, fig2, line1, line2, line3, line4, long_emg, long_emg_t, long_DTh, long_DTh_t, long_v, long_v_t, markers, 
+								this_epoch_t, replot_start, replot_end, d['epochlen'])
 			if d['vid']:
-				if cursor.replotx-d['epochlen'] < 0:
+				if this_epoch_t-d['epochlen'] < 0:
 					print('No video available for this bin')
 				else:
-					vid_start = int(this_timestamp.index[this_timestamp['Offset_Time']>(cursor.replotx-d['epochlen'])][0])
-					vid_end = int(this_timestamp.index[this_timestamp['Offset_Time']<((cursor.replotx)+(d['epochlen']*2))][-1])
+					vid_start = int(this_timestamp.index[this_timestamp['Offset_Time']>(this_epoch_t-d['epochlen'])][0])
+					vid_end = int(this_timestamp.index[this_timestamp['Offset_Time']<((this_epoch_t)+(d['epochlen']*2))][-1])
 					this_timestamp['Offset_Time'][vid_start]
-					# if (vid_start < this_timestamp.index[0]) or (vid_end< this_timestamp.index[0]):
-					# 	print('No video available for this bin')
-					# else:
+
 					SWS_utils.pull_up_movie(d, cap, vid_start, vid_end, 
 						this_video, d['epochlen'], this_timestamp)
 
@@ -264,14 +280,14 @@ def display_and_fix_scoring(d, this_eeg, a, h, this_emg, State_input, is_predict
 			end_bin = cursor.bins[1]
 			print(f'changing bins: {start_bin} to {end_bin}')
 			SWS_utils.clear_bins(bins, ax2)
-			fig.canvas.draw()
+			fig1.canvas.draw()
 			# new_state = int(input('What state should these be?: '))
 			try:
 				new_state = int(input('What state should these be?: '))
 			except:
 				new_state = int(input('What state should these be?: '))
 			SWS_utils.correct_bins(start_bin, end_bin, ax2, new_state)
-			fig.canvas.draw()
+			fig1.canvas.draw()
 			State[start_bin:end_bin+1] = new_state
 			cursor.bins = []
 			cursor.change_bins = False
@@ -286,7 +302,7 @@ def display_and_fix_scoring(d, this_eeg, a, h, this_emg, State_input, is_predict
 	return State
 
 
-def start_swscoring(filename_sw, d):
+def start_swscoring(d):
 	# mostly for deprecated packages
 	print('this code is supressing warnings')
 	warnings.filterwarnings("ignore")
@@ -376,7 +392,7 @@ def start_swscoring(filename_sw, d):
 				# if the file is a brand new one for scoring
 				print("There is no existing scoring.")
 
-		else:
+		elif check == 's':
 			model = input('Use a random forest? y/n: ') == 'y'
 
 			if model:
@@ -439,7 +455,7 @@ def load_data_for_sw(filename_sw):
 	with open(filename_sw, 'r') as f:
 		d = json.load(f)
 
-	start_swscoring(filename_sw, d)
+	start_swscoring(d)
 
 def build_model(filename_sw):
 	with open(filename_sw, 'r') as f:
@@ -492,8 +508,6 @@ def build_model(filename_sw):
 		except FileNotFoundError:
 			# if the file is a brand new one for scoring
 			print("There is no existing scoring.")
-
-
 
 def model_log(log_dir, action, animal, mouse_name, mod_name, a):
 	log_file = os.path.join(log_dir, mod_name+'_scoringlog.txt')
