@@ -49,21 +49,24 @@ def generate_signal(downsamp_signal, epochlen, fs): # fs = fsd here
     
     return sig_var, sig_max, sig_mean
 
-def bandPower(low, high, downsamp_EEG, epochlen, fsd):
-	win = epochlen * fsd # window == bin
-	EEG = np.zeros(int(np.size(downsamp_EEG)/(epochlen*fsd)))
-	EEGreshape = np.reshape(downsamp_EEG,(-1,fsd*epochlen)) # funky
-	freqs, psd = signal.welch(EEGreshape, fsd, nperseg=win, scaling='density') # for each freq, have a power value
-	idx_min = np.argmax(freqs > low) - 1
-	idx_max = np.argmax(freqs > high) - 1
-	idx = np.zeros(dtype=bool, shape=freqs.shape)
-	idx[idx_min:idx_max] = True
-	EEG = simps(psd[:,idx], freqs[idx])/simps(psd, freqs)
-	return EEG, idx
+def bandPower(this_eeg, fsd, freq_dict = None, minfreq = 0.5, maxfreq = 16):
+    power_dict = {}
+    Pxx, freqs, bins = plot_spectrogram(None, this_eeg, fsd, minfreq = minfreq, maxfreq = maxfreq, 
+        additional_ax = None)
+    freq_res = freqs[1]-freqs[0]
+    if freq_dict:
+        for k in list(freq_dict.keys()):
+            print('Calculating ' + k + ' Band Power...')
+            idx_low = freq_dict[k][0]
+            idx_high = freq_dict[k][1]
+            power_dict[k] = simps(Pxx[np.where(np.logical_and(freqs>=idx_low,freqs<=idx_high))], 
+                axis = 0, dx=freq_res)
+    else:
+        power_dict['Total Power'] = simps(Pxx, dx=freq_res, axis = 0)
+    power_dict['Bins'] = bins
+    
+    return power_dict
 
-def normalize(toNorm):
-	norm = (toNorm - np.average(toNorm))/np.std(toNorm)
-	return norm
 
 def post_pre(post, pre):
 	post = np.append(post, 0)
@@ -228,6 +231,9 @@ def my_specgram(x, ax = None, NFFT=400, Fs=200, Fc=0, detrend=mlab.detrend_none,
 def plot_predicted(ax, Predict_y, is_predicted, clf, Features):
     ax.set_title('Predicted States', x=0.5, y=0.7)
     for state in np.arange(np.size(Predict_y)):
+        if Predict_y[state] == 0:
+            rect7 = patch.Rectangle((state, 0), 3.8, height = 1, color = 'grey')
+            ax.add_patch(rect7)           
         if Predict_y[state] == 1:
             rect7 = patch.Rectangle((state, 0), 3.8, height = 1, color = 'green')
             ax.add_patch(rect7)
@@ -256,9 +262,9 @@ def plot_predicted(ax, Predict_y, is_predicted, clf, Features):
 
 # This is the plotting collection function for the coarse prediction figure
 def create_prediction_figure(Predict_y, is_predicted, clf, Features, fs, eeg, this_emg, EEG_t, 
-    epochlen, start, end, maxfreq, minfreq, movement_flag = False, v = None, additional_ax = None):
+    epochlen, start, end, maxfreq, minfreq, v = None, additional_ax = None):
     plt.ion()
-    if movement_flag:
+    if v is not None:
         fig, (ax1, ax2, ax3, axx) = plt.subplots(nrows = 4, ncols = 1, figsize = (11, 6))
         ax3.plot(v[1], v[0], color = 'k', linestyle = '--')
         ax3.set_ylabel('Velocity')
@@ -277,7 +283,7 @@ def create_prediction_figure(Predict_y, is_predicted, clf, Features, fs, eeg, th
     axx.set_ylabel('EMG Amplitude')
     fig.tight_layout()
     fig.subplots_adjust(wspace=0, hspace=0)
-    if movement_flag:
+    if v is not None:
         return fig, ax1, ax2, ax3, axx
     else:
         return fig, ax1, ax2, axx
@@ -409,38 +415,6 @@ def plot_zoomed_data(ax, data, t, start_trace, end_trace, color, epochlen, ylabe
     ax.add_patch(rect)    
     return line
 
-
-# def plot_velocity(ax, v, t, start_trace, end_trace):
-#     start_idx = np.where(t>=start_trace)[0][0]
-#     end_idx = np.where(t<=end_trace)[0][-1]
-#     line3, = ax.plot(t[start_idx:end_idx+1], v[start_idx:end_idx+1], 
-#         color = '#ff724c', linewidth = 3)
-#     ax.set_xlim(t[start_idx], t[end_idx])
-#     ax.set_ylabel('Velocity')
-#     # ax.set_ylim([0,20])
-#     return line3
-
-# def plot_DTh_ratio(ax, DTh, t, start_trace, end_trace):
-#     start_idx = np.where(t>=start_trace)[0][0]
-#     end_idx = np.where(t<=end_trace)[0][-1]
-#     line1, = ax.plot(t[start_idx:end_idx+1], DTh[start_idx:end_idx+1], 
-#         color = '#464196', linewidth = 3)
-#     ax.set_xlim(t[start_idx], t[end_idx])
-#     ax.set_ylabel('Theta/Delta Ratio')
-#     ax.set_ylim([0,30])
-
-#     return line1
-
-
-# def plot_EMG(ax, this_emg, t, start_trace, end_trace):
-#     start_idx = np.where(t>=start_trace)[0][0]
-#     end_idx = np.where(t<=end_trace)[0][-1]
-#     line2, = ax.plot(t[start_idx:end_idx+1], this_emg[start_idx:end_idx+1], color = 'r', linewidth = 3)    
-#     ax.set_ylabel('EMG Amplitde')
-#     ax.set_xlim(t[start_idx], t[end_idx])
-#     ax.set_ylim(-2.5, 2.5)
-#     return line2
-
 def add_buffer(data_array, t_array, buffer_seconds, fs):
     if data_array is None:
         buffered_data = None
@@ -476,37 +450,44 @@ def correct_bins(start_bin, end_bin, ax2, new_state):
         print('loc: ', location)
         ax2.add_patch(rectangle)
 
-def create_scoring_figure(extracted_dir, a, eeg, fsd, maxfreq, minfreq, movement_flag = False, v = None, 
-    additional_ax = None):
+def create_scoring_figure(extracted_dir, a, this_eeg, this_emg, EEG_t, fsd, 
+    maxfreq, minfreq, epochlen, v = None, additional_ax = None):
     plt.ion()
     if v is not None:
-        fig, (ax1, ax2, ax3, axx) = plt.subplots(nrows = 4, ncols = 1, figsize = (11, 6))
+        fig, (ax1, ax2, ax3, axx, button) = plt.subplots(nrows = 5, ncols = 1, figsize = (16, 8))
         ax3.plot(v[1], v[0], color = 'k', linestyle = '--')
         ax3.set_ylabel('Velocity')
         ax3.set_ylim([0,40])
-        ax3.set_xlim([0,int(np.size(eeg)/fsd)])
+        ax3.set_xlim([0,int(np.size(EEG_t)/fsd)])
         ax3.set_yticklabels([])
         ax3.set_xticklabels([])
     else:
-        fig, (ax1, ax2, axx) = plt.subplots(nrows = 3, ncols = 1, figsize = (11, 6))
-    Pxx, freqs, bins, im = plot_spectrogram(ax1, eeg, fsd, maxfreq = maxfreq, minfreq = minfreq, 
+        fig, (ax1, ax2, axx, button) = plt.subplots(nrows = 4, ncols = 1, figsize = (11, 6))
+    Pxx, freqs, bins, im = plot_spectrogram(ax1, this_eeg, fsd, maxfreq = maxfreq, minfreq = minfreq, 
         additional_ax = additional_ax)
     ax1.xaxis.set_ticks_position('top')
-    
-    ax2.set_ylim(0.3, 1)
-    ax2.set_xlim(0, int(np.size(eeg)/fsd))
-    ax3.set_xlim([0,1])
-    ax3.set_ylim([0,1])
+    ax2.set_xlim([0,math.ceil(EEG_t[-1]/epochlen)])
+    fig.tight_layout()
+    fig.subplots_adjust(wspace=0, hspace=0)
+
+    axx.plot(EEG_t, this_emg, color= 'r')
+    axx.set_xlim([EEG_t[0],EEG_t[-1]])
+    axx.set_ylabel('EMG Amplitude')
+    button.set_xlim([0,1])
+    button.set_ylim([0,1])
+
     rect = patch.Rectangle((0,0),1,1, color = 'k')
-    ax3.add_patch(rect)
-    ax3.text(0.5, 0.5, 'Click here for video', horizontalalignment='center', 
-        verticalalignment='center', transform=ax3.transAxes, color = 'w', fontsize = 16)
-    ax3.tick_params(axis='both',which='both',bottom=False,top=False,left = False, 
+    button.add_patch(rect)
+    button.text(0.5, 0.5, 'Click here for video', horizontalalignment='center', 
+        verticalalignment='center', transform=button.transAxes, color = 'w', fontsize = 16)
+    button.tick_params(axis='both',which='both',bottom=False,top=False,left = False, 
         labelbottom=False, labelleft = False)
 
     fig.show()
-    fig.tight_layout()
-    return fig, ax1, ax2
+    if v is not None:
+        return fig, ax1, ax2, ax3, axx, button
+    else:
+        return fig, ax1, ax2, axx, button
 
 def update_raw_trace(fig1, fig2, line1, line2, line3, line4, this_emg, EMG_t, DTh, DTh_t, v, v_t, markers, this_epoch_t, 
     start_trace, end_trace, epochlen):
@@ -565,27 +546,6 @@ def make_marker(fig, x, epochlen):
         a.set_ylim(ylims)
         markers.append(marker)
     return markers
-
-# def raw_scoring_trace(ax1, ax2, ax4, axx, emg_flag, start, end, realtime, this_eeg, fsd,
-#                         LFP_ylim, DTh, epochlen, this_emg):
-#     x = (end - start)
-#     length = np.arange(int(end / x - start / x))
-#     bottom = np.zeros(int(end / x - start / x))
-
-#     #assert np.size(delt) == np.size(this_eeg) == np.size(thet)
-
-#     line1 = plot_LFP(start, end, ax1, this_eeg, realtime, fsd, LFP_ylim, epochlen)
-#     line2 = plot_DTh_ratio(DTh, start, end, fsd, ax2, epochlen)
-#     # line3 = plot_theta(ax3, start, end, fsd, thet, epochlen, realtime)
-
-#     if not emg_flag:
-#         ax4.text(0.5, 0.5, 'There is no EMG')
-#         line4 = plt.plot([0,0], [1,1], linewidth = 0, color = 'w')
-#     else:
-#         line4 = plot_EMG(ax4, length, bottom, this_emg, epochlen, x, start, end, realtime, fsd)
-#         line5 = plot_EMGFig2(axx, this_emg, epochlen, realtime, fsd)
-
-#     return line1, line2, line4, line5
 
 def load_video(d, this_timestamp):
     print('Loading video now, this might take a second....')
@@ -762,7 +722,7 @@ def prepare_feature_data(FeatureDict, movement_flag, smooth = False):
     Features = np.nan_to_num(Features)
     return Features
 
-def build_feature_dict(this_eeg, fsd, epochlen, this_emg = None):
+def build_feature_dict(this_eeg, fsd, epochlen, this_emg = None, normVal = None):
     FeatureDict = {}
     print('Generating EMG vectors...')
     if this_emg is not None:
@@ -770,31 +730,40 @@ def build_feature_dict(this_eeg, fsd, epochlen, this_emg = None):
 
     print('Generating EEG vectors...')
     FeatureDict['EEGvar'], EEGmax, EEGmean = generate_signal(this_eeg, epochlen, fsd)
+    acq_len = np.size(this_eeg)/fsd
+    num_epochs = acq_len/epochlen
 
-    print('Extracting delta bandpower...') # non REM (slow wave) sleep value | per epoch
-    FeatureDict['EEGdelta'], idx_delta = bandPower(0.5, 4, this_eeg, epochlen, fsd)
+    freq_dict = freq_dict = {'Delta': [0.5, 4], 
+                            'Theta':[5, 8],
+                            'Alpha': [8, 12],
+                            'BroadTheta':[2, 16],
+                            'Fire': [4, 20]}
 
-    print('Extracting theta bandpower...') # awake / REM sleep
-    FeatureDict['EEGtheta'], idx_theta = bandPower(5, 8, this_eeg, epochlen, fsd)
+    power_dict = bandPower(this_eeg, fsd, freq_dict = freq_dict, minfreq = 0.5, maxfreq = 16)
 
-    print('Extracting alpha bandpower...') # awake / RAM; not use a lot
-    FeatureDict['EEGalpha'], idx_alpha = bandPower(8, 12, this_eeg, epochlen, fsd)
-    print('Extracting narrow-band theta bandpower...') # broad-band theta
-    EEG_broadtheta, idx_broadtheta = bandPower(2, 16, this_eeg, epochlen, fsd)
+    epoch_bins = np.arange(0, acq_len, epochlen)
+    epoch_idx = [np.where(np.logical_and(power_dict['Bins']>=i, power_dict['Bins']<i+4))[0] for i in epoch_bins]
+    
+    for band in list(freq_dict.keys()):
+        FeatureDict['EEG'+band] = [np.median(power_dict[band][i]) for i in epoch_idx]/normVal
+        for n in np.where(np.isnan(FeatureDict['EEG'+band]))[0]:
+            if n < np.size(FeatureDict['EEG'+band])-1:
+                FeatureDict['EEG'+band][n] = FeatureDict['EEG'+band][n+1]
+            else:
+                FeatureDict['EEG'+band][n] = FeatureDict['EEG'+band][n-1]
+        # FeatureDict['EEG'+band] = FeatureDict['EEG'+band]/normVal
+        assert np.size(FeatureDict['EEG'+band]) == num_epochs
 
-    print('Boom. Boom. FIYA POWER...')
-    FeatureDict['EEGfire'], idx_fire = bandPower(4, 20, this_eeg, epochlen, fsd)
-
-    FeatureDict['EEGnb'] = FeatureDict['EEGtheta'] / EEG_broadtheta # narrow-band theta
-    # delt_thet = EEGdelta / EEGtheta # ratio; esp. important
-    FeatureDict['thet_delt'] = FeatureDict['EEGtheta'] / FeatureDict['EEGdelta']
+    FeatureDict['EEGnb'] = FeatureDict['EEGTheta'] / FeatureDict['EEGBroadTheta'] # narrow-band theta
+    # # delt_thet = EEGdelta / EEGtheta # ratio; esp. important
+    FeatureDict['thet_delt'] = FeatureDict['EEGTheta'] / FeatureDict['EEGDelta']
 
 
     # frame shifting
-    FeatureDict['delta_post'], FeatureDict['delta_pre'] = post_pre(FeatureDict['EEGdelta'], 
-        FeatureDict['EEGdelta'])
-    FeatureDict['theta_post'], FeatureDict['theta_pre'] = post_pre(FeatureDict['EEGtheta'], 
-        FeatureDict['EEGtheta'])
+    FeatureDict['delta_post'], FeatureDict['delta_pre'] = post_pre(FeatureDict['EEGDelta'], 
+        FeatureDict['EEGDelta'])
+    FeatureDict['theta_post'], FeatureDict['theta_pre'] = post_pre(FeatureDict['EEGTheta'], 
+        FeatureDict['EEGTheta'])
     FeatureDict['delta_post2'], FeatureDict['delta_pre2'] = post_pre(FeatureDict['delta_post'], 
         FeatureDict['delta_pre'])
     FeatureDict['theta_post2'], FeatureDict['theta_pre2'] = post_pre(FeatureDict['theta_post'], 
@@ -998,6 +967,12 @@ def sort_files(file_list, basename):
     sorted_files = [file_list[idx] for idx in ordered_idx]
 
     return sorted_files
+def get_total_power(this_eeg, fsd):
+    Pxx, freqs, bins = my_specgram(this_eeg, Fs = fsd)
+    freq_res = freqs[1]-freqs[0]
+    total_power = simps(Pxx, dx=freq_res, axis = 0)
+    return total_power
+
 
 def print_instructions():
     print('''\

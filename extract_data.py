@@ -203,11 +203,22 @@ def alternate_label(this_video, csv_dir, i):
 	SWS_utils.DLC_check_fig(csv_file)
 	new_label = input('What label do you want to use?')
 	return new_label
+
 def make_full_velocity_array(savedir):
 	movement_df = pd.read_pickle(os.path.join(savedir, 'All_movement.pkl'))
 	v = SWS_utils.movement_processing(movement_df)
 	np.save(os.path.join(savedir, 'velocity_vector.npy'), v)
 
+def get_normalizing_value(filename_sw):
+	with open(filename_sw, 'r') as f:
+		d = json.load(f)
+	eeg_files = glob.glob(os.path.join(d['savedir'], 'downsampEEG_Acq*_hr0.npy'))
+	all_tp = []
+	for f in eeg_files:
+		this_eeg = np.load(f)
+		all_tp.append(SWS_utils.get_total_power(this_eeg, d['fsd']))
+	normVal = np.median(np.concatenate(all_tp))
+	np.save(os.path.join(d['savedir'], d['basename']+'_normVal.npy'), normVal)
 
 	return
 if __name__ == "__main__":

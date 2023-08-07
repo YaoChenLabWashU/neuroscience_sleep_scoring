@@ -15,7 +15,7 @@ from sklearn.metrics import accuracy_score
 import joblib
 import pandas as pd
 import warnings
-from neuroscience_sleep_scoring import SWS_utils
+from neuroscience_sleep_scoring import SWS_utils, extract_data
 from datetime import datetime
 from neuroscience_sleep_scoring.SW_Cursor import Cursor
 from neuroscience_sleep_scoring.SW_Cursor import ScoringCursor
@@ -37,123 +37,6 @@ def on_press(event):
 	else:
 		key_stroke = np.float('nan')
 		print('I did not understand that keystroke; I will mark it white and please come back to fix it.')
-
-
-def manual_scoring(d, a, this_eeg, this_emg, this_video, h, EEG_datetime, v = None):
-	# Manually score the entire file.
-	plt.ion()
-	fig2, (ax5, ax6, ax7, ax8) = plt.subplots(nrows=4, ncols=1, figsize=(14, 6)) #Zoomed in figure
-	fig1, ax5, ax6 = SWS_utils.create_scoring_figure(d['savedir'], a, this_eeg, d['fsd'], d['Maximum_Frequency'], 
-		d['Minimum_Frequency'], v = v)
-
-	
-	cID2 = fig.canvas.mpl_connect('key_press_event', on_press)
-	cID3 = fig2.canvas.mpl_connect('key_press_event', on_press)
-	i = 0
-	this_bin = 1*d['fsd']*d['epochlen'] #number of EEG data points in one epoch
-	EEG_t = np.arange(np.size(this_eeg)) / d['fsd']
-
-	start_trace = int(i-(4*d['epochlen'])) #timepoint in seconds that the plotted trace will start
-	end_trace = int(i + (5*d['epochlen'])) #timepoint in seconds that the plotted trace will end
-
-	if d['vid']:
-		timestamp_df = pd.read_pickle(os.path.join(d['savedir'], 'All_timestamps.pkl'))
-		this_timestamp = SWS_utils.pulling_timestamp(timestamp_df, EEG_datetime, this_eeg, d['fsd'])
-		cap, fps = SWS_utils.load_video(d, this_timestamp)
-		
-	DTh = SWS_utils.get_DTh(this_eeg, d['fsd']) #array of DTh values per second
-	DTh_t = np.arange(0, np.size(DTh))
-
-
-	line1, line2, line4, line5 = SWS_utils.raw_scoring_trace(ax1, ax2, ax4, axx, d['emg'], start_trace, 
-								end_trace, realtime, this_eeg, d['fsd'], LFP_ylim, DTh, 
-								d['epochlen'], this_emg)
-
-	marker1, marker2 = SWS_utils.make_marker(ax5, None, this_bin, realtime, 
-						d['fsd'], d['epochlen'], num_markers = 1)
-
-	fig.show()
-	fig2.show()
-	fig.tight_layout()
-	fig2.tight_layout()
-
-	plt.show()
-	
-
-	try:
-		# if some portion of the file has been previously scored
-		State = np.load(os.path.join(d['savedir'], 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'))
-		wrong, = np.where(np.isnan(State))
-		State[wrong] = 0
-		s, = np.where(State == 0)
-		color_dict = {'0': 'white',
-					  '1': 'green',
-					  '2': 'blue',
-					  '3': 'red',
-					  '4': 'purple'}
-		# rendering what has been previously scored
-		for count, color in enumerate(State[:-1]):
-			start = int(count * d['fsd'] * d['epochlen'])
-			rect = patch.Rectangle((realtime[start + (d['epochlen'] * d['fsd'])], 0),
-								   (d['epochlen']), 1, color=color_dict[str(int(color))])
-			ax6.add_patch(rect)
-		fig2.show()
-
-	except FileNotFoundError:
-		# if the file is a brand new one for scoring
-		State = np.zeros(int(np.size(this_eeg) / d['fsd'] / d['epochlen']))
-		s = np.arange(1, np.size(State) - 1)
-		first_state = int(input('Enter the first state: '))
-		State[0] = first_state
-
-	for i in s[:-3]:
-		# input('press enter or quit')
-		print(f'here. index: {i}')
-		start_trace = int(i * d['fsd'] * d['epochlen'])
-		end_trace = int(start_trace + d['fsd'] * 11 * d['epochlen'])
-		if vid_flag:
-			vid_start = timestamp_df.index[timestamp_df['Offset Time']>(i*d['epochlen'])][0]
-			vid_end = timestamp_df.index[timestamp_df['Offset Time']<((i*d['epochlen'])+(d['epochlen']*3))][-1]
-		SWS_utils.update_raw_trace(line1, line2, line4, marker1, marker2, fig, fig2, start_trace, end_trace,
-								   this_eeg, DTh, d['emg'], this_emg, realtime, d['fsd'], d['epochlen'])
-		color_dict = {'0': 'white',
-					  '1': 'green',
-					  '2': 'blue',
-					  '3': 'red',
-					  '4': 'purple'}
-
-		if math.isnan(State[i-1]):
-			rect = patch.Rectangle((realtime[start_trace], 0),
-								  (epochlen), 1, color=color_dict[str(0)])
-		else:
-			rect = patch.Rectangle((realtime[start_trace], 0),
-							   (epochlen), 1, color=color_dict[str(int(State[i - 1]))])
-		ax6.add_patch(rect)
-		fig.show()
-		fig2.show()
-		button = False
-		while not button:
-			button = fig2.waitforbuttonpress()
-			print(f'button: {button}')
-			if not button:
-				print('you clicked')
-				if d['vid']:
-					SWS_utils.pull_up_movie(d, cap, vid_start, vid_end, this_video, d['epochlen'], this_timestamp)
-				else:
-					print('...but you do not have videos available')
-		global key_stroke
-		State[i] = key_stroke
-		fig2.canvas.flush_events()
-		fig.canvas.flush_events()
-		np.save(os.path.join(d['savedir'], 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'), State)
-
-	print('DONE SCORING')
-	cap.release()
-	plt.close('all')
-	last_state = int(input('Enter the last state: '))
-	State[-2:] = last_state
-	np.save(os.path.join(d['savedir'], 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'), State)
-	return State
 
 def update_model(d, this_eeg, FeatureDict, a, EEG_datetime):
 	# Feed the data to retrain a model.
@@ -196,14 +79,12 @@ def display_and_fix_scoring(d, this_eeg, a, h, this_emg, State_input, is_predict
 	if d['movement']:
 		fig1, ax1, ax2, ax3, axx = SWS_utils.create_prediction_figure(State_input, is_predicted, clf, 
 			Features, d['fsd'], this_eeg, this_emg, EEG_t, d['epochlen'], start_trace, end_trace, 
-			d['Maximum_Frequency'], d['Minimum_Frequency'], movement_flag = d['movement'], v = v,
-			additional_ax = ax5)
+			d['Maximum_Frequency'], d['Minimum_Frequency'], v = v, additional_ax = ax5)
 		v_ylims = list(ax3.get_ylim())
 	else:
 		fig1, ax1, ax2, axx = SWS_utils.create_prediction_figure(State_input, is_predicted, clf, 
 				Features, d['fsd'], this_eeg, this_emg, EEG_t, d['epochlen'], start_trace, end_trace, 
-				d['Maximum_Frequency'], d['Minimum_Frequency'], movement_flag = d['movement'], v = v,
-				additional_ax = ax5)
+				d['Maximum_Frequency'], d['Minimum_Frequency'], v = v, additional_ax = ax5)
 		v_ylims = None
 	emg_ylims = list(axx.get_ylim())
 
@@ -363,11 +244,6 @@ def start_swscoring(d):
 				wrong, = np.where(np.isnan(State))
 				State[wrong] = 0
 				s, = np.where(State == 0)
-				color_dict = {'0': 'white',
-							  '1': 'green',
-							  '2': 'blue',
-							  '3': 'red',
-							  '4': 'purple'}
 
 				State = display_and_fix_scoring(d, this_eeg, a, h, this_emg, State, False, None,
 										None, this_video, EEG_datetime, v = v, movement_df = this_motion)
@@ -379,15 +255,6 @@ def start_swscoring(d):
 										None, this_video, EEG_datetime, v = v, movement_df = this_motion)					
 					else:
 						print('Ok, but please do not update the model until you fix them')
-				FeatureDict['State'] = State
-				update = input('Do you want to update the model?: y/n ') == 'y'
-				if update:
-					update_model(d, this_eeg, FeatureDict, a, EEG_datetime)					
-					model_log(d['modellog_dir'], 0, d['species'], d['mouse_name'], d['mod_name'], a)
-				logq = input('Do you want to update your personal log?: y/n ') == 'y'
-				if logq:
-					personal_log(d['personallog_dir'], d['mouse_name'], d['savedir'], a)
-
 			except FileNotFoundError:
 				# if the file is a brand new one for scoring
 				print("There is no existing scoring.")
@@ -422,34 +289,26 @@ def start_swscoring(d):
 				Predict_y = clf.predict(Features)
 				Predict_y = SWS_utils.fix_states(Predict_y)
 				np.save(os.path.join(d['savedir'], 'model_prediction_Acq' + str(a) + '_hr' + str(h) + '.npy'), Predict_y)
-
-				Predict_y = display_and_fix_scoring(d, this_eeg, a, h, this_emg, Predict_y, True, clf,
+				State = display_and_fix_scoring(d, this_eeg, a, h, this_emg, Predict_y, True, clf,
 					Features, this_video, EEG_datetime, v = v, movement_df = this_motion)
-				FeatureDict['State'] = Predict_y
-				FeatureDict['animal_name'] = np.full(np.size(FeatureDict['delta_pre']), d['mouse_name'])
-
-				plt.close('all')
-				# Store the result.
-				np.save(os.path.join(d['savedir'], 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'), Predict_y)
-				update = input('Do you want to update the model?: y/n ') == 'y'
-				if update:
-					update_model(d, this_eeg, FeatureDict, a, EEG_datetime)
-					model_log(d['modellog_dir'], 1, d['species'], d['mouse_name'], d['mod_name'], a)
-				logq = input('Do you want to update your personal log?: y/n ') == 'y'
-				if logq:
-					personal_log(d['personallog_dir'], d['mouse_name'], d['savedir'], a)
-			# No model code
 			else:
-				State = manual_scoring(d, a, this_eeg, this_emg, this_video, h, EEG_datetime, v = v)
-				update = input('Do you want to update the model?: y/n ') == 'y'
-				if update:
-					update_model(d, this_eeg, FeatureDict, a, EEG_datetime)
-					model_log(d['modellog_dir'], 2, d['species'], d['mouse_name'], d['mod_name'], a)
-				logq = input('Do you want to update your personal log? (y/n) ') == 'y'
-				if logq:
-					personal_log(d['personallog_dir'], d['mouse_name'], d['savedir'], a)
+				State = np.zeros(int(acq_len/d['epochlen']))
+				State = display_and_fix_scoring(d, this_eeg, a, h, this_emg, State, False, None,
+										None, this_video, EEG_datetime, v = v, movement_df = this_motion)
+		
+		FeatureDict['State'] = State
+		FeatureDict['animal_name'] = np.full(np.size(FeatureDict['delta_pre']), d['mouse_name'])
 
-
+		update = input('Do you want to update the model?: y/n ') == 'y'
+		if update:
+			update_model(d, this_eeg, FeatureDict, a, EEG_datetime)					
+			model_log(d['modellog_dir'], 0, d['species'], d['mouse_name'], d['mod_name'], a)
+		logq = input('Do you want to update your personal log?: y/n ') == 'y'
+		if logq:
+			personal_log(d['personallog_dir'], d['mouse_name'], d['savedir'], a)
+			
+		plt.close('all')
+			# Store the result.
 
 def load_data_for_sw(filename_sw):
 	with open(filename_sw, 'r') as f:
@@ -463,8 +322,9 @@ def build_model(filename_sw):
 
 	print('this code is supressing warnings')
 	warnings.filterwarnings("ignore")
+	extract_data.pulling_acqs(filename_sw)
 	print('These are the available acquisitions: '+ str(d['Acquisition']))
-	these_acqs = input('Which acqusitions do you want to use in the model?').split()
+	these_acqs = input('Which acqusitions do you want to use in the model?').split(',')
 
 	for a in these_acqs:
 		print('Loading EEG and EMG....')
@@ -486,8 +346,10 @@ def build_model(filename_sw):
 		nearest_epoch = math.floor(seg_len/d['epochlen'])
 		new_length = int(nearest_epoch*d['epochlen']*d['fsd'])
 		this_eeg = this_eeg[0:new_length]
+		normVal = np.load(os.path.join('/Volumes/yaochen/Active/Lizzie/FLP_data/',d['basename'],d['basename']+'_extracted_data/',d['basename']+'_normVal.npy'))
 
-		FeatureDict = SWS_utils.build_feature_dict(this_eeg, d['fsd'], d['epochlen'], this_emg = this_emg)
+		FeatureDict = SWS_utils.build_feature_dict(this_eeg, d['fsd'], d['epochlen'], 
+			this_emg = this_emg, normVal =normVal)
 		this_video, v, this_motion = SWS_utils.initialize_vid_and_move(d, a, EEG_datetime, acq_len, this_eeg)
 		FeatureDict['Velocity'] = v[0]
 		FeatureDict['animal_name'] = np.full(np.size(FeatureDict['delta_pre']), d['mouse_name'])
