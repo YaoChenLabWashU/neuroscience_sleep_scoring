@@ -225,8 +225,7 @@ def start_swscoring(d):
 		nearest_epoch = math.floor(seg_len/d['epochlen'])
 		new_length = int(nearest_epoch*d['epochlen']*d['fsd'])
 		this_eeg = this_eeg[0:new_length]
-		normVal = np.load(os.path.join('/Volumes/yaochen/Active/Lizzie/FLP_data/', d['basename'],
-			d['basename']+'_extracted_data', d['basename']+'_normVal.npy'))
+		normVal = np.load(os.path.join(d['savedir'], d['basename']+'_normVal.npy'))
 		FeatureDict = SWS_utils.build_feature_dict(this_eeg, d['fsd'], d['epochlen'], this_emg = this_emg,
 			normVal = normVal)
 		this_video, v, this_motion = SWS_utils.initialize_vid_and_move(d, a, EEG_datetime, acq_len, this_eeg)
