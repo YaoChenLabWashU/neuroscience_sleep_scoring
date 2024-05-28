@@ -166,10 +166,10 @@ def combine_bonsai_data(filename_sw, d):
 			movement_df = SWS_utils.movement_extracting(d, a)
 			bad_frames, = np.where(movement_df['Likelihood'] < 0.8)
 			perc_bad = np.size(bad_frames)/len(movement_df.index)
-			if perc_bad > 0.15:
-				new_label = alternate_label(this_video, csv_dir, i)
-				movement_df = SWS_utils.movement_extracting(csv_dir, d['Acquisition'], a, bonsai_v, 
-				d['DLC'], new_label, this_video = this_video)
+			# if perc_bad > 0.15:
+			# 	new_label = alternate_label(videos[i], csv_dir, i)
+			# 	movement_df = SWS_utils.movement_extracting(csv_dir, d['Acquisition'], a, bonsai_v, 
+			# 	d['DLC'], new_label, this_video = this_video)
 			
 			movement_df['Timestamps'] = timestamp_df['Timestamps']
 			all_move_df  = pd.concat([all_move_df, movement_df])
@@ -204,10 +204,12 @@ def alternate_label(this_video, csv_dir, i):
 	new_label = input('What label do you want to use?')
 	return new_label
 
-def make_full_velocity_array(savedir):
+def make_full_velocity_array(savedir, binsize = 4, return_array = False):
 	movement_df = pd.read_pickle(os.path.join(savedir, 'All_movement.pkl'))
-	v = SWS_utils.movement_processing(movement_df)
+	v = SWS_utils.movement_processing(movement_df, binsize = binsize)
 	np.save(os.path.join(savedir, 'velocity_vector.npy'), v)
+	if return_array:
+		return v
 
 def get_normalizing_value(filename_sw):
 	with open(filename_sw, 'r') as f:

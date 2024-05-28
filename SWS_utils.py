@@ -49,10 +49,11 @@ def generate_signal(downsamp_signal, epochlen, fs): # fs = fsd here
     
     return sig_var, sig_max, sig_mean
 
-def bandPower(this_eeg, fsd, freq_dict = None, minfreq = 0.5, maxfreq = 16):
+def bandPower(this_eeg, fsd, freq_dict = None, minfreq = 0.5, maxfreq = 16, window_length = 10, 
+    noverlap = 9.9, window_type = None):
     power_dict = {}
     Pxx, freqs, bins = plot_spectrogram(None, this_eeg, fsd, minfreq = minfreq, maxfreq = maxfreq, 
-        additional_ax = None)
+        window_length = window_length, noverlap = noverlap, window_type = window_type)
     freq_res = freqs[1]-freqs[0]
     if freq_dict:
         for k in list(freq_dict.keys()):
@@ -61,12 +62,26 @@ def bandPower(this_eeg, fsd, freq_dict = None, minfreq = 0.5, maxfreq = 16):
             idx_high = freq_dict[k][1]
             power_dict[k] = simps(Pxx[np.where(np.logical_and(freqs>=idx_low,freqs<=idx_high))], 
                 axis = 0, dx=freq_res)
-    else:
-        power_dict['Total Power'] = simps(Pxx, dx=freq_res, axis = 0)
+    power_dict['Total_Power'] = simps(Pxx, dx=freq_res, axis = 0)
     power_dict['Bins'] = bins
     
     return power_dict
 
+def peak_freq(this_eeg, fsd, freq_dict = None, minfreq = 0.5, maxfreq = 16, window_length = 10, 
+    noverlap = 9.9, window_type = None):
+
+    Pxx, freqs, bins = plot_spectrogram(None, this_eeg, fsd, minfreq = minfreq, maxfreq = maxfreq, 
+        window_length = window_length, noverlap = noverlap, window_type = window_type)
+    peak_freqs_overall = np.zeros(np.shape(Pxx)[1])
+    # peak_theta = np.zeros(np.shape(Pxx)[1])
+    for f in np.arange(0, np.shape(Pxx)[1]):
+        # theta_band = Pxx[np.where(np.logical_and(freqs>=5,freqs<=8))]
+        # theta_freqs = freqs[np.where(np.logical_and(freqs>=5,freqs<=8))]
+        peak_idx_overall = np.argmax(Pxx[:,f])
+        # peak_idx_theta = np.argmax(theta_band[:,f])
+        peak_freqs_overall[f] = freqs[peak_idx_overall]
+        # peak_theta[f] = theta_freqs[peak_idx_theta]
+    return peak_idx_overall
 
 def post_pre(post, pre):
 	post = np.append(post, 0)
@@ -101,15 +116,17 @@ def random_forest_classifier(features, target):
     clf.fit(features, target)
     return clf
 
-def plot_spectrogram(ax, eegdat, fsd, minfreq = 1, maxfreq = 16, additional_ax = None):
-    window_length = 10 # n seconds in windowing segments
-    noverlap = 9.9 # step size in sec
+def plot_spectrogram(ax, eegdat, fsd, minfreq = 1, maxfreq = 16, additional_ax = None, window_length = 10, 
+    noverlap = 9.9, vmin = -50, vmax = -10, window_type = None):
     dt = 1/fsd
     t_elapsed = eegdat.shape[0]/fsd
     t = np.arange(0.0, t_elapsed, dt)
     noverlap = noverlap * fsd
     NFFT = window_length * fsd
-
+    if window_type:
+        window_array = window_type(int(NFFT))
+    else:
+        window_array = None
     if additional_ax:
         additional_ax.set_xlabel('Time (seconds)')
         additional_ax.set_ylabel('Frequency (Hz)')      
@@ -120,18 +137,21 @@ def plot_spectrogram(ax, eegdat, fsd, minfreq = 1, maxfreq = 16, additional_ax =
     # the minfreq and maxfreq args will limit the frequencies
         Pxx, freqs, bins, im = my_specgram(eegdat, ax = ax, NFFT=int(NFFT), Fs=fsd, noverlap=int(noverlap),
                                     cmap=cm.get_cmap('plasma'), minfreq = minfreq, maxfreq = maxfreq,
-                                    xextent = (0,int(t_elapsed)), additional_ax = additional_ax)
+                                    xextent = (0,int(t_elapsed)), additional_ax = additional_ax, vmin = vmin, 
+                                    vmax = vmax, window = window_array)
         return Pxx, freqs, bins, im
     else:
         Pxx, freqs, bins = my_specgram(eegdat, ax = ax, NFFT=int(NFFT), Fs=fsd, noverlap=int(noverlap),
                                     cmap=cm.get_cmap('plasma'), minfreq = minfreq, maxfreq = maxfreq,
-                                    xextent = (0,int(t_elapsed)), additional_ax = additional_ax)
+                                    xextent = (0,int(t_elapsed)), additional_ax = additional_ax, vmin = vmin, 
+                                    vmax = vmax, window = window_array)
         return Pxx, freqs, bins
 
 def my_specgram(x, ax = None, NFFT=400, Fs=200, Fc=0, detrend=mlab.detrend_none,
-             window=mlab.window_hanning, noverlap=200,
+             window=None, noverlap=200,
              cmap=None, xextent=None, pad_to=None, sides='default',
-             scale_by_freq=None, minfreq = None, maxfreq = None, additional_ax = None, **kwargs):
+             scale_by_freq=None, minfreq = None, maxfreq = None, additional_ax = None, vmin = -50, vmax = -10, 
+             **kwargs):
     """
     call signature::
 
@@ -213,15 +233,17 @@ def my_specgram(x, ax = None, NFFT=400, Fs=200, Fc=0, detrend=mlab.detrend_none,
     xmin, xmax = xextent
     freqs += Fc
     extent = xmin, xmax, freqs[0], freqs[-1]
-    vmin = np.percentile(np.concatenate(Z), 2)
-    vmax = np.percentile(np.concatenate(Z), 98)
+    if not vmin and not vmax:
+        vmin = np.percentile(np.concatenate(Z), 2)
+        vmax = np.percentile(np.concatenate(Z), 98)
     if ax:
-        im = ax.imshow(Z, cmap, extent=extent, **kwargs, vmin = -50, vmax = -10)
+        im = ax.imshow(Z, cmap, extent=extent, **kwargs, vmin = vmin, vmax = vmax)
+        print('vmin: '+str(vmin)+'; vmax: '+str(vmax))
         ax.axis('auto')
         xticks = np.arange(100,900,100)*4
         ax.set_xticks(xticks)
         if additional_ax:
-            im = additional_ax.imshow(Z, cmap, extent=extent, **kwargs, vmin = -50, vmax = -10)
+            im = additional_ax.imshow(Z, cmap, extent=extent, **kwargs, vmin = vmin, vmax = vmax)
             additional_ax.axis('auto')
             additional_ax.set_xticks(xticks)
         return Pxx, freqs, bins, im
@@ -261,9 +283,18 @@ def plot_predicted(ax, Predict_y, is_predicted, clf, Features):
     ax.plot(confidence, color = 'k')
 
 # This is the plotting collection function for the coarse prediction figure
-def create_prediction_figure(Predict_y, is_predicted, clf, Features, fs, eeg, this_emg, EEG_t, 
+def create_prediction_figure(d, Predict_y, is_predicted, clf, Features, fs, eeg, this_emg, EEG_t, 
     epochlen, start, end, maxfreq, minfreq, v = None, additional_ax = None):
     plt.ion()
+    vmin = d['vmin']
+    vmax = d['vmax']
+
+    if vmin == 'None':
+        vmin = None
+
+    if vmax =='None':
+        vmax = None
+
     if v is not None:
         fig, (ax1, ax2, ax3, axx) = plt.subplots(nrows = 4, ncols = 1, figsize = (11, 6))
         ax3.plot(v[1], v[0], color = 'k', linestyle = '--')
@@ -275,7 +306,7 @@ def create_prediction_figure(Predict_y, is_predicted, clf, Features, fs, eeg, th
     else:
         fig, (ax1, ax2, axx) = plt.subplots(nrows = 3, ncols = 1, figsize = (11, 6))
     Pxx, freqs, bins, im = plot_spectrogram(ax1, eeg, fs, maxfreq = maxfreq, minfreq = minfreq, 
-        additional_ax = additional_ax)
+        additional_ax = additional_ax, vmin = vmin, vmax = vmax)
     ax1.xaxis.set_ticks_position('top')
     plot_predicted(ax2, Predict_y, is_predicted, clf, Features)
     axx.plot(EEG_t, this_emg, color= 'r')
@@ -687,27 +718,53 @@ def movement_extracting(d, a):
     movement_df['Filename'] = movement_file
     return movement_df
 
-def movement_processing(this_motion):
+def movement_processing(this_motion, binsize = 4):
     this_motion['X'] = this_motion['X'].fillna(0)
     this_motion['Y'] = this_motion['Y'].fillna(0)
     t_vect = this_motion['Timestamps']-this_motion['Timestamps'].iloc[0]
-    t_vect = [t_vect.iloc[i].total_seconds() for i in range(len(t_vect))]
-    bins = np.arange(0, t_vect[-1]+4, 4)
-    dx = []
-    dy = []
-    t = []
-    ts = []
-    for i in np.arange(0, np.size(bins)-1):
-        idxs, = np.where(np.logical_and(t_vect>=bins[i], t_vect<bins[i+1]))
-        temp_x = list(this_motion['X'].iloc[idxs])
-        dx.append(int(float(temp_x[-1]))-int(float(temp_x[0])))
-        temp_y = list(this_motion['Y'].iloc[idxs])
-        dy.append(int(float(temp_y[-1]))-int(float(temp_y[0])))
-        t.append(t_vect[idxs[-1]])
-        ts.append(this_motion['Timestamps'].iloc[idxs[-1]])
+    t_vect = t_vect.dt.total_seconds().values
+    # t_vect = [t_vect.iloc[i].total_seconds() for i in range(len(t_vect))]
+    bins = np.arange(0, t_vect[-1]+binsize, binsize)
+    # dx = []
+    # dy = []
+    # t = []
+    # ts = []
+    idxs = [np.where(np.logical_and(t_vect>=bins[i], t_vect<bins[i+1]))[0] 
+                for i in np.arange(0, np.size(bins)-1)]
+    
+    dx = [this_motion['X'].iloc[ii[-1]] - this_motion['X'].iloc[ii[0]] 
+                for ii in idxs]
+    dy = [this_motion['Y'].iloc[ii[-1]] - this_motion['Y'].iloc[ii[0]] 
+                for ii in idxs]
+    t = [t_vect[ii[-1]] for ii in idxs]
     v = np.sqrt((np.square(dx) + np.square(dy)))
     v = np.vstack([v,t])
+
+    # for i in np.arange(0, np.size(bins)-1)]
+    # for i in np.arange(0, np.size(bins)-1):
+    #     idxs, = np.where(np.logical_and(t_vect>=bins[i], t_vect<bins[i+1]))
+    #     temp_x = list(this_motion['X'].iloc[idxs])
+    #     dx.append(int(float(temp_x[-1]))-int(float(temp_x[0])))
+    #     temp_y = list(this_motion['Y'].iloc[idxs])
+    #     dy.append(int(float(temp_y[-1]))-int(float(temp_y[0])))
+    #     t.append(t_vect[idxs[-1]])
+    #     ts.append(this_motion['Timestamps'].iloc[idxs[-1]])
+
     return v
+
+def get_movement_segs(movement_df, time_window):
+    t_vect = (movement_df['Timestamps'] - movement_df['Timestamps'].iloc[0]).dt.total_seconds()
+    vs = []
+    if time_window.ndim == 2:
+        for w in time_window:
+            this_motion = movement_df.loc[(t_vect >= w[0]) & (t_vect < w[1])]
+            vs.append(movement_processing(this_motion))
+        return vs
+    else:
+        this_motion = movement_df.loc[(t_vect >= time_window[0]) & (t_vect < time_window[1])]
+        v = movement_processing(this_motion)
+        return v
+    
 
 def prepare_feature_data(FeatureDict, movement_flag, smooth = False):
     del FeatureDict['animal_name']

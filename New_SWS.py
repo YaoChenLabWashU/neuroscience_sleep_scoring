@@ -77,12 +77,12 @@ def display_and_fix_scoring(d, this_eeg, a, h, this_emg, State_input, is_predict
 	fig2, (ax5, ax6, ax7, ax8) = plt.subplots(nrows=4, ncols=1, figsize=(14, 6)) #Zoomed in figure
 
 	if d['movement']:
-		fig1, ax1, ax2, ax3, axx = SWS_utils.create_prediction_figure(State_input, is_predicted, clf, 
+		fig1, ax1, ax2, ax3, axx = SWS_utils.create_prediction_figure(d, State_input, is_predicted, clf, 
 			Features, d['fsd'], this_eeg, this_emg, EEG_t, d['epochlen'], start_trace, end_trace, 
 			d['Maximum_Frequency'], d['Minimum_Frequency'], v = v, additional_ax = ax5)
 		v_ylims = list(ax3.get_ylim())
 	else:
-		fig1, ax1, ax2, axx = SWS_utils.create_prediction_figure(State_input, is_predicted, clf, 
+		fig1, ax1, ax2, axx = SWS_utils.create_prediction_figure(d, State_input, is_predicted, clf, 
 				Features, d['fsd'], this_eeg, this_emg, EEG_t, d['epochlen'], start_trace, end_trace, 
 				d['Maximum_Frequency'], d['Minimum_Frequency'], v = v, additional_ax = ax5)
 		v_ylims = None
