@@ -170,6 +170,7 @@ def display_and_fix_scoring(d, this_eeg, a, h, this_emg, State_input, is_predict
 			SWS_utils.correct_bins(start_bin, end_bin, ax2, new_state)
 			fig1.canvas.draw()
 			State[start_bin:end_bin+1] = new_state
+			np.save(os.path.join(d['savedir'], 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'), State)
 			cursor.bins = []
 			cursor.change_bins = False
 		if cursor.DONE:
