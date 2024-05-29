@@ -50,5 +50,7 @@
   "DLC": 1,
   "DLC Label": "center",
   "Minimum_Frequency": 1,
-  "Maximum_Frequency": 16
+  "Maximum_Frequency": 16,
+  "vmin": "None",
+  "vmax": "None"
 }
