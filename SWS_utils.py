@@ -983,7 +983,7 @@ def get_videofn_from_csv(d, csv_filename):
     str_idx2 = csv_filename.find('.csv')
     num = csv_filename[str_idx1:str_idx2]
     fn = os.path.split(csv_filename)[1]
-    v = os.path.join(d['video_dir'], fn[:fn.find('_')]+num+'.mp4')
+    v = os.path.join(d['video_dir'], d['basename']+num+'.mp4')
     return v
 def define_microarousals(sleep_states, epoch_len):
     wake_idx = PKA.find_continuous(sleep_states, [1,4])
