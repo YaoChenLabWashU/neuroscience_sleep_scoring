@@ -62,7 +62,7 @@ def choosing_acquisition(filename_sw):
 	with open(filename_sw, 'w') as f:
 		json.dump(d, f, indent=2)
 
-def downsample_filter(filename_sw):
+def downsample_filter(filename_sw, EEG_channels = ['0','2']):
 	with open(filename_sw, 'r') as f:
 			d = json.load(f)
 
@@ -73,76 +73,77 @@ def downsample_filter(filename_sw):
 	fs = int(d['fs'])
 	emg_flag = int(d['emg'])
 	vid = int(d['vid'])
-	EEG_chan = str(d['EEG channel'])
+	# EEG_chan = str(d['EEG channel'])
 	EMG_chan = str(d['EMG channel'])
 	acq = d['Acquisition']
 	filt_high = int(d['Filter High'])
 	filt_low = d['Filter Low']
 	savedir = str(d['savedir'])
 	fsd = int(d['fsd'])
-	if not os.path.exists(savedir):
-		os.mkdir(savedir)
+	os.makedirs(savedir, exist_ok = True)
 
 	print(rawdat_dir)
 	os.chdir(rawdat_dir)
-
-	EEG_files = [glob.glob('AD'+EEG_chan+'_'+str(i)+'.mat') for i in acq]
-	EEG_files = np.asarray(np.concatenate(EEG_files))
-
-	EMG_files = [glob.glob('AD'+EMG_chan+'_'+str(i)+'.mat') for i in acq]
-	EMG_files = np.asarray(np.concatenate(EMG_files))
-
 	nyq = 0.5*fs
 	N  = 3    # Filter order
-	
 
-	for fil in np.arange(np.size(acq)):
-		a = acq[fil]
-		Wn = [filt_low/nyq,filt_high/nyq] # Cutoff frequencies
-		f_eeg = EEG_files[fil]
-		f_emg = EMG_files[fil]
-		eeg = scipy.io.loadmat(f_eeg)['AD'+EEG_chan+'_'+str(acq[fil])]
-		eeg = eeg[0][0][0][0]
-		B, A = signal.butter(N, Wn, btype='bandpass',output='ba')
-		eegfilt = signal.filtfilt(B,A, eeg)
-		acq_len = np.size(eegfilt)/fs
-		new_len = acq_len*fsd
-		if emg_flag == 1:
-			emg = scipy.io.loadmat(f_emg)['AD'+EMG_chan+'_'+str(acq[fil])]
-			emg = emg[0][0][0][0]
-			Wn = [10/nyq] # Cutoff frequencies
-			B, A = signal.butter(N, Wn, btype='highpass',output='ba')
-			emgfilt = signal.filtfilt(B,A, emg)
-			emg_downsamp = signal.resample(emgfilt, int(new_len))
-			#emg_abs = np.absolute(emg_downsamp)
-		eeg_downsamp = signal.resample(eegfilt, int(new_len))
-		np.save(os.path.join(savedir, 'downsampEEG_Acq'+str(a)), eeg_downsamp)
-		if int(d['emg']) == 1:
-			np.save(os.path.join(savedir, 'downsampEMG_Acq'+str(a)), emg_downsamp)
+	for EEG_chan in EEG_channels:
+		os.makedirs(os.path.join(savedir, 'AD'+EEG_chan+'_downsampled'), exist_ok = True)
+		EEG_files = [glob.glob('AD'+EEG_chan+'_'+str(i)+'.mat') for i in acq]
+		EEG_files = np.asarray(np.concatenate(EEG_files))
 
-		acq_len = np.size(eeg_downsamp)/fsd
-		hour_segs = math.ceil(acq_len/3600)
+		EMG_files = [glob.glob('AD'+EMG_chan+'_'+str(i)+'.mat') for i in acq]
+		EMG_files = np.asarray(np.concatenate(EMG_files))
 
-		for h in np.arange(hour_segs):
-			if hour_segs == 1:
-				this_eeg = eeg_downsamp
-				if int(d['emg']) == 1:
-					this_emg = emg_downsamp
-			elif h == hour_segs-1:
-				this_eeg = eeg_downsamp[h*3600*fsd:]
-				if int(d['emg']) == 1:
-					this_emg = emg_downsamp[h*3600*fsd:]
-			else:
-				this_eeg = eeg_downsamp[h*3600*fsd:(h+1)*3600*fsd]
-				if int(d['emg']) == 1:
-					this_emg = emg_downsamp[h*3600*fsd:(h+1)*3600*fsd]
-			seg_len = np.size(this_eeg)/fsd
-			nearest_epoch = math.floor(seg_len/epochlen)
-			new_length = int(nearest_epoch*epochlen*fsd)
-			this_eeg = this_eeg[0:new_length]			
-			np.save(os.path.join(savedir, 'downsampEEG_Acq'+str(a) + '_hr' + str(h)+ '.npy'), this_eeg)
+		
+
+		for fil in np.arange(np.size(acq)):
+			a = acq[fil]
+			Wn = [filt_low/nyq,filt_high/nyq] # Cutoff frequencies
+			f_eeg = EEG_files[fil]
+			f_emg = EMG_files[fil]
+			eeg = scipy.io.loadmat(f_eeg)['AD'+EEG_chan+'_'+str(acq[fil])]
+			eeg = eeg[0][0][0][0]
+			B, A = signal.butter(N, Wn, btype='bandpass',output='ba')
+			eegfilt = signal.filtfilt(B,A, eeg)
+			acq_len = np.size(eegfilt)/fs
+			new_len = acq_len*fsd
+			if emg_flag == 1:
+				emg = scipy.io.loadmat(f_emg)['AD'+EMG_chan+'_'+str(acq[fil])]
+				emg = emg[0][0][0][0]
+				Wn = [10/nyq] # Cutoff frequencies
+				B, A = signal.butter(N, Wn, btype='highpass',output='ba')
+				emgfilt = signal.filtfilt(B,A, emg)
+				emg_downsamp = signal.resample(emgfilt, int(new_len))
+				#emg_abs = np.absolute(emg_downsamp)
+			eeg_downsamp = signal.resample(eegfilt, int(new_len))
+			np.save(os.path.join(savedir, 'downsampEEG_Acq'+str(a)), eeg_downsamp)
 			if int(d['emg']) == 1:
-				np.save(os.path.join(savedir, 'downsampEMG_Acq'+str(a) + '_hr' + str(h)+ '.npy'), this_emg)
+				np.save(os.path.join(savedir, 'downsampEMG_Acq'+str(a)), emg_downsamp)
+
+			acq_len = np.size(eeg_downsamp)/fsd
+			hour_segs = math.ceil(acq_len/3600)
+
+			for h in np.arange(hour_segs):
+				if hour_segs == 1:
+					this_eeg = eeg_downsamp
+					if int(d['emg']) == 1:
+						this_emg = emg_downsamp
+				elif h == hour_segs-1:
+					this_eeg = eeg_downsamp[h*3600*fsd:]
+					if int(d['emg']) == 1:
+						this_emg = emg_downsamp[h*3600*fsd:]
+				else:
+					this_eeg = eeg_downsamp[h*3600*fsd:(h+1)*3600*fsd]
+					if int(d['emg']) == 1:
+						this_emg = emg_downsamp[h*3600*fsd:(h+1)*3600*fsd]
+				seg_len = np.size(this_eeg)/fsd
+				nearest_epoch = math.floor(seg_len/epochlen)
+				new_length = int(nearest_epoch*epochlen*fsd)
+				this_eeg = this_eeg[0:new_length]			
+				np.save(os.path.join(savedir, 'AD'+str(EEG_chan)+'_downsampled', 'downsampEEG_Acq'+str(a) + '_hr' + str(h)+ '.npy'), this_eeg)
+				if int(d['emg']) == 1:
+					np.save(os.path.join(savedir, 'AD'+str(EEG_chan)+'_downsampled', 'downsampEMG_Acq'+str(a) + '_hr' + str(h)+ '.npy'), this_emg)
 
 def combine_bonsai_data(filename_sw, d):
 	videos = glob.glob(os.path.join(d['video_dir'], '*.mp4'))

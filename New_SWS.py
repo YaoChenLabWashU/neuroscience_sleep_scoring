@@ -214,11 +214,12 @@ def start_swscoring(d):
 	EEG_datestring = time.ctime(os.path.getmtime(AD_file))
 	ts_format = '%a %b %d %H:%M:%S %Y'
 	EEG_datetime = datetime.strptime(EEG_datestring, ts_format)
+	eeg_dir = os.path.join(d['savedir'], 'AD' + str(d['EEG channel']) + '_downsampled')
 	for h in np.arange(hour_segs):
 		# FeatureDict = {}
-		this_eeg = np.load(os.path.join(d['savedir'], 'downsampEEG_Acq'+str(a) + '_hr' + str(h)+ '.npy'))
+		this_eeg = np.load(os.path.join(eeg_dir, 'downsampEEG_Acq'+str(a) + '_hr' + str(h)+ '.npy'))
 		if d['emg']:
-			this_emg = np.load(os.path.join(d['savedir'],'downsampEMG_Acq'+str(a) + '_hr' + str(h)+ '.npy'))
+			this_emg = np.load(os.path.join(eeg_dir,'downsampEMG_Acq'+str(a) + '_hr' + str(h)+ '.npy'))
 		else:
 			this_emg = None
 		# chop off the remainder that does not fit into the 4s epoch
@@ -327,7 +328,7 @@ def build_model(filename_sw):
 	extract_data.pulling_acqs(filename_sw)
 	print('These are the available acquisitions: '+ str(d['Acquisition']))
 	these_acqs = input('Which acqusitions do you want to use in the model?').split(',')
-
+	eeg_dir = os.path.join(d['savedir'], 'AD' + str(d['EEG channel']) + '_downsampled')
 	for a in these_acqs:
 		print('Loading EEG and EMG....')
 		downsampEEG = np.load(os.path.join(d['savedir'],'downsampEEG_Acq'+str(a)+'.npy'))
@@ -338,9 +339,9 @@ def build_model(filename_sw):
 		EEG_datestring = time.ctime(os.path.getmtime(AD_file))
 		ts_format = '%a %b %d %H:%M:%S %Y'
 		EEG_datetime = datetime.strptime(EEG_datestring, ts_format)
-		this_eeg = np.load(os.path.join(d['savedir'], 'downsampEEG_Acq'+str(a) + '_hr0.npy'))
-		if d['emg'] == 1:
-			this_emg = np.load(os.path.join(d['savedir'],'downsampEMG_Acq'+str(a) + '_hr0.npy'))
+		this_eeg = np.load(os.path.join(eeg_dir, 'downsampEEG_Acq'+str(a) + '_hr' + str(h)+ '.npy'))
+		if d['emg']:
+			this_emg = np.load(os.path.join(eeg_dir,'downsampEMG_Acq'+str(a) + '_hr' + str(h)+ '.npy'))
 		else:
 			this_emg = None
 		# chop off the remainder that does not fit into the 4s epoch

@@ -1,7 +1,7 @@
 import os
 import numpy as np
 import sys
-from scipy.integrate import simps
+from scipy.integrate import simpson as simps
 import scipy.signal as signal
 import matplotlib.pyplot as plt
 plt.ion()
