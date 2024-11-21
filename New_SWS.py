@@ -161,15 +161,17 @@ def display_and_fix_scoring(d, this_eeg, a, h, this_emg, State_input, is_predict
 			end_bin = cursor.bins[1]
 			print(f'changing bins: {start_bin} to {end_bin}')
 			SWS_utils.clear_bins(bins, ax2)
-			fig1.canvas.draw()
+			fig2.canvas.draw()
 			# new_state = int(input('What state should these be?: '))
 			try:
 				new_state = int(input('What state should these be?: '))
 			except:
 				new_state = int(input('What state should these be?: '))
 			SWS_utils.correct_bins(start_bin, end_bin, ax2, new_state)
-			fig1.canvas.draw()
+			fig2.canvas.draw()
 			State[start_bin:end_bin] = new_state
+			if end_bin == 899:
+				State[end_bin] = new_state
 			np.save(os.path.join(d['savedir'], 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'), State)
 			cursor.bins = []
 			cursor.change_bins = False

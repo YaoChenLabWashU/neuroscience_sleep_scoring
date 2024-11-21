@@ -458,13 +458,19 @@ def add_buffer(data_array, t_array, buffer_seconds, fs):
         assert np.size(buffered_data) == np.size(buffered_t)
     return buffered_data, buffered_t
 def clear_bins(bins, ax2):
-    for b in np.arange(bins[0], bins[1]):
+    start_bin = bins[0]
+    end_bin = bins[1]
+    if end_bin-start_bin == 1:
+        end_bin = end_bin+1
+    for b in np.arange(start_bin, end_bin-1):
         b = math.floor(b)
         location = b
         rectangle = patch.Rectangle((location, 0), 1.5, height = 2, color = 'white')
         ax2.add_patch(rectangle)
 def correct_bins(start_bin, end_bin, ax2, new_state):
-    for b in np.arange(start_bin, end_bin):
+    if end_bin-start_bin == 1:
+        end_bin = end_bin+1
+    for b in np.arange(start_bin, end_bin-1):
         b = math.floor(b)
         location = b
         color = 'white'
