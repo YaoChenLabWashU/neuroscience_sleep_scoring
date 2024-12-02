@@ -206,9 +206,10 @@ def start_swscoring(d):
 	a = input('Which acqusition do you want to score?')
 
 	print('Loading EEG and EMG....')
-	downsampEEG = np.load(os.path.join(d['savedir'],'downsampEEG_Acq'+str(a)+'.npy'))
+	eeg_dir = os.path.join(d['savedir'], 'AD' + str(d['EEG channel']) + '_downsampled')
+	downsampEEG = np.load(os.path.join(eeg_dir,'downsampEEG_Acq'+str(a)+'.npy'))
 	if d['emg']:
-		downsampEMG = np.load(os.path.join(d['savedir'],'downsampEMG_Acq'+str(a)+'.npy'))
+		downsampEMG = np.load(os.path.join(eeg_dir,'downsampEMG_Acq'+str(a)+'.npy'))
 	acq_len = np.size(downsampEEG)/d['fsd'] # fs: sampling rate, fsd: downsampled sampling rate
 	hour_segs = math.ceil(acq_len/3600) # acq_len in seconds, convert to hours
 	print('This acquisition has ' +str(hour_segs)+ ' segments.')
@@ -216,7 +217,7 @@ def start_swscoring(d):
 	EEG_datestring = time.ctime(os.path.getmtime(AD_file))
 	ts_format = '%a %b %d %H:%M:%S %Y'
 	EEG_datetime = datetime.strptime(EEG_datestring, ts_format)
-	eeg_dir = os.path.join(d['savedir'], 'AD' + str(d['EEG channel']) + '_downsampled')
+	
 	for h in np.arange(hour_segs):
 		# FeatureDict = {}
 		this_eeg = np.load(os.path.join(eeg_dir, 'downsampEEG_Acq'+str(a) + '_hr' + str(h)+ '.npy'))
