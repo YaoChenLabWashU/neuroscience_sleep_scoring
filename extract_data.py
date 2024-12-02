@@ -214,16 +214,17 @@ def make_full_velocity_array(savedir, binsize = 4, return_array = False):
 	if return_array:
 		return v
 
-def get_normalizing_value(filename_sw):
+def get_normalizing_value(filename_sw, EEG_channels = ['0','2']):
 	with open(filename_sw, 'r') as f:
 		d = json.load(f)
-	eeg_files = glob.glob(os.path.join(d['savedir'], 'downsampEEG_Acq*_hr0.npy'))
-	all_tp = []
-	for f in eeg_files:
-		this_eeg = np.load(f)
-		all_tp.append(SWS_utils.get_total_power(this_eeg, d['fsd']))
-	normVal = np.median(np.concatenate(all_tp))
-	np.save(os.path.join(d['savedir'], d['basename']+'_normVal.npy'), normVal)
+	for EEG_chan in EEG_channels:
+		eeg_files = glob.glob(os.path.join(d['savedir'], 'AD'+str(EEG_chan)+'_downsampled','downsampEEG_Acq*_hr0.npy'))
+		all_tp = []
+		for f in eeg_files:
+			this_eeg = np.load(f)
+			all_tp.append(SWS_utils.get_total_power(this_eeg, d['fsd']))
+		normVal = np.median(np.concatenate(all_tp))
+		np.save(os.path.join(d['savedir'], 'AD'+str(EEG_chan)+'_downsampled', d['basename']+'_normVal.npy'), normVal)
 
 	return
 if __name__ == "__main__":
