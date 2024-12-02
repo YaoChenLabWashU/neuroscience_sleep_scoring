@@ -628,8 +628,9 @@ def timestamp_extracting(d, a):
     timestamp_df['Filename'] = timestamp_file
 
     ts_format = '%Y-%m-%dT%H:%M:%S.%f'
-    short_ts = [x[:-6] for x in list(timestamp_df['Timestamps'])]
-    timestamp_df['Timestamps'] = [datetime.strptime(short_ts[i][:-1], ts_format) for i in np.arange(len(short_ts))]
+    short_ts = [x[:-6] for x in list(timestamp_df['Timestamps'].loc[~timestamp_df['Timestamps'].isnull()])]
+    if len(short_ts) > 0:
+        timestamp_df['Timestamps'] = [datetime.strptime(short_ts[i][:-1], ts_format) for i in np.arange(len(short_ts))]
 
     return timestamp_df
 
