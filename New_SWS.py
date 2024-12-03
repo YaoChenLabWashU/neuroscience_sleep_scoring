@@ -68,8 +68,12 @@ def display_and_fix_scoring(d, this_eeg, a, h, this_emg, State_input, is_predict
 
 	if d['vid']:
 		timestamp_df = pd.read_pickle(os.path.join(d['savedir'], 'All_timestamps.pkl'))
-		this_timestamp = SWS_utils.pulling_timestamp(timestamp_df, EEG_datetime, this_eeg, d['fsd'])
-		cap, fps = SWS_utils.load_video(d, this_timestamp)
+		try:
+			this_timestamp = SWS_utils.pulling_timestamp(timestamp_df, EEG_datetime, this_eeg, d['fsd'])
+			cap, fps = SWS_utils.load_video(d, this_timestamp)
+		except IndexError:
+			d['vid'] = 0
+			print("Timestamp information not available, turning off video access for this acquisition")
 
 	print('loading the theta ratio...')
 	DTh = SWS_utils.get_DTh(this_eeg, d['fsd']) #array of DTh values per second

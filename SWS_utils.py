@@ -390,8 +390,12 @@ def pull_up_movie(d, cap, start, end, vid_file, epochlen, this_timestamp):
     if not cap[v].isOpened():
         print("Error opening video stream or file")
     score_win_sec = [start_sec + epochlen, start_sec + epochlen*2]
-    score_win_idx1 = int(this_timestamp.index[this_timestamp['Offset_Time']>(score_win_sec[0])][0])
-    score_win_idx2 = int(this_timestamp.index[this_timestamp['Offset_Time']>(score_win_sec[1])][0])
+    try:
+        score_win_idx1 = int(this_timestamp.index[this_timestamp['Offset_Time']>(score_win_sec[0])][0])
+        score_win_idx2 = int(this_timestamp.index[this_timestamp['Offset_Time']>(score_win_sec[1])][0])
+    except IndexError:
+        print('No video availabile during this time.')
+        return
     score_win = np.arange(score_win_idx1, int(score_win_idx2))
     for f in np.arange(start, end+200):
         cap[v].set(1, f)
@@ -551,16 +555,21 @@ def update_raw_trace(fig1, fig2, line1, line2, line3, line4, this_emg, EMG_t, DT
         line2.set_ydata(this_emg[start_idx_emg:end_idx_emg+1])
 
     if v is not None:
-        start_idx_v = np.where(v_t>=start_trace)[0][0]
-        end_idx_v = np.where(v_t<=end_trace)[0][-1]
+        v_idx, = np.where(np.logical_and(v_t>=start_trace, v_t<=end_trace))
+        # start_idx_v = np.where(v_t>=start_trace)[0][0]
+        # end_idx_v = np.where(v_t<=end_trace)[0][-1]
 
         try:
-            assert np.size(line3.get_ydata()) == (end_idx_v-start_idx_v)+1
+            assert np.size(line3.get_xdata()) == np.size(v_idx)
+            y_update = v[v_idx]
+            # assert np.size(line3.get_ydata()) == (end_idx_v-start_idx_v)+1
         except AssertionError:
-            diff = ((end_idx_v-start_idx_v)+1)-np.size(line3.get_ydata())
-            end_idx_v= end_idx_v-diff
+            y_update = np.empty(np.size(line3.get_xdata()))
+            y_update[:] = np.nan
+            if len(v_idx) != 0:
+                y_update[:len(v_idx)] = v[v_idx]            
 
-        line3.set_ydata(v[start_idx_v:end_idx_v+1])
+        line3.set_ydata(y_update)
 
     for i,m in enumerate(markers):
         if i == 1:
@@ -728,7 +737,13 @@ def movement_extracting(d, a):
 def movement_processing(this_motion, binsize = 4):
     this_motion['X'] = this_motion['X'].fillna(0)
     this_motion['Y'] = this_motion['Y'].fillna(0)
-    t_vect = this_motion['Timestamps']-this_motion['Timestamps'].iloc[0]
+    try:
+        t_vect = this_motion['Timestamps']-this_motion['Timestamps'].iloc[0]
+    except IndexError:
+        t = np.arange(0, 3600, binsize)
+        v = [np.nan for i in range(len(t))]
+        v = np.vstack([v,t])
+        return v
     t_vect = t_vect.dt.total_seconds().values
     # t_vect = [t_vect.iloc[i].total_seconds() for i in range(len(t_vect))]
     bins = np.arange(0, t_vect[-1]+binsize, binsize)
@@ -740,10 +755,10 @@ def movement_processing(this_motion, binsize = 4):
                 for i in np.arange(0, np.size(bins)-1)]
     
     dx = [this_motion['X'].iloc[ii[-1]] - this_motion['X'].iloc[ii[0]] 
-                for ii in idxs]
+                for ii in idxs if len(ii) > 0]
     dy = [this_motion['Y'].iloc[ii[-1]] - this_motion['Y'].iloc[ii[0]] 
-                for ii in idxs]
-    t = [t_vect[ii[-1]] for ii in idxs]
+                for ii in idxs if len(ii) > 0]
+    t = [t_vect[ii[-1]] for ii in idxs if len(ii) > 0]
     v = np.sqrt((np.square(dx) + np.square(dy)))
     v = np.vstack([v,t])
 
@@ -841,7 +856,7 @@ def build_feature_dict(this_eeg, fsd, epochlen, this_emg = None, normVal = None)
    
     return FeatureDict
 
-def adjust_movement(FeatureDict, movement_flag):
+def adjust_movement(FeatureDict, movement_flag, epochlen = 4):
     if movement_flag:
         # this_video, v, this_motion = SWS_utils.initialize_vid_and_move(bonsai_v, vid_flag, movement_flag, video_dir, a, 
         #   acq, this_eeg, fsd, EEG_datetime, extracted_dir)
