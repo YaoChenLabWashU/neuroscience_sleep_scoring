@@ -283,8 +283,8 @@ def plot_predicted(ax, Predict_y, is_predicted, clf, Features):
     ax.plot(confidence, color = 'k')
 
 # This is the plotting collection function for the coarse prediction figure
-def create_prediction_figure(d, Predict_y, is_predicted, clf, Features, fs, eeg, this_emg, EEG_t, 
-    epochlen, start, end, maxfreq, minfreq, v = None, additional_ax = None):
+def create_prediction_figure(d, Predict_y, is_predicted, clf, Features, fs, eeg_AD0, eeg_AD2, 
+    this_emg, EEG_t, epochlen, start, end, maxfreq, minfreq, additional_axes, v = None):
     plt.ion()
     vmin = d['vmin']
     vmax = d['vmax']
@@ -294,30 +294,35 @@ def create_prediction_figure(d, Predict_y, is_predicted, clf, Features, fs, eeg,
 
     if vmax =='None':
         vmax = None
+    fig1, (ax1, ax2, ax3, ax4, ax5) = plt.subplots(nrows = 5, ncols = 1, figsize = (11, 6))
+    if v is not None:
+        ax4.plot(v[1], v[0], color = 'k', linestyle = '--')
+        ax4.set_ylabel('Velocity')
+        ax4.set_ylim([0,40])
+        ax4.set_xlim([0,v[1][-1]])
 
-    if v is not None:
-        fig, (ax1, ax2, ax3, axx) = plt.subplots(nrows = 4, ncols = 1, figsize = (11, 6))
-        ax3.plot(v[1], v[0], color = 'k', linestyle = '--')
-        ax3.set_ylabel('Velocity')
-        ax3.set_ylim([0,40])
-        ax3.set_xlim([0,int(np.size(eeg)/fs)])
-        ax3.set_yticklabels([])
-        ax3.set_xticklabels([])
     else:
-        fig, (ax1, ax2, axx) = plt.subplots(nrows = 3, ncols = 1, figsize = (11, 6))
-    Pxx, freqs, bins, im = plot_spectrogram(ax1, eeg, fs, maxfreq = maxfreq, minfreq = minfreq, 
-        additional_ax = additional_ax, vmin = vmin, vmax = vmax)
+        ax4.text(0.5, 0.5, 'No Movement Available', 
+            horizontalalignment='center', verticalalignment='center')
+    ax4.set_yticklabels([])
+    ax4.set_xticklabels([])
+    Pxx, freqs, bins, im = plot_spectrogram(ax1, eeg_AD0, fs, maxfreq = maxfreq, minfreq = minfreq, 
+        additional_ax = additional_axes[0], vmin = vmin, vmax = vmax)
+    Pxx, freqs, bins, im = plot_spectrogram(ax3, eeg_AD2, fs, maxfreq = maxfreq, minfreq = minfreq, 
+        additional_ax = additional_axes[1], vmin = vmin, vmax = vmax)
+
     ax1.xaxis.set_ticks_position('top')
+    ax3.set_xticklabels([])
+
     plot_predicted(ax2, Predict_y, is_predicted, clf, Features)
-    axx.plot(EEG_t, this_emg, color= 'r')
-    axx.set_xlim([EEG_t[0],EEG_t[-1]])
-    axx.set_ylabel('EMG Amplitude')
-    fig.tight_layout()
-    fig.subplots_adjust(wspace=0, hspace=0)
-    if v is not None:
-        return fig, ax1, ax2, ax3, axx
-    else:
-        return fig, ax1, ax2, axx
+    ax5.plot(EEG_t, this_emg, color= 'r')
+    ax5.set_xlim([EEG_t[0],EEG_t[-1]])
+    ax5.set_ylabel('EMG Amplitude')
+    fig1.tight_layout()
+    fig1.subplots_adjust(wspace=0, hspace=0)
+    
+    return fig1, ax1, ax2, ax3, ax4, ax5
+
 def update_sleep_df(model_dir, mod_name, df_additions):
     try:
         Sleep_Model = np.load(file = model_dir + mod_name + '_model.pkl', allow_pickle = True)
@@ -410,24 +415,29 @@ def pull_up_movie(d, cap, start, end, vid_file, epochlen, this_timestamp):
     cv2.destroyAllWindows()
 
     #Creates line objects for the fine graph that plots data over 12s intervals
-def create_zoomed_fig(ax6, ax7, ax8, this_emg, EMG_t, DTh, DTh_t, v, v_t, 
-    start_trace, end_trace, epochlen, DTh_ylims = None, emg_ylims = None, v_ylims = None):
-    #Delta-Theta
-    line1 = plot_zoomed_data(ax6, DTh, DTh_t, start_trace, end_trace, color = '#5170d7', 
-        epochlen = epochlen, ylabel = 'Delta/Theta\nRatio', ylims = DTh_ylims)
+def create_zoomed_fig(ax8, ax9, ax10, long_emg, long_emg_t, long_ThD, long_ThD_t, long_v, long_v_t, 
+    start_trace, end_trace, epochlen, ThD_ylims = None, emg_ylims = None, v_ylims = None):
 
-    if this_emg is None:
-        ax7.text(0.5, 0.5, 'There is no EMG')
-        line2 = ax7.plot([0,0], [1,1], linewidth = 0, color = 'w')
+    
+    #Delta-Theta
+    line1 = plot_zoomed_data(ax8, long_ThD, long_ThD_t, start_trace, end_trace, color = '#5170d7', 
+        epochlen = epochlen, ylabel = 'Theta/Delta\nRatio', ylims = ThD_ylims)
+
+    if long_v is None:
+        line3 = ax9.plot([0,0], [1,1], linewidth = 0, color = 'w')
+        ax9.text(0.5, 0.5, 'No Movement Available', horizontalalignment='center', 
+            verticalalignment='center')
     else:
-        line2 = plot_zoomed_data(ax7, this_emg, EMG_t, start_trace, end_trace, color = '#fd411e',
-            epochlen = epochlen, ylabel = 'EMG Amplitude', linewidth = 2, ylims = emg_ylims)
-    if v is None:
-        line3 = ax8.plot([0,0], [1,1], linewidth = 0, color = 'w')
-        ax8.text(0.5, 0.5, 'There is no DLC')
-    else:
-        line3 = plot_zoomed_data(ax8, v, v_t, start_trace, end_trace, color = '#a87dc2',
+        line3 = plot_zoomed_data(ax9, long_v, long_v_t, start_trace, end_trace, color = '#a87dc2',
             epochlen = epochlen, ylabel = 'Velocity', ylims = v_ylims)
+
+    if long_emg is None:
+        ax10.text(0.5, 0.5, 'There is no EMG', horizontalalignment='center', 
+            verticalalignment='center')
+        line2 = ax10.plot([0,0], [1,1], linewidth = 0, color = 'w')
+    else:
+        line2 = plot_zoomed_data(ax10, long_emg, long_emg_t, start_trace, end_trace, color = '#fd411e',
+            epochlen = epochlen, ylabel = 'EMG Amplitude', linewidth = 2, ylims = emg_ylims)
     plt.show()
 
     return line1, line2, line3
@@ -530,44 +540,45 @@ def create_scoring_figure(extracted_dir, a, this_eeg, this_emg, EEG_t, fsd,
     else:
         return fig, ax1, ax2, axx, button
 
-def update_raw_trace(fig1, fig2, line1, line2, line3, line4, this_emg, EMG_t, DTh, DTh_t, v, v_t, markers, this_epoch_t, 
-    start_trace, end_trace, epochlen):
+def update_raw_trace(fig1, fig2, line1, line2, line3, line4, line5, long_emg, long_emg_t, long_ThD,
+ long_ThD_t, long_v, long_v_t, markers, this_epoch_t, start_trace, end_trace, epochlen):
 
-    start_idx_DTh = np.where(DTh_t>=start_trace)[0][0]
-    end_idx_DTh = np.where(DTh_t<=end_trace)[0][-1]
+    start_idx_ThD = np.where(long_ThD_t>=start_trace)[0][0]
+    end_idx_ThD = np.where(long_ThD_t<=end_trace)[0][-1]
 
     try:
-        assert np.size(line1.get_ydata()) == (end_idx_DTh-start_idx_DTh)+1
+        assert np.size(line1.get_ydata()) == (end_idx_ThD-start_idx_ThD)+1
     except AssertionError:
-        diff = ((end_idx_DTh-start_idx_DTh)+1)-np.size(line1.get_ydata())
-        end_idx_DTh = end_idx_DTh-diff
+        diff = ((end_idx_ThD-start_idx_ThD)+1)-np.size(line1.get_ydata())
+        end_idx_ThD = end_idx_ThD-diff
 
-    line1.set_ydata(DTh[start_idx_DTh:end_idx_DTh+1])
-    if this_emg is not None: 
-        start_idx_emg = np.where(EMG_t>=start_trace)[0][0]
-        end_idx_emg = np.where(EMG_t<=end_trace)[0][-1]
+    line1.set_ydata(long_ThD[start_idx_ThD:end_idx_ThD+1])
+
+    if long_emg is not None: 
+        start_idx_emg = np.where(long_emg_t>=start_trace)[0][0]
+        end_idx_emg = np.where(long_emg_t<=end_trace)[0][-1]
         try:
             assert np.size(line2.get_ydata()) == (end_idx_emg-start_idx_emg)+1
         except AssertionError:
             diff = ((end_idx_emg-start_idx_emg)+1)-np.size(line2.get_ydata())
             end_idx_emg = end_idx_emg-diff
 
-        line2.set_ydata(this_emg[start_idx_emg:end_idx_emg+1])
+        line2.set_ydata(long_emg[start_idx_emg:end_idx_emg+1])
 
-    if v is not None:
-        v_idx, = np.where(np.logical_and(v_t>=start_trace, v_t<=end_trace))
+    if long_v is not None:
+        v_idx, = np.where(np.logical_and(long_v_t>=start_trace, long_v_t<=end_trace))
         # start_idx_v = np.where(v_t>=start_trace)[0][0]
         # end_idx_v = np.where(v_t<=end_trace)[0][-1]
 
         try:
             assert np.size(line3.get_xdata()) == np.size(v_idx)
-            y_update = v[v_idx]
+            y_update = long_v[v_idx]
             # assert np.size(line3.get_ydata()) == (end_idx_v-start_idx_v)+1
         except AssertionError:
             y_update = np.empty(np.size(line3.get_xdata()))
             y_update[:] = np.nan
             if len(v_idx) != 0:
-                y_update[:len(v_idx)] = v[v_idx]            
+                y_update[:len(v_idx)] = long_v[v_idx]            
 
         line3.set_ydata(y_update)
 
@@ -577,7 +588,9 @@ def update_raw_trace(fig1, fig2, line1, line2, line3, line4, this_emg, EMG_t, DT
         else:
             m.set_xdata([this_epoch_t,this_epoch_t])
     fig2.axes[0].set_xlim([this_epoch_t-600, this_epoch_t+600])
+    fig2.axes[1].set_xlim([this_epoch_t-600, this_epoch_t+600])
     line4.set_xdata([this_epoch_t,this_epoch_t])
+    line5.set_xdata([this_epoch_t,this_epoch_t])
     fig1.canvas.draw()
     fig2.canvas.draw()
 def make_marker(fig, x, epochlen):
@@ -696,7 +709,7 @@ def initialize_vid_and_move(d, a, EEG_datetime, acq_len, this_eeg):
     return this_video, v, this_motion
 
 
-def get_DTh(this_eeg, fsd):
+def get_ThD(this_eeg, fsd):
     Pxx, freqs, bins = my_specgram(this_eeg, Fs = fsd)
     delta_band = np.sum(Pxx[np.where(np.logical_and(freqs>=1,freqs<=4))],axis = 0)
     theta_band = np.sum(Pxx[np.where(np.logical_and(freqs>=5,freqs<=8))],axis = 0)

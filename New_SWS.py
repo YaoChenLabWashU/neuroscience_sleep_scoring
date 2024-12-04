@@ -56,53 +56,57 @@ def update_model(d, this_eeg, FeatureDict, a, EEG_datetime):
 	SWS_utils.retrain_model(Sleep_Model, x_features, d['model_dir'], jobname)
 
 
-def display_and_fix_scoring(d, this_eeg, a, h, this_emg, State_input, is_predicted, clf, Features, this_video,
+def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, Features, this_video,
 	EEG_datetime, v = None, movement_df = None, buffer = 4):
 	plt.ion()
 	i = 0
 	this_bin = 1*d['fsd']*d['epochlen'] #number of EEG data points in one epoch
-	EEG_t = np.arange(np.size(this_eeg))/d['fsd'] #time array for EEG data
+	eeg_AD0 = np.load(os.path.join(d['savedir'],'AD0_downsampled', 
+		'downsampEEG_Acq'+a+'_hr'+str(h)+'.npy'))
+	eeg_AD2 = np.load(os.path.join(d['savedir'],'AD2_downsampled', 
+		'downsampEEG_Acq'+a+'_hr'+str(h)+'.npy'))
 
+	EEG_t = np.arange(np.size(eeg_AD0))/d['fsd'] #time array for EEG data
 	start_trace = int(i-(4*d['epochlen'])) #timepoint in seconds that the plotted trace will start
 	end_trace = int(i + (5*d['epochlen'])) #timepoint in seconds that the plotted trace will end
 
 	if d['vid']:
 		timestamp_df = pd.read_pickle(os.path.join(d['savedir'], 'All_timestamps.pkl'))
 		try:
-			this_timestamp = SWS_utils.pulling_timestamp(timestamp_df, EEG_datetime, this_eeg, d['fsd'])
+			this_timestamp = SWS_utils.pulling_timestamp(timestamp_df, EEG_datetime, eeg_AD0, d['fsd'])
 			cap, fps = SWS_utils.load_video(d, this_timestamp)
 		except IndexError:
 			d['vid'] = 0
 			print("Timestamp information not available, turning off video access for this acquisition")
 
 	print('loading the theta ratio...')
-	DTh = SWS_utils.get_DTh(this_eeg, d['fsd']) #array of DTh values per second
-	DTh_t = np.arange(0, np.size(DTh))
-	fig2, (ax5, ax6, ax7, ax8) = plt.subplots(nrows=4, ncols=1, figsize=(14, 6)) #Zoomed in figure
+	ThD = SWS_utils.get_ThD(eeg_AD2, d['fsd']) #array of ThD values per second
+	ThD_t = np.arange(0, np.size(ThD))
 
-	if d['movement']:
-		fig1, ax1, ax2, ax3, axx = SWS_utils.create_prediction_figure(d, State_input, is_predicted, clf, 
-			Features, d['fsd'], this_eeg, this_emg, EEG_t, d['epochlen'], start_trace, end_trace, 
-			d['Maximum_Frequency'], d['Minimum_Frequency'], v = v, additional_ax = ax5)
-		v_ylims = list(ax3.get_ylim())
-	else:
-		fig1, ax1, ax2, axx = SWS_utils.create_prediction_figure(d, State_input, is_predicted, clf, 
-				Features, d['fsd'], this_eeg, this_emg, EEG_t, d['epochlen'], start_trace, end_trace, 
-				d['Maximum_Frequency'], d['Minimum_Frequency'], v = v, additional_ax = ax5)
-		v_ylims = None
-	emg_ylims = list(axx.get_ylim())
+	fig2, (ax6, ax7, ax8, ax9, ax10) = plt.subplots(nrows=5, ncols=1, figsize=(14, 7.5))
+	fig1, ax1, ax2, ax3, ax4, ax5 = SWS_utils.create_prediction_figure(d, State_input, is_predicted, clf, 
+		Features, d['fsd'], eeg_AD0, eeg_AD2, this_emg, EEG_t, d['epochlen'], start_trace, end_trace, 
+		d['Maximum_Frequency'], d['Minimum_Frequency'], [ax6, ax7], v = v)
+	
+	v_ylims = list(ax4.get_ylim())
+	emg_ylims = list(ax5.get_ylim())
 
 	buffer_seconds = buffer*d['epochlen'] #amount of time in seconds added to beginning and end of trace to accomodate looking at early and late epochs
-	long_DTh, long_DTh_t = SWS_utils.add_buffer(DTh, DTh_t, buffer_seconds, fs = 1)
+	long_ThD, long_ThD_t = SWS_utils.add_buffer(ThD, ThD_t, buffer_seconds, fs = 1)
 	long_emg, long_emg_t = SWS_utils.add_buffer(this_emg, EEG_t, buffer_seconds, fs = 200)
-	long_v, long_v_t = SWS_utils.add_buffer(np.insert(v[0],0,0), np.insert(v[1],0,0), buffer_seconds, fs = 1/int(d['epochlen']))
-	line1, line2, line3 = SWS_utils.create_zoomed_fig(ax6, ax7, ax8, long_emg, long_emg_t, long_DTh, 
-		long_DTh_t, long_v, long_v_t, start_trace, end_trace, epochlen = d['epochlen'],
-		DTh_ylims = [0,30], emg_ylims = emg_ylims, v_ylims = v_ylims)
+	long_v, long_v_t = SWS_utils.add_buffer(np.insert(v[0],0,0), np.insert(v[1],0,0), 
+		buffer_seconds, fs = 1/int(d['epochlen']))
+
+	line1, line2, line3 = SWS_utils.create_zoomed_fig(ax8, ax9, ax10, long_emg, long_emg_t, 
+		long_ThD, long_ThD_t, long_v, long_v_t, start_trace, end_trace, 
+		epochlen = d['epochlen'], ThD_ylims = [0,30], emg_ylims = emg_ylims, v_ylims = v_ylims)
 
 
-	ax5.set_xlim([-600, 600])
-	line4 = ax5.axvline(0, linewidth = 2, color = 'k')
+	ax6.set_xlim([-600, 600])
+	ax7.set_xlim([-600, 600])
+	line4 = ax6.axvline(0, linewidth = 2, color = 'k')
+	line5 = ax7.axvline(0, linewidth = 2, color = 'k')
+
 	fig2.tight_layout()
 	markers = SWS_utils.make_marker(fig1, this_bin/d['fsd'], d['epochlen'])
 
@@ -110,7 +114,7 @@ def display_and_fix_scoring(d, this_eeg, a, h, this_emg, State_input, is_predict
 	plt.ion()	
 	State = copy.deepcopy(State_input)
 	#init cursor and it's libraries from SW_Cursor.py
-	cursor = Cursor(ax1, ax2, axx)	
+	cursor = Cursor(ax1, ax2, ax5)	
 
 	cID = fig1.canvas.mpl_connect('button_press_event', cursor.on_click)
 
@@ -139,8 +143,9 @@ def display_and_fix_scoring(d, this_eeg, a, h, this_emg, State_input, is_predict
 			print('Start Trace = '+str(replot_start) + ' seconds')
 			print('End Trace = ' + str(replot_end) + ' seconds')
 
-			SWS_utils.update_raw_trace(fig1, fig2, line1, line2, line3, line4, long_emg, long_emg_t, long_DTh, long_DTh_t, long_v, long_v_t, markers, 
-								this_epoch_t, replot_start, replot_end, d['epochlen'])
+			SWS_utils.update_raw_trace(fig1, fig2, line1, line2, line3, line4, line5, long_emg, 
+				long_emg_t, long_ThD, long_ThD_t, long_v, long_v_t, markers, this_epoch_t, 
+				replot_start, replot_end, d['epochlen'])
 			if d['vid']:
 				if this_epoch_t-d['epochlen'] < 0:
 					print('No video available for this bin')
@@ -255,13 +260,13 @@ def start_swscoring(d):
 				State[wrong] = 0
 				s, = np.where(State == 0)
 
-				State = display_and_fix_scoring(d, this_eeg, a, h, this_emg, State, False, None,
+				State = display_and_fix_scoring(d, a, h, this_emg, State, False, None,
 										None, this_video, EEG_datetime, v = v, movement_df = this_motion)
 				if np.any(State == 0):
 					print('The following bins are not scored: \n' + str(np.where(State == 0)[0])  )
 					zero_check = input('Do you want to go back and fix this right now? (y/n)' ) == 'y'
 					if zero_check:
-						State = display_and_fix_scoring(d, this_eeg, a, h, this_emg, State, False, None,
+						State = display_and_fix_scoring(d, a, h, this_emg, State, False, None,
 										None, this_video, EEG_datetime, v = v, movement_df = this_motion)					
 					else:
 						print('Ok, but please do not update the model until you fix them')
@@ -299,11 +304,11 @@ def start_swscoring(d):
 				Predict_y = clf.predict(Features)
 				Predict_y = SWS_utils.fix_states(Predict_y)
 				np.save(os.path.join(d['savedir'], 'model_prediction_Acq' + str(a) + '_hr' + str(h) + '.npy'), Predict_y)
-				State = display_and_fix_scoring(d, this_eeg, a, h, this_emg, Predict_y, True, clf,
+				State = display_and_fix_scoring(d, a, h, this_emg, Predict_y, True, clf,
 					Features, this_video, EEG_datetime, v = v, movement_df = this_motion)
 			else:
 				State = np.zeros(int(acq_len/d['epochlen']))
-				State = display_and_fix_scoring(d, this_eeg, a, h, this_emg, State, False, None,
+				State = display_and_fix_scoring(d, a, h, this_emg, State, False, None,
 										None, this_video, EEG_datetime, v = v, movement_df = this_motion)
 		
 		FeatureDict['State'] = State
@@ -367,7 +372,7 @@ def build_model(filename_sw):
 			State = np.load(os.path.join(d['savedir'], 'StatesAcq' + str(a) + '_hr0.npy'))
 			wrong, = np.where(np.isnan(State))
 			State[wrong] = 0
-			State = display_and_fix_scoring(d, this_eeg, a, 0, this_emg, State, False, None,
+			State = display_and_fix_scoring(d, a, 0, this_emg, State, False, None,
 									None, this_video, EEG_datetime, v = v, movement_df = this_motion)
 			FeatureDict['State'] = State
 			keep = input('Do you want this to be part of the model? (y/n)') == 'y'

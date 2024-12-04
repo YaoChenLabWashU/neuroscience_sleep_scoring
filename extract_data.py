@@ -89,8 +89,8 @@ def downsample_filter(filename_sw, EEG_channels = ['0','2']):
 
 	for EEG_chan in EEG_channels:
 		os.makedirs(os.path.join(savedir, 'AD'+EEG_chan+'_downsampled'), exist_ok = True)
-		if emg_flag:
-			os.makedirs(os.path.join(savedir, 'AD'+EMG_chan+'_downsampled'), exist_ok = True)
+		# if emg_flag:
+		# 	os.makedirs(os.path.join(savedir, 'AD'+EMG_chan+'_downsampled'), exist_ok = True)
 		EEG_files = [glob.glob('AD'+EEG_chan+'_'+str(i)+'.mat') for i in acq]
 		EEG_files = np.asarray(np.concatenate(EEG_files))
 
@@ -119,9 +119,9 @@ def downsample_filter(filename_sw, EEG_channels = ['0','2']):
 				emg_downsamp = signal.resample(emgfilt, int(new_len))
 				#emg_abs = np.absolute(emg_downsamp)
 			eeg_downsamp = signal.resample(eegfilt, int(new_len))
-			np.save(os.path.join(savedir, 'AD'+str(EEG_chan)+'_downsampled', 'downsampEEG_Acq'+str(a)), eeg_downsamp)
+			np.save(os.path.join(savedir, 'downsampEEG_Acq'+str(a)), eeg_downsamp)
 			if int(d['emg']) == 1:
-				np.save(os.path.join(savedir, 'AD'+str(EMG_chan)+'_downsampled', 'downsampEMG_Acq'+str(a)), emg_downsamp)
+				np.save(os.path.join(savedir, 'downsampEMG_Acq'+str(a)), emg_downsamp)
 
 			acq_len = np.size(eeg_downsamp)/fsd
 			hour_segs = math.ceil(acq_len/3600)
