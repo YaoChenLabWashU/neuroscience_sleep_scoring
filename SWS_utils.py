@@ -2,7 +2,7 @@ import os
 import numpy as np
 import sys
 from scipy.integrate import simpson as simps
-import scipy.signal as signal
+from scipy import signal, io
 import matplotlib.pyplot as plt
 plt.ion()
 import matplotlib.image as mpimg
@@ -618,33 +618,8 @@ def load_video(d, this_timestamp):
         fps[v] = cap[v].get(cv2.CAP_PROP_FPS)
     return cap, fps
 
-def timestamp_extracting(d, a):
-    if d['Bonsai Version'] < 6:
-        timestamps = glob.glob(d['csv_dir']+'*.txt')
-        timestamps_csv = glob.glob(d['csv_dir']+'*.csv')
-        for t in timestamps_csv:
-            timestamps.append(t)
-        for tf in timestamps:
-            print('I think I found a timestamp file: ' + tf)
-            with open(tf, "r") as file:
-                first_line = file.readline()
-            try: 
-                parse(first_line, fuzzy=False)
-                print('This is a timestamp file. Moving on...')
-                timestamp_file = tf
-            except Exception:
-                print('This is not a timestamp file. Help.')
-
-    if d['Bonsai Version'] >= 6:
-        timestamp_files = glob.glob(os.path.join(d['csv_dir'], '*imestamp*.csv'))
-        timestamp_files = sort_files(timestamp_files, d['basename'])
-        if len(timestamp_files) == 2*len(d['Acquisition']):
-            timestamp_files = glob.glob(os.path.join(d['csv_dir'], '*sidetimestamp*.csv'))
-            timestamp_files = sort_files(timestamp_files, d['basename'])
-        file_idx = d['Acquisition'].index(int(a))
-        timestamp_file = timestamp_files[int(file_idx)]
-        print('Timestamp file: ' + timestamp_file)
-
+def timestamp_extracting(timestamp_file):
+    ## Dealing with old Bonsai files is deprecated
     timestamp_df = pd.read_csv(timestamp_file, header=None) 
     timestamp_df.columns = ['Timestamps']
     timestamp_df['Filename'] = timestamp_file
@@ -656,20 +631,18 @@ def timestamp_extracting(d, a):
 
     return timestamp_df
 
-def pulling_timestamp(timestamp_df, EEG_datetime, this_eeg, fsd):
-
+def pulling_timestamp(timestamp_df, acq_start, this_eeg, fsd):
     acq_len = int(np.size(this_eeg)/fsd)
-    end_ts = EEG_datetime
-    start_ts = end_ts-timedelta(seconds=acq_len)
+    start_ts = acq_start
+    end_ts = start_ts+timedelta(seconds=acq_len)
     ts_idx, = np.where(np.logical_and(timestamp_df['Timestamps'] < end_ts, timestamp_df['Timestamps'] > start_ts))
     this_timestamp = timestamp_df.iloc[ts_idx]
     offset_times = this_timestamp['Timestamps']-this_timestamp['Timestamps'].iloc[0]
     this_timestamp['Offset_Time'] = [offset_times.iloc[i].total_seconds() for i in range(len(offset_times))]
 
-
     return this_timestamp
 
-def initialize_vid_and_move(d, a, EEG_datetime, acq_len, this_eeg):
+def initialize_vid_and_move(d, a, acq_start, acq_len):
     if d['vid']:
         video_list = glob.glob(os.path.join(d['video_dir'], '*.mp4'))
         if len(video_list) == 0:
@@ -677,29 +650,29 @@ def initialize_vid_and_move(d, a, EEG_datetime, acq_len, this_eeg):
         if len(video_list) == 0:
             print('No videos found! Please check directory')
             sys.exit()
-
-        video_list = sort_files(video_list, d['basename'])
-        try:
-            assert len(video_list) == len(d['Acquisition'])
-        except AssertionError:
-            if len(video_list) > len(d['Acquisition']):
-                print('There are more videos than aquisitions. Please move any videos that do not have a corresponding acquisition out of this directory: ' + str(d['video_dir']))
-            if len(video_list) < len(d['Acquisition']):
-                print('There are more acquisitions than videos. Only list acquisitions with videos in the Score_Settings.json file')
-        vid_idx = d['Acquisition'].index(int(a))
-        if d['video_dir'] == "F:/FLiP_Videos/jaLC_FLiPAKAREEGEMG004/":
-            this_video = glob.glob(os.path.join(d['video_dir'], '*_' + str(int(a)-1) +'.mp4'))[0]
+        video_list = sort_files(video_list, d['basename'], d['csv_dir'])
+        if d['Acquisition'].index(int(a)) == 0:
+            this_video = video_list[0]
         else:
-            this_video = video_list[int(vid_idx)]
+            timestamp_list = glob.glob(os.path.join(d['csv_dir'], '*timestamp*'))
+            if len(timestamp_list) == 0:
+                print('No timestamp files found! Please check directory')
+                sys.exit()
+            timestamp_list = sort_files(timestamp_list, d['basename'], d['csv_dir'])
+            first_ts = [datetime.strptime(pd.read_csv(
+                t, header = None).iloc[0][0][:-7], '%Y-%m-%dT%H:%M:%S.%f') for t in timestamp_list]
+            acq_idx, = np.where([(acq_start > first_ts[ii]) & 
+                (acq_start < first_ts[ii+1]) for ii in range(len(first_ts)-1)])
+            this_video = video_list[acq_idx[0]]
     else:
         this_video = None
         print('no video available')
     if d['movement']:
         movement_df = pd.read_pickle(os.path.join(d['savedir'], 'All_movement.pkl'))
-        acq_len = int(np.size(this_eeg)/d['fsd'])
-        end_ts = EEG_datetime
-        start_ts = end_ts-timedelta(seconds=acq_len)
-        move_idx, = np.where(np.logical_and(movement_df['Timestamps'] < end_ts, movement_df['Timestamps'] > start_ts))
+        start_ts = acq_start
+        end_ts = start_ts+timedelta(seconds=acq_len)
+        move_idx, = np.where(
+            (movement_df['Timestamps'] < end_ts) & (movement_df['Timestamps'] > start_ts))
         this_motion = movement_df.iloc[move_idx]
         v = movement_processing(this_motion)
 
@@ -716,18 +689,7 @@ def get_ThD(this_eeg, fsd):
 
     return theta_band/delta_band
 
-def movement_extracting(d, a):
-    if d['Bonsai Version'] >= 6:
-        movement_files = glob.glob(os.path.join(d['csv_dir'], '*motion*.csv'))
-        if len(movement_files) == 0:
-            movement_files = glob.glob(os.path.join(movement_filedir, '*movement*.csv'))
-        movement_files = sort_files(movement_files, d['basename'])
-        file_idx = d['Acquisition'].index(int(a))
-        movement_file =  movement_files[file_idx]
-        print('This is your movement file: ' + movement_file)
-    else:
-        print('This scoring engine no longer supports Bonsai version < 6. Please run DLC.')
-    
+def movement_extracting(movement_file, d):
     if d['DLC']:
         movement_df_full = pd.read_csv(movement_file)
         movement_df = movement_df_full[[d['DLC Label']+'_x', d['DLC Label']+'_y', d['DLC Label']+'_likelihood']]
@@ -1043,19 +1005,39 @@ def get_eeg_file(basename, file_num):
     this_file = os.path.join(extracted_dir, 'downsampEEG_Acq'+str(acqs[file_num])+'_hr0.npy')
     return this_file
 
-def sort_files(file_list, basename):
+def sort_timestamp_files(timestamp_dir):
+    timestamp_list = glob.glob(os.path.join(timestamp_dir, '*timestamp*'))
+    first_ts = [datetime.strptime(pd.read_csv(
+        t, header = None).iloc[0][0][:-7], '%Y-%m-%dT%H:%M:%S.%f') for t in timestamp_list]
+    sorting_idx = np.argsort(first_ts)
+    file_labels = []
+    for t in timestamp_list:
+        idx1 = t.find('timestamp')+9
+        idx2 = t.find('.csv')
+        file_labels.append(int(t[idx1:idx2]))
+    sorted_file_labels = np.asarray(file_labels)[sorting_idx]
+
+    return sorted_file_labels
+
+def sort_files(file_list, basename, timestamp_dir):
+    sorted_file_labels = sort_timestamp_files(timestamp_dir)
     fn_only = [os.path.splitext(os.path.basename(l))[0] for l in file_list]
     ext = os.path.splitext(file_list[0])[1]
     if ext == '.mp4':
         file_nums = [int(i[i.find(basename)+len(basename):]) for i in fn_only]
     if ext == '.csv':
-        if 'timestamp' in file_list[0]:
-            file_nums = [int(i[i.find('timestamp')+len('timestamp'):]) for i in fn_only]
-        elif 'motion' in file_list[0]:
+        if 'motion' in file_list[0]:
             file_nums = [int(i[i.find('motion')+len('motion'):]) for i in fn_only]
+        elif 'timestamp' in file_list[0]:
+            file_nums = [int(i[i.find('timestamp')+len('timestamp'):]) for i in fn_only]
         else:
             print('I do not know what type of files these are....')
-    ordered_idx = [file_nums.index(ii) for ii in np.arange(min(file_nums), max(file_nums)+1)]
+    if len(file_nums) != len(sorted_file_labels):
+        print('You have timestamp files for the following numbers but they do not appear in the given list:')
+        print([n for n in sorted_file_labels if n not in file_nums], sep="\n")
+        sys.exit()
+
+    ordered_idx = [file_nums.index(f) for f in sorted_file_labels]
     sorted_files = [file_list[idx] for idx in ordered_idx]
 
     return sorted_files
@@ -1064,6 +1046,22 @@ def get_total_power(this_eeg, fsd):
     freq_res = freqs[1]-freqs[0]
     total_power = simps(Pxx, dx=freq_res, axis = 0)
     return total_power
+
+def get_AcqStart(d, a, acq_len):
+    if len(glob.glob(os.path.join(d['rawdat_dir'], 'trigger_times.mat'))) != 0:
+        trigger_times = {}
+        io.loadmat(glob.glob(os.path.join(d['rawdat_dir'], 'trigger_times.mat'))[0], 
+            mdict=trigger_times)
+        trigger_times = trigger_times['trigger_times'][0]
+        acq_start = datetime(*[int(ii) for ii in trigger_times[d['Acquisition'].index(int(a))][0]])
+    else:
+        AD_file = os.path.join(d['rawdat_dir'], 'AD' + str(d['EEG channel']) + '_'+str(a)+'.mat')
+        EEG_datestring = time.ctime(os.path.getmtime(AD_file))
+        ts_format = '%a %b %d %H:%M:%S %Y'
+        EEG_datetime = datetime.strptime(EEG_datestring, ts_format)
+        acq_start = EEG_datetime-timedelta(seconds=acq_len)
+    return acq_start
+    
 
 
 def print_instructions():

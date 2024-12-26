@@ -21,7 +21,8 @@ from neuroscience_sleep_scoring.SW_Cursor import Cursor
 from neuroscience_sleep_scoring.SW_Cursor import ScoringCursor
 import pathlib
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
+from scipy import io
 
 key_stroke = 0
 
@@ -38,9 +39,9 @@ def on_press(event):
 		key_stroke = np.float('nan')
 		print('I did not understand that keystroke; I will mark it white and please come back to fix it.')
 
-def update_model(d, this_eeg, FeatureDict, a, EEG_datetime):
+def update_model(d, FeatureDict):
 	# Feed the data to retrain a model.
-	# Using EMG data by default. (No video for now)
+
 	FeatureDict = SWS_utils.adjust_movement(FeatureDict, d['movement'])
 	final_features = list(FeatureDict.keys())
 	data = list(FeatureDict.values())
@@ -57,7 +58,7 @@ def update_model(d, this_eeg, FeatureDict, a, EEG_datetime):
 
 
 def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, Features, this_video,
-	EEG_datetime, v = None, movement_df = None, buffer = 4):
+	acq_start, v = None, movement_df = None, buffer = 4):
 	plt.ion()
 	i = 0
 	this_bin = 1*d['fsd']*d['epochlen'] #number of EEG data points in one epoch
@@ -73,7 +74,7 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 	if d['vid']:
 		timestamp_df = pd.read_pickle(os.path.join(d['savedir'], 'All_timestamps.pkl'))
 		try:
-			this_timestamp = SWS_utils.pulling_timestamp(timestamp_df, EEG_datetime, eeg_AD0, d['fsd'])
+			this_timestamp = SWS_utils.pulling_timestamp(timestamp_df, acq_start, eeg_AD0, d['fsd'])
 			cap, fps = SWS_utils.load_video(d, this_timestamp)
 		except IndexError:
 			d['vid'] = 0
@@ -222,11 +223,9 @@ def start_swscoring(d):
 	acq_len = np.size(downsampEEG)/d['fsd'] # fs: sampling rate, fsd: downsampled sampling rate
 	hour_segs = math.ceil(acq_len/3600) # acq_len in seconds, convert to hours
 	print('This acquisition has ' +str(hour_segs)+ ' segments.')
-	AD_file = os.path.join(d['rawdat_dir'], 'AD' + str(d['EEG channel']) + '_'+str(a)+'.mat')
-	EEG_datestring = time.ctime(os.path.getmtime(AD_file))
-	ts_format = '%a %b %d %H:%M:%S %Y'
-	EEG_datetime = datetime.strptime(EEG_datestring, ts_format)
-	
+
+	acq_start = SWS_utils.get_AcqStart(d, a, acq_len)
+
 	for h in np.arange(hour_segs):
 		# FeatureDict = {}
 		this_eeg = np.load(os.path.join(eeg_dir, 'downsampEEG_Acq'+str(a) + '_hr' + str(h)+ '.npy'))
@@ -242,7 +241,7 @@ def start_swscoring(d):
 		normVal = np.load(os.path.join(eeg_dir, d['basename']+'_normVal.npy'))
 		FeatureDict = SWS_utils.build_feature_dict(this_eeg, d['fsd'], d['epochlen'], this_emg = this_emg,
 			normVal = normVal)
-		this_video, v, this_motion = SWS_utils.initialize_vid_and_move(d, a, EEG_datetime, acq_len, this_eeg)
+		this_video, v, this_motion = SWS_utils.initialize_vid_and_move(d, a, acq_start, acq_len)
 		FeatureDict['Velocity'] = v[0]
 		FeatureDict['animal_name'] = np.full(np.size(FeatureDict['delta_pre']), d['mouse_name'])
 
@@ -261,13 +260,13 @@ def start_swscoring(d):
 				s, = np.where(State == 0)
 
 				State = display_and_fix_scoring(d, a, h, this_emg, State, False, None,
-										None, this_video, EEG_datetime, v = v, movement_df = this_motion)
+										None, this_video, acq_start, v = v, movement_df = this_motion)
 				if np.any(State == 0):
 					print('The following bins are not scored: \n' + str(np.where(State == 0)[0])  )
 					zero_check = input('Do you want to go back and fix this right now? (y/n)' ) == 'y'
 					if zero_check:
 						State = display_and_fix_scoring(d, a, h, this_emg, State, False, None,
-										None, this_video, EEG_datetime, v = v, movement_df = this_motion)					
+										None, this_video, acq_start, v = v, movement_df = this_motion)					
 					else:
 						print('Ok, but please do not update the model until you fix them')
 			except FileNotFoundError:
@@ -305,18 +304,18 @@ def start_swscoring(d):
 				Predict_y = SWS_utils.fix_states(Predict_y)
 				np.save(os.path.join(d['savedir'], 'model_prediction_Acq' + str(a) + '_hr' + str(h) + '.npy'), Predict_y)
 				State = display_and_fix_scoring(d, a, h, this_emg, Predict_y, True, clf,
-					Features, this_video, EEG_datetime, v = v, movement_df = this_motion)
+					Features, this_video, acq_start, v = v, movement_df = this_motion)
 			else:
 				State = np.zeros(int(acq_len/d['epochlen']))
 				State = display_and_fix_scoring(d, a, h, this_emg, State, False, None,
-										None, this_video, EEG_datetime, v = v, movement_df = this_motion)
+										None, this_video, acq_start, v = v, movement_df = this_motion)
 		
 		FeatureDict['State'] = State
 		FeatureDict['animal_name'] = np.full(np.size(FeatureDict['delta_pre']), d['mouse_name'])
 
 		update = input('Do you want to update the model?: y/n ') == 'y'
 		if update:
-			update_model(d, this_eeg, FeatureDict, a, EEG_datetime)					
+			update_model(d, FeatureDict)					
 			model_log(d['modellog_dir'], 0, d['species'], d['mouse_name'], d['mod_name'], a)
 		logq = input('Do you want to update your personal log?: y/n ') == 'y'
 		if logq:
@@ -347,10 +346,7 @@ def build_model(filename_sw):
 		if d['emg']:
 			downsampEMG = np.load(os.path.join(d['savedir'],'downsampEMG_Acq'+str(a)+'.npy'))
 		acq_len = np.size(downsampEEG)/d['fsd'] # fs: sampling rate, fsd: downsampled sampling rate
-		AD_file = os.path.join( d['rawdat_dir'], 'AD0_'+str(a)+'.mat')
-		EEG_datestring = time.ctime(os.path.getmtime(AD_file))
-		ts_format = '%a %b %d %H:%M:%S %Y'
-		EEG_datetime = datetime.strptime(EEG_datestring, ts_format)
+		acq_start = SWS_utils.get_AcqStart(d, a, acq_len)
 		this_eeg = np.load(os.path.join(eeg_dir, 'downsampEEG_Acq'+str(a) + '_hr' + str(h)+ '.npy'))
 		if d['emg']:
 			this_emg = np.load(os.path.join(eeg_dir,'downsampEMG_Acq'+str(a) + '_hr' + str(h)+ '.npy'))
@@ -365,7 +361,7 @@ def build_model(filename_sw):
 
 		FeatureDict = SWS_utils.build_feature_dict(this_eeg, d['fsd'], d['epochlen'], 
 			this_emg = this_emg, normVal =normVal)
-		this_video, v, this_motion = SWS_utils.initialize_vid_and_move(d, a, EEG_datetime, acq_len, this_eeg)
+		this_video, v, this_motion = SWS_utils.initialize_vid_and_move(d, a, acq_start, acq_len)
 		FeatureDict['Velocity'] = v[0]
 		FeatureDict['animal_name'] = np.full(np.size(FeatureDict['delta_pre']), d['mouse_name'])
 		try:
@@ -373,11 +369,11 @@ def build_model(filename_sw):
 			wrong, = np.where(np.isnan(State))
 			State[wrong] = 0
 			State = display_and_fix_scoring(d, a, 0, this_emg, State, False, None,
-									None, this_video, EEG_datetime, v = v, movement_df = this_motion)
+									None, this_video, acq_start, v = v, movement_df = this_motion)
 			FeatureDict['State'] = State
 			keep = input('Do you want this to be part of the model? (y/n)') == 'y'
 			if keep:
-				update_model(d, this_eeg, FeatureDict, a, EEG_datetime)
+				update_model(d, FeatureDict)
 				model_log(d['modellog_dir'], 2, d['species'], d['mouse_name'], d['mod_name'], a)
 			else:
 				continue

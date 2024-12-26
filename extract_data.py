@@ -154,31 +154,38 @@ def combine_bonsai_data(filename_sw, d):
 	if len(videos) == 0:
 		print('No videos found! Please check directory')
 		sys.exit()
-	videos = SWS_utils.sort_files(videos, d['basename'])
+	videos = SWS_utils.sort_files(videos, d['basename'], d['csv_dir'])
+
+	timestamp_files = glob.glob(os.path.join(d['csv_dir'], '*imestamp*.csv'))
+	timestamp_files = SWS_utils.sort_files(timestamp_files, d['basename'], d['csv_dir'])
 	all_ts_df  = pd.DataFrame(columns = ['Timestamps', 'Filename'])
+	
 	if d['movement']:
 		if d['DLC']:
 			all_move_df = pd.DataFrame(columns = ['Timestamps', 'X','Y','Likelihood','Filename'])
 		else:
 			all_move_df = pd.DataFrame(columns = ['Timestamps', 'X','Y', 'Filename'])
-	
-	for i, a in enumerate(d['Acquisition']):
-		timestamp_df = SWS_utils.timestamp_extracting(d, a)
+		movement_files = glob.glob(os.path.join(d['csv_dir'], '*motion*.csv'))
+		movement_files = SWS_utils.sort_files(movement_files, d['basename'], d['csv_dir'])
+		if len(timestamp_files) != len(movement_files):
+			print('There is a different number of timestamp files and movement files. This will cause misalignment. Please Check this.')
+			print(timestamp_files, sep="\n")
+			print(movement_files, sep="\n")
+			sys.exit()
+
+	for i in range(len(timestamp_files)):
+		timestamp_df = SWS_utils.timestamp_extracting(timestamp_files[i])
 		all_ts_df  = pd.concat([all_ts_df, timestamp_df])
 		if d['movement']:
-			movement_df = SWS_utils.movement_extracting(d, a)
+			movement_df = SWS_utils.movement_extracting(movement_files[i], d)
 			bad_frames, = np.where(movement_df['Likelihood'] < 0.8)
-			perc_bad = np.size(bad_frames)/len(movement_df.index)
-			# if perc_bad > 0.15:
-			# 	new_label = alternate_label(videos[i], csv_dir, i)
-			# 	movement_df = SWS_utils.movement_extracting(csv_dir, d['Acquisition'], a, bonsai_v, 
-			# 	d['DLC'], new_label, this_video = this_video)
-			
+			perc_bad = np.size(bad_frames)/len(movement_df.index)			
 			movement_df['Timestamps'] = timestamp_df['Timestamps']
 			all_move_df  = pd.concat([all_move_df, movement_df])
 	all_ts_df.to_pickle(os.path.join(d['savedir'], 'All_timestamps.pkl'))
 	if d['movement']:
 		all_move_df.to_pickle(os.path.join(d['savedir'], 'All_movement.pkl'))
+
 def pulling_acqs(filename_sw):
 	with open(filename_sw, 'r') as f:
 			d = json.load(f)
