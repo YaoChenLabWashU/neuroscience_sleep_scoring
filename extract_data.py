@@ -14,6 +14,7 @@ from neuroscience_sleep_scoring import SWS_utils
 import pandas as pd
 import time
 from datetime import datetime
+import PKA_Sleep as PKA
 
 
 
@@ -233,7 +234,14 @@ def get_normalizing_value(filename_sw, EEG_channels = ['0','2']):
 		normVal = np.median(np.concatenate(all_tp))
 		np.save(os.path.join(d['savedir'], 'AD'+str(EEG_chan)+'_downsampled', d['basename']+'_normVal.npy'), normVal)
 
-	return
+def full_EEG_EMG(d, EEG_channels = ['0','2']):
+	for EEG_chan in EEG_channels:
+		full_EEG = PKA.get_all_EEG(os.path.join(d['savedir'], 'AD'+str(EEG_chan)+'_downsampled'), concatenate = True)
+		np.save(os.path.join(d['savedir'], 'AD'+str(EEG_chan)+'_downsampled', 'AD'+ EEG_chan + '_full.npy'), full_EEG)
+	if int(d['emg']) == 1:
+		full_EMG = PKA.get_all_EEG(d['savedir'], concatenate = True, EMG_flag = True)
+		np.save(os.path.join(d['savedir'], 'AD3_full.npy'), full_EMG)
+
 if __name__ == "__main__":
 	args = sys.argv
 	# Why do we need to assert this??? Why the heck would you care if you execute from the same dir if we don't use relative paths anywhere else in the code
@@ -248,6 +256,7 @@ if __name__ == "__main__":
 		choosing_acquisition(args[1])
 		downsample_filter(args[1])
 		get_normalizing_value(args[1])
+		full_EEG_EMG(d)
 		if d['movement']:
 			combine_bonsai_data(args[1], d)
 			plt.close('all')
