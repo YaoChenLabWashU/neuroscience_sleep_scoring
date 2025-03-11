@@ -256,7 +256,7 @@ if __name__ == "__main__":
 		choosing_acquisition(args[1])
 		downsample_filter(args[1])
 		get_normalizing_value(args[1])
-		# full_EEG_EMG(d)
+		full_EEG_EMG(d)
 		if d['movement']:
 			combine_bonsai_data(args[1], d)
 			plt.close('all')
