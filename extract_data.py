@@ -276,6 +276,14 @@ def save_to_edf(data, filename, sample_rate,channel_labels):
   
 def make_edf_file(d,highpass_eeg = True, emg_highpass = 20,
 				  new_fs=250,chunk_size_hours = 24):
+	'''
+	This function will take the EEG and EMG data and save it to an EDF file.
+	d can also be a dictionary:
+	e.g.: d = {
+		'basename': 'mouse1',
+		'rawdat_dir': '/path/to/rawdata',
+		'fs': 2000}
+	'''
 	def make_numpy_files(fileglob,savename,highpass):
 		files = glob.glob(fileglob)
 		files = [f for f in natsort.natsorted(files) if 'avg' not in f]
