@@ -15,12 +15,14 @@ import pandas as pd
 import time
 from datetime import datetime
 import PKA_Sleep as PKA
+import natsort, pyedflib
+from scipy import signal
 
 
 
 def choosing_acquisition(filename_sw):
 	with open(filename_sw, 'r') as f:
-	       d = json.load(f)
+		d = json.load(f)
 
 	rawdat_dir = str(d['rawdat_dir'])
 	fs = int(d['fs'])
@@ -241,6 +243,105 @@ def full_EEG_EMG(d, EEG_channels = ['0','2']):
 	if int(d['emg']) == 1:
 		full_EMG = PKA.get_all_EEG(d['savedir'], concatenate = True, EMG_flag = True)
 		np.save(os.path.join(d['savedir'], 'AD3_full.npy'), full_EMG)
+  
+def save_to_edf(data, filename, sample_rate,channel_labels):
+	"""
+	Save a NumPy array (EEG/EMG data) to an EDF file.
+		
+	Parameters:
+	- data: 2D NumPy array of shape (channels, samples)
+	- filename: Name of the EDF file to save
+	- sample_rate: Sampling rate in Hz
+	"""
+	num_channels, num_samples = data.shape
+	physical_min, physical_max = data.min(), data.max()
+	digital_min, digital_max = -32768, 32767  # Standard EDF digital range
+	signal_headers = []
+	for label in channel_labels:
+		signal_headers.append({
+			"label": label,
+			"dimension": "uV",
+			"sample_frequency": sample_rate,
+			"physical_min": physical_min,
+			"physical_max": physical_max,
+			"digital_min": digital_min,
+			"digital_max": digital_max
+		})
+	with pyedflib.EdfWriter(filename, num_channels, file_type=pyedflib.FILETYPE_EDF) as f:
+		f.setSignalHeaders(signal_headers)
+		f.setStartdatetime(datetime.datetime.now())  # Set current timestamp
+		f.writeSamples(data)
+		f.close()
+	print(f"Saved EDF file: {filename}")
+  
+def make_edf_file(d,highpass_eeg = True, emg_highpass = 20,
+				  new_fs=250,chunk_size_hours = 24):
+	def make_numpy_files(fileglob,savename,highpass):
+		files = glob.glob(fileglob)
+		files = [f for f in natsort.natsorted(files) if 'avg' not in f]
+		
+		print('loading files')
+		eeg = np.concatenate([scipy.io.loadmat(f)[os.path.split(f)[1][:-4]][0][0][0][0] for f in files])
+		fs = d['fs']
+		nyq = 0.5*fs
+		if highpass_eeg:
+			b,a = signal.butter(3, highpass,fs=fs, btype = 'highpass',output='ba')
+			eeg = signal.filtfilt(b,a,eeg)
+		print('saving numpy file: %s'%savename)
+		np.save(savename,eeg)
+		return eeg
+		
+	fs = d['fs']
+	animal= d['basename']
+	saved_edf_file_name = animal + f'_eegemg_%dHz_%dchunk_%d.edf'
+	datadir = d['rawdat_dir']
+	savedir = datadir + os.sep+ animal + '_edffiles' + os.sep
+	eeg1_save = savedir + animal+'_AD0_full_highpass%s.npy'%highpass_eeg
+	eeg2_save = savedir + animal+'_AD2_full_highpass%s.npy'%highpass_eeg
+	emg_save = savedir + animal+'_AD3_full_highpass%d.npy'%emg_highpass
+	os.makedirs(savedir, exist_ok = True)
+	#
+	if not os.path.exists(eeg1_save):
+		eeg1 = make_numpy_files(datadir + 'AD0*.mat',eeg1_save,highpass_eeg)
+	else:
+		eeg1 = np.load(eeg1_save)
+	#	
+	if not os.path.exists(eeg2_save):
+		eeg2 = make_numpy_files(datadir + 'AD2*.mat',eeg2_save,highpass_eeg)
+	else:
+		eeg2 = np.load(eeg2_save)
+	#	
+	if not os.path.exists(emg_save):
+		emg = make_numpy_files(datadir + 'AD3*.mat',emg_save,emg_highpass)
+	else:
+		emg = np.load(emg_save)
+  
+		
+	eeg_emg_data = np.column_stack((eeg1,eeg2,emg)).squeeze().T
+	del eeg1,eeg2,emg
+	sample_rate = new_fs
+	if new_fs != fs:
+		up = int(new_fs/np.gcd(new_fs,fs))
+		down = int(fs/np.gcd(new_fs,fs))
+		eeg_emg_data = signal.resample_poly(eeg_emg_data,up,down,axis=1)
+		
+	days = int(eeg_emg_data.shape[1]/(sample_rate*3600*chunk_size_hours))
+
+	for d in range(days):
+		filename = saved_edf_file_name % (sample_rate,chunk_size_hours,d)
+		print(filename)
+		rec_end = sample_rate*3600*chunk_size_hours*(d+1) if sample_rate*3600*chunk_size_hours*(d+1) <= eeg_emg_data.shape[1] else eeg_emg_data.shape[1]
+		save_to_edf(eeg_emg_data[:,sample_rate*3600*chunk_size_hours*d:rec_end], 
+				savedir + filename, 
+				sample_rate, 
+				['EEG_AD0', 'EEG_AD2', 'EMG_filt'])  # Save to EDF file
+
+
+    
+ 
+ 
+    
+    
 
 if __name__ == "__main__":
 	args = sys.argv
@@ -256,7 +357,8 @@ if __name__ == "__main__":
 		choosing_acquisition(args[1])
 		downsample_filter(args[1])
 		get_normalizing_value(args[1])
-		full_EEG_EMG(d)
+		make_edf_file(d,highpass_eeg = True, emg_highpass = 20,
+                new_fs=250,chunk_size_hours = 24)
 		if d['movement']:
 			combine_bonsai_data(args[1], d)
 			plt.close('all')
