@@ -1,0 +1,25 @@
+Metadata-Version: 2.2
+Name: neuroscience_sleep_scoring
+Version: 1.0.0
+Summary: A package for sleep scoring rodent EEG+EMG.
+Home-page: https://github.com/yourusername/neuroscience_sleep_scoring
+Author: Lizzie Tilden
+Author-email: your.email@example.com
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.6
+Requires-Dist: numpy
+Requires-Dist: scipy
+Requires-Dist: matplotlib
+Requires-Dist: psutil
+Requires-Dist: pandas
+Requires-Dist: natsort
+Requires-Dist: pyedflib
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: home-page
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary

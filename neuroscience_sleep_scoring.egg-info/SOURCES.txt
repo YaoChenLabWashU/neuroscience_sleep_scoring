@@ -1,0 +1,14 @@
+setup.py
+neuroscience_sleep_scoring/New_SWS.py
+neuroscience_sleep_scoring/SWS_utils.py
+neuroscience_sleep_scoring/SW_Cursor.py
+neuroscience_sleep_scoring/__init__.py
+neuroscience_sleep_scoring/checking_timestamps.py
+neuroscience_sleep_scoring/extract_data.py
+neuroscience_sleep_scoring/filewrite.py
+neuroscience_sleep_scoring/train_model.py
+neuroscience_sleep_scoring.egg-info/PKG-INFO
+neuroscience_sleep_scoring.egg-info/SOURCES.txt
+neuroscience_sleep_scoring.egg-info/dependency_links.txt
+neuroscience_sleep_scoring.egg-info/requires.txt
+neuroscience_sleep_scoring.egg-info/top_level.txt
