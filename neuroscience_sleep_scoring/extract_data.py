@@ -269,7 +269,7 @@ def save_to_edf(data, filename, sample_rate,channel_labels):
 		})
 	with pyedflib.EdfWriter(filename, num_channels, file_type=pyedflib.FILETYPE_EDF) as f:
 		f.setSignalHeaders(signal_headers)
-		f.setStartdatetime(datetime.datetime.now())  # Set current timestamp
+		f.setStartdatetime(datetime.now())  # Set current timestamp
 		f.writeSamples(data)
 		f.close()
 	print(f"Saved EDF file: {filename}")
