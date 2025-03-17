@@ -269,7 +269,7 @@ def save_to_edf(data, filename, sample_rate,channel_labels):
 		})
 	with pyedflib.EdfWriter(filename, num_channels, file_type=pyedflib.FILETYPE_EDF) as f:
 		f.setSignalHeaders(signal_headers)
-		f.setStartdatetime(datetime.datetime.now())  # Set current timestamp
+		f.setStartdatetime(datetime.now())  # Set current timestamp
 		f.writeSamples(data)
 		f.close()
 	print(f"Saved EDF file: {filename}")
@@ -303,24 +303,24 @@ def make_edf_file(d,highpass_eeg = True, emg_highpass = 20,
 	animal= d['basename']
 	saved_edf_file_name = animal + f'_eegemg_%dHz_%dchunk_%d.edf'
 	datadir = d['rawdat_dir']
-	savedir = datadir + os.sep+ animal + '_edffiles' + os.sep
-	eeg1_save = savedir + animal+'_AD0_full_highpass%s.npy'%highpass_eeg
-	eeg2_save = savedir + animal+'_AD2_full_highpass%s.npy'%highpass_eeg
-	emg_save = savedir + animal+'_AD3_full_highpass%d.npy'%emg_highpass
+	savedir = os.path.join(datadir, animal+'_edffiles')
+	eeg1_save = os.path.join(savedir,animal+'_AD0_full_highpass%s.npy'%highpass_eeg)
+	eeg2_save = os.path.join(savedir,animal+'_AD2_full_highpass%s.npy'%highpass_eeg)
+	emg_save = os.path.join(savedir,animal+'_AD3_full_highpass%d.npy'%emg_highpass)
 	os.makedirs(savedir, exist_ok = True)
 	#
 	if not os.path.exists(eeg1_save):
-		eeg1 = make_numpy_files(datadir + 'AD0*.mat',eeg1_save,highpass_eeg)
+		eeg1 = make_numpy_files(os.path.join(datadir,'AD0*.mat'),eeg1_save,highpass_eeg)
 	else:
 		eeg1 = np.load(eeg1_save)
 	#	
 	if not os.path.exists(eeg2_save):
-		eeg2 = make_numpy_files(datadir + 'AD2*.mat',eeg2_save,highpass_eeg)
+		eeg2 = make_numpy_files(os.path.join(datadir,'AD2*.mat'),eeg2_save,highpass_eeg)
 	else:
 		eeg2 = np.load(eeg2_save)
 	#	
 	if not os.path.exists(emg_save):
-		emg = make_numpy_files(datadir + 'AD3*.mat',emg_save,emg_highpass)
+		emg = make_numpy_files(os.path.join(datadir,'AD3*.mat'),emg_save,emg_highpass)
 	else:
 		emg = np.load(emg_save)
   
