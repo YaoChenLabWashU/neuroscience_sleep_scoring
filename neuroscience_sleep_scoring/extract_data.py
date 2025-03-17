@@ -313,17 +313,17 @@ def make_edf_file(d,highpass_eeg = True, emg_highpass = 10,
 	os.makedirs(savedir, exist_ok = True)
 	#
 	if not os.path.exists(eeg1_save):
-		eeg1 = make_numpy_files(datadir + 'AD0*.mat',eeg1_save,highpass_eeg)
+		eeg1 = make_numpy_files(os.path.join(datadir,'AD0*.mat'),eeg1_save,highpass_eeg)
 	else:
 		eeg1 = np.load(eeg1_save)
 	#	
 	if not os.path.exists(eeg2_save):
-		eeg2 = make_numpy_files(datadir + 'AD2*.mat',eeg2_save,highpass_eeg)
+		eeg2 = make_numpy_files(os.path.join(datadir,'AD2*.mat'),eeg2_save,highpass_eeg)
 	else:
 		eeg2 = np.load(eeg2_save)
 	#	
 	if not os.path.exists(emg_save):
-		emg = make_numpy_files(datadir + 'AD3*.mat',emg_save,emg_highpass)
+		emg = make_numpy_files(os.path.join(datadir,'AD3*.mat'),emg_save,emg_highpass)
 	else:
 		emg = np.load(emg_save)
   
