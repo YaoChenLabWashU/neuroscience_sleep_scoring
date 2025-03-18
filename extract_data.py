@@ -1,3 +1,4 @@
+from tabnanny import check
 import numpy as np
 import glob
 import json
@@ -275,7 +276,7 @@ def save_to_edf(data, filename, sample_rate,channel_labels):
 	print(f"Saved EDF file: {filename}")
   
 def make_edf_file(d,highpass_eeg = True, emg_highpass = 20,
-				  new_fs=250,chunk_size_hours = 24):
+				  new_fs=250,chunk_size_hours = 24,check_emg_artifacts=False):
 	'''
 	This function will take the EEG and EMG data and save it to an EDF file.
 	d can also be a dictionary:
@@ -323,7 +324,9 @@ def make_edf_file(d,highpass_eeg = True, emg_highpass = 20,
 		emg = make_numpy_files(os.path.join(datadir,'AD3*.mat'),emg_save,emg_highpass)
 	else:
 		emg = np.load(emg_save)
-  
+	if check_emg_artifacts:
+		thresh = 5.5*np.std(emg) + np.mean(emg)
+		emg(emg > thresh) = thresh
 		
 	eeg_emg_data = np.column_stack((eeg1,eeg2,emg)).squeeze().T
 	del eeg1,eeg2,emg
@@ -366,7 +369,7 @@ if __name__ == "__main__":
 		downsample_filter(args[1])
 		get_normalizing_value(args[1])
 		make_edf_file(d,highpass_eeg = True, emg_highpass = 20,
-                new_fs=250,chunk_size_hours = 24)
+                new_fs=250,chunk_size_hours = 24,check_emg_artifacts=True)
 		if d['movement']:
 			combine_bonsai_data(args[1], d)
 			plt.close('all')
