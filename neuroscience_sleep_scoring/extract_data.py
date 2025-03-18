@@ -1,4 +1,5 @@
 from tabnanny import check
+from tabnanny import check
 import numpy as np
 import glob
 import json
@@ -329,13 +330,13 @@ def make_edf_file(d,highpass_eeg = True, emg_highpass = 20,
 	else:
 		emg = np.load(emg_save)
   
-	mindim = min(eeg1.shape[0], eeg2.shape[0], emg.shape[0])
-	print('EEG1 shape: %s, EEG2 shape: %s, EMG shape: %s'%(eeg1.shape, eeg2.shape, emg.shape))
 	if check_emg_artifacts:
 		thresh = 5.5*np.std(emg) + np.mean(emg)
-		emg(emg > thresh) = thresh
-	eeg_emg_data = np.column_stack((eeg1[:mindim],eeg2[:mindim],emg[:mindim])).squeeze().T
-
+		clipped_indxs = emg > thresh
+		emg[clipped_indxs] = thresh
+		print('Clipped EMG at %d spots'%sum(clipped_indxs))
+		
+	eeg_emg_data = np.column_stack((eeg1,eeg2,emg)).squeeze().T
 	del eeg1,eeg2,emg
 	sample_rate = new_fs
 	if new_fs != fs:
@@ -350,6 +351,7 @@ def make_edf_file(d,highpass_eeg = True, emg_highpass = 20,
 		print(filename)
 		rec_end = sample_rate*3600*chunk_size_hours*(d+1) if sample_rate*3600*chunk_size_hours*(d+1) <= eeg_emg_data.shape[1] else eeg_emg_data.shape[1]
 		save_to_edf(eeg_emg_data[:,sample_rate*3600*chunk_size_hours*d:rec_end], 
+				savedir + os.sep + filename, 
 				savedir + os.sep + filename, 
 				sample_rate, 
 				['EEG_AD0', 'EEG_AD2', 'EMG_filt'])  # Save to EDF file
