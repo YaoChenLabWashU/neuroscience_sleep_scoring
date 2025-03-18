@@ -340,7 +340,7 @@ def make_edf_file(d,highpass_eeg = True, emg_highpass = 20,
 		print(filename)
 		rec_end = sample_rate*3600*chunk_size_hours*(d+1) if sample_rate*3600*chunk_size_hours*(d+1) <= eeg_emg_data.shape[1] else eeg_emg_data.shape[1]
 		save_to_edf(eeg_emg_data[:,sample_rate*3600*chunk_size_hours*d:rec_end], 
-				savedir + filename, 
+				savedir + os.sep + filename, 
 				sample_rate, 
 				['EEG_AD0', 'EEG_AD2', 'EMG_filt'])  # Save to EDF file
 
