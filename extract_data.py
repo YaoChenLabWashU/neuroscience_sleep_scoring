@@ -326,7 +326,9 @@ def make_edf_file(d,highpass_eeg = True, emg_highpass = 20,
 		emg = np.load(emg_save)
 	if check_emg_artifacts:
 		thresh = 5.5*np.std(emg) + np.mean(emg)
-		emg(emg > thresh) = thresh
+		clipped_indxs = emg > thresh
+		emg[clipped_indxs] = thresh
+		print('Clipped EMG at %d spots'%sum(clipped_indxs))
 		
 	eeg_emg_data = np.column_stack((eeg1,eeg2,emg)).squeeze().T
 	del eeg1,eeg2,emg
