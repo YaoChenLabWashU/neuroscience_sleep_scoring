@@ -315,9 +315,10 @@ def create_prediction_figure(d, Predict_y, is_predicted, clf, Features, fs, eeg_
     ax3.set_xticklabels([])
 
     plot_predicted(ax2, Predict_y, is_predicted, clf, Features)
-    ax5.plot(EEG_t, this_emg, color= 'r')
-    ax5.set_xlim([EEG_t[0],EEG_t[-1]])
-    ax5.set_ylabel('EMG Amplitude')
+    if this_emg:
+        ax5.plot(EEG_t, this_emg, color= 'r')
+        ax5.set_xlim([EEG_t[0],EEG_t[-1]])
+        ax5.set_ylabel('EMG Amplitude')
     fig1.tight_layout()
     fig1.subplots_adjust(wspace=0, hspace=0)
     
@@ -326,38 +327,41 @@ def create_prediction_figure(d, Predict_y, is_predicted, clf, Features, fs, eeg_
 def update_sleep_df(model_dir, mod_name, df_additions):
     try:
         Sleep_Model = np.load(file = model_dir + mod_name + '_model.pkl', allow_pickle = True)
-        Sleep_Model = Sleep_Model.append(df_additions, ignore_index = True)
+        Sleep_Model = pd.concat([Sleep_Model,df_additions], ignore_index = True)
     except FileNotFoundError:
         print('no model created...I will save this one')
-        df_additions.to_pickle(model_dir + mod_name + '_model.pkl')
         Sleep_Model = df_additions
     Sleep_Model.to_pickle(model_dir + mod_name + '_model.pkl')
     return Sleep_Model
 
-def load_joblib(FeatureDict, emg_flag, movement_flag, mod_name):
-    try:
-        del FeatureDict['animal_name']
-    except KeyError:
-        pass 
-
-    try:
-        del FeatureDict['State']
-    except KeyError:
-        pass
-
-    if emg_flag:
-        jobname = mod_name + '_EMG'
+def build_joblib_name(d):
+    if d['emg']:
+        jobname = d['mod_name'] + '_EMG'
         print("EMG flag on")
     else:
-        x_features.remove('EMG')
-        jobname = mod_name + '_no_EMG'
+        jobname = d['mod_name'] + '_no_EMG'
         print('Just so you know...this model has no EMG')
-    if movement_flag:
+    if d['movement']:
         jobname = jobname + '_movement'
     else:
         jobname = jobname + '_no_movement'
+    if len(d['EEG channel']) == 2:
+        jobname = jobname + '_2chan'
     jobname = jobname + '.joblib'
-    return jobname, list(FeatureDict.keys())
+
+    return jobname
+
+def get_xfeatures(FeatureDict):
+    x_features = list(FeatureDict.keys())
+    try:
+        x_features.remove('State')
+    except ValueError:
+        pass
+    try:   
+        x_features.remove('animal_name')
+    except ValueError:
+        pass
+    return x_features
 
 def retrain_model(Sleep_Model, x_features, model_dir, jobname):
     print("Retrain model")
@@ -777,15 +781,9 @@ def prepare_feature_data(FeatureDict, movement_flag, smooth = False):
     Features = np.nan_to_num(Features)
     return Features
 
-def build_feature_dict(this_eeg, fsd, epochlen, this_emg = None, normVal = None):
+def build_feature_dict(eeg_df, fsd, epochlen, normVal = None):
     FeatureDict = {}
-    print('Generating EMG vectors...')
-    if this_emg is not None:
-        FeatureDict['EMGvar'], EMGmax, EMGmean = generate_signal(this_emg, epochlen, fsd)
-
-    print('Generating EEG vectors...')
-    FeatureDict['EEGvar'], EEGmax, EEGmean = generate_signal(this_eeg, epochlen, fsd)
-    acq_len = np.size(this_eeg)/fsd
+    acq_len = len(eeg_df)/fsd
     num_epochs = acq_len/epochlen
 
     freq_dict = freq_dict = {'Delta': [0.5, 4], 
@@ -793,42 +791,47 @@ def build_feature_dict(this_eeg, fsd, epochlen, this_emg = None, normVal = None)
                             'Alpha': [8, 12],
                             'BroadTheta':[2, 16],
                             'Fire': [4, 20]}
+    print('Generating EMG vectors...')
+    if 'EMG' in eeg_df.columns:
+        FeatureDict['EMGvar'], EMGmax, EMGmean = generate_signal(eeg_df['EMG'], epochlen, fsd)
 
-    power_dict = bandPower(this_eeg, fsd, freq_dict = freq_dict, minfreq = 0.5, maxfreq = 16)
+    print('Generating EEG vectors...')
+    for ii, c in enumerate([i for i in eeg_df.columns if 'EEG' in i]):
+        FeatureDict[c+'var'], EEGmax, EEGmean = generate_signal(eeg_df[c], epochlen, fsd)
+        power_dict = bandPower(eeg_df[c], fsd, freq_dict = freq_dict, minfreq = 0.5, maxfreq = 16)
+        epoch_bins = np.arange(0, acq_len, epochlen)
+        epoch_idx = [np.where(np.logical_and(power_dict['Bins']>=i, power_dict['Bins']<i+4))[0] for i in epoch_bins]
+        
+        for band in list(freq_dict.keys()):
+            FeatureDict[c+band] = [np.median(power_dict[band][i]) for i in epoch_idx]/normVal[ii]
+            for n in np.where(np.isnan(FeatureDict[c+band]))[0]:
+                if n < np.size(FeatureDict[c+band])-1:
+                    FeatureDict[c+band][n] = FeatureDict[c+band][n+1]
+                else:
+                    FeatureDict[c+band][n] = FeatureDict[c+band][n-1]
+            # FeatureDict['EEG'+band] = FeatureDict['EEG'+band]/normVal
+            assert np.size(FeatureDict[c+band]) == num_epochs
 
-    epoch_bins = np.arange(0, acq_len, epochlen)
-    epoch_idx = [np.where(np.logical_and(power_dict['Bins']>=i, power_dict['Bins']<i+4))[0] for i in epoch_bins]
-    
-    for band in list(freq_dict.keys()):
-        FeatureDict['EEG'+band] = [np.median(power_dict[band][i]) for i in epoch_idx]/normVal
-        for n in np.where(np.isnan(FeatureDict['EEG'+band]))[0]:
-            if n < np.size(FeatureDict['EEG'+band])-1:
-                FeatureDict['EEG'+band][n] = FeatureDict['EEG'+band][n+1]
-            else:
-                FeatureDict['EEG'+band][n] = FeatureDict['EEG'+band][n-1]
-        # FeatureDict['EEG'+band] = FeatureDict['EEG'+band]/normVal
-        assert np.size(FeatureDict['EEG'+band]) == num_epochs
-
-    FeatureDict['EEGnb'] = FeatureDict['EEGTheta'] / FeatureDict['EEGBroadTheta'] # narrow-band theta
-    # # delt_thet = EEGdelta / EEGtheta # ratio; esp. important
-    FeatureDict['thet_delt'] = FeatureDict['EEGTheta'] / FeatureDict['EEGDelta']
+        FeatureDict[c+'nb'] = FeatureDict[c+'Theta'] / FeatureDict[c+'BroadTheta'] # narrow-band theta
+        # # delt_thet = EEGdelta / EEGtheta # ratio; esp. important
+        FeatureDict[c+'thet_delt'] = FeatureDict[c+'Theta'] / FeatureDict[c+'Delta']
 
 
-    # frame shifting
-    FeatureDict['delta_post'], FeatureDict['delta_pre'] = post_pre(FeatureDict['EEGDelta'], 
-        FeatureDict['EEGDelta'])
-    FeatureDict['theta_post'], FeatureDict['theta_pre'] = post_pre(FeatureDict['EEGTheta'], 
-        FeatureDict['EEGTheta'])
-    FeatureDict['delta_post2'], FeatureDict['delta_pre2'] = post_pre(FeatureDict['delta_post'], 
-        FeatureDict['delta_pre'])
-    FeatureDict['theta_post2'], FeatureDict['theta_pre2'] = post_pre(FeatureDict['theta_post'], 
-        FeatureDict['theta_pre'])
-    FeatureDict['delta_post3'], FeatureDict['delta_pre3'] = post_pre(FeatureDict['delta_post2'], 
-        FeatureDict['delta_pre2'])
-    FeatureDict['theta_post3'], FeatureDict['theta_pre3'] = post_pre(FeatureDict['theta_post2'], 
-        FeatureDict['theta_pre2'])
-    FeatureDict['nb_post'], FeatureDict['nb_pre'] = post_pre(FeatureDict['EEGnb'], 
-        FeatureDict['EEGnb'])
+        # frame shifting
+        FeatureDict[c+'delta_post'], FeatureDict[c+'delta_pre'] = post_pre(FeatureDict[c+'Delta'], 
+            FeatureDict[c+'Delta'])
+        FeatureDict[c+'theta_post'], FeatureDict[c+'theta_pre'] = post_pre(FeatureDict[c+'Theta'], 
+            FeatureDict[c+'Theta'])
+        FeatureDict[c+'delta_post2'], FeatureDict[c+'delta_pre2'] = post_pre(FeatureDict[c+'delta_post'], 
+            FeatureDict[c+'delta_pre'])
+        FeatureDict[c+'theta_post2'], FeatureDict[c+'theta_pre2'] = post_pre(FeatureDict[c+'theta_post'], 
+            FeatureDict[c+'theta_pre'])
+        FeatureDict[c+'delta_post3'], FeatureDict[c+'delta_pre3'] = post_pre(FeatureDict[c+'delta_post2'], 
+            FeatureDict[c+'delta_pre2'])
+        FeatureDict[c+'theta_post3'], FeatureDict[c+'theta_pre3'] = post_pre(FeatureDict[c+'theta_post2'], 
+            FeatureDict[c+'theta_pre2'])
+        FeatureDict[c+'nb_post'], FeatureDict[c+'nb_pre'] = post_pre(FeatureDict[c+'nb'], 
+            FeatureDict[c+'nb'])
    
     return FeatureDict
 
@@ -1056,7 +1059,7 @@ def get_AcqStart(d, a, acq_len):
         trigger_times = trigger_times['trigger_times'][0]
         acq_start = datetime(*[int(ii) for ii in trigger_times[d['Acquisition'].index(int(a))][0]])
     else:
-        AD_file = os.path.join(d['rawdat_dir'], 'AD' + str(d['EEG channel']) + '_'+str(a)+'.mat')
+        AD_file = os.path.join(d['rawdat_dir'], 'AD' + str(d['EEG channel'][0]) + '_'+str(a)+'.mat')
         EEG_datestring = time.ctime(os.path.getmtime(AD_file))
         ts_format = '%a %b %d %H:%M:%S %Y'
         EEG_datetime = datetime.strptime(EEG_datestring, ts_format)

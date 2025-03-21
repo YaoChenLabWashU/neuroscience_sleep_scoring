@@ -28,12 +28,12 @@ def choosing_acquisition(filename_sw):
 
 	rawdat_dir = str(d['rawdat_dir'])
 	fs = int(d['fs'])
-	EEG_chan = str(d['EEG channel'])
+	EEG_chan = d['EEG channel']
 
 	print(rawdat_dir)
 	os.chdir(rawdat_dir)
 
-	poss_files = glob.glob('AD'+EEG_chan+'*.mat')
+	poss_files = glob.glob('AD'+str(EEG_chan[0])+'*.mat')
 	acq = []
 	for ii in poss_files:
 		print(ii)
