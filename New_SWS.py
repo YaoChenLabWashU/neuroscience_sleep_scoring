@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import scipy.signal as signal
 import glob
-import copy
+from copy import deepcopy
 import sys
 import os
 import math
@@ -42,18 +42,20 @@ def on_press(event):
 def update_model(d, FeatureDict):
 	# Feed the data to retrain a model.
 
-	FeatureDict = SWS_utils.adjust_movement(FeatureDict, d['movement'])
-	final_features = list(FeatureDict.keys())
-	data = list(FeatureDict.values())
+	FeatureDict = SWS_utils.adjust_movement(FeatureDict, d['movement'], epochlen = d['epochlen'])
 
-	FeatureDict['EMGvar'][np.isnan(FeatureDict['EMGvar'])] = 0
+	if 'EMGvar' in FeatureDict.keys():
+		FeatureDict['EMGvar'][np.isnan(FeatureDict['EMGvar'])] = 0
 	df_additions = pd.DataFrame(FeatureDict)
-	df_additions[pd.isnull(FeatureDict['EMGvar'])] = 0
-
-
-	Sleep_Model = SWS_utils.update_sleep_df(d['model_dir'], d['mod_name'], df_additions)
-	jobname, x_features = SWS_utils.load_joblib(FeatureDict, d['emg'], d['movement'], d['mod_name'])
-	Sleep_Model = Sleep_Model.drop(index=np.where(Sleep_Model['EMGvar'].isin(['nan']))[0])
+	# df_additions[pd.isnull(FeatureDict['EMGvar'])] = 0
+	mod_name = d['mod_name']
+	if len(d['EEG channel']) == 2:
+		mod_name = mod_name+'_2chan'
+	Sleep_Model = SWS_utils.update_sleep_df(d['model_dir'], mod_name, df_additions)
+	jobname = SWS_utils.build_joblib_name(d)
+	x_features = SWS_utils.get_xfeatures(FeatureDict)
+	if 'EMGvar' in Sleep_Model.columns:
+		Sleep_Model = Sleep_Model.drop(index=np.where(Sleep_Model['EMGvar'].isin(['nan']))[0])
 	SWS_utils.retrain_model(Sleep_Model, x_features, d['model_dir'], jobname)
 
 
@@ -113,7 +115,7 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 
 
 	plt.ion()	
-	State = copy.deepcopy(State_input)
+	State = deepcopy(State_input)
 	#init cursor and it's libraries from SW_Cursor.py
 	cursor = Cursor(ax1, ax2, ax5)	
 
@@ -216,7 +218,6 @@ def start_swscoring(d):
 	a = input('Which acqusition do you want to score?')
 
 	print('Loading EEG and EMG....')
-	eeg_dir = os.path.join(d['savedir'], 'AD' + str(d['EEG channel']) + '_downsampled')
 	downsampEEG = np.load(os.path.join(d['savedir'],'downsampEEG_Acq'+str(a)+'.npy'))
 	if d['emg']:
 		downsampEMG = np.load(os.path.join(d['savedir'],'downsampEMG_Acq'+str(a)+'.npy'))
@@ -228,22 +229,26 @@ def start_swscoring(d):
 
 	for h in np.arange(hour_segs):
 		# FeatureDict = {}
-		this_eeg = np.load(os.path.join(eeg_dir, 'downsampEEG_Acq'+str(a) + '_hr' + str(h)+ '.npy'))
+		eeg_df = pd.DataFrame()
+		normVal = []
+		for e in d['EEG channel']:
+			eeg_dir = os.path.join(d['savedir'], 'AD'+str(e)+'_downsampled')
+			eeg_df['EEGChannel'+str(e)] = np.load(os.path.join(eeg_dir, 'downsampEEG_Acq'+a+'_hr'+str(0)+'.npy'))
+			normVal.append(np.load(os.path.join(eeg_dir, d['basename']+'_normVal.npy')))
+
 		if d['emg']:
-			this_emg = np.load(os.path.join(eeg_dir,'downsampEMG_Acq'+str(a) + '_hr' + str(h)+ '.npy'))
-		else:
-			this_emg = None
+			eeg_df['EMG'] = np.load(os.path.join(eeg_dir,'downsampEMG_Acq'+str(a) + '_hr' + str(h)+ '.npy'))
+	
 		# chop off the remainder that does not fit into the 4s epoch
-		seg_len = np.size(this_eeg)/d['fsd']
+		seg_len = len(eeg_df)/d['fsd']
 		nearest_epoch = math.floor(seg_len/d['epochlen'])
 		new_length = int(nearest_epoch*d['epochlen']*d['fsd'])
-		this_eeg = this_eeg[0:new_length]
-		normVal = np.load(os.path.join(eeg_dir, d['basename']+'_normVal.npy'))
-		FeatureDict = SWS_utils.build_feature_dict(this_eeg, d['fsd'], d['epochlen'], this_emg = this_emg,
+		eeg_df = eeg_df.iloc[:new_length]
+		FeatureDict = SWS_utils.build_feature_dict(eeg_df, d['fsd'], d['epochlen'],
 			normVal = normVal)
 		this_video, v, this_motion = SWS_utils.initialize_vid_and_move(d, a, acq_start, acq_len)
 		FeatureDict['Velocity'] = v[0]
-		FeatureDict['animal_name'] = np.full(np.size(FeatureDict['delta_pre']), d['mouse_name'])
+		FeatureDict['animal_name'] = np.full(np.size(FeatureDict['Velocity']), d['mouse_name'])
 
 		os.chdir(d['savedir'])
 
@@ -258,7 +263,10 @@ def start_swscoring(d):
 				wrong, = np.where(np.isnan(State))
 				State[wrong] = 0
 				s, = np.where(State == 0)
-
+				if 'EMG' not in eeg_df.columns:
+					this_emg = None
+				else:
+					this_emg = eeg_df['EMG']
 				State = display_and_fix_scoring(d, a, h, this_emg, State, False, None,
 										None, this_video, acq_start, v = v, movement_df = this_motion)
 				if np.any(State == 0):
@@ -277,27 +285,19 @@ def start_swscoring(d):
 			model = input('Use a random forest? y/n: ') == 'y'
 
 			if model:
-				if d['emg']:
-					jobname = d['mod_name'] + '_EMG'
-					print("EMG flag on")
-				else:
-					x_features.remove('EMG')
-					jobname = d['mod_name'] + '_no_EMG'
-					print('Just so you know...this model has no EMG')
-				if d['movement']:
-					jobname = jobname + '_movement'
-				else:
-					jobname = jobname + '_no_movement'
-				jobname = jobname + '.joblib'
-				os.chdir(d['model_dir'])
+				jobname = SWS_utils.build_joblib_name(d)
 				try:
-					clf = joblib.load(jobname)
+					clf = joblib.load(os.path.join(d['model_dir'], jobname))
 				except FileNotFoundError:
 					print("You don't have a model to work with.")
-					print("Run \"python train_model.py\" before scoring to obtain your very first model.")
 					return
 
 				# feature list
+				if 'EMG' not in eeg_df.columns:
+					this_emg = None
+				else:
+					this_emg = eeg_df['EMG']
+
 				Features = SWS_utils.prepare_feature_data(FeatureDict, d['emg'])
 
 				Predict_y = clf.predict(Features)
@@ -311,7 +311,6 @@ def start_swscoring(d):
 										None, this_video, acq_start, v = v, movement_df = this_motion)
 		
 		FeatureDict['State'] = State
-		FeatureDict['animal_name'] = np.full(np.size(FeatureDict['delta_pre']), d['mouse_name'])
 
 		update = input('Do you want to update the model?: y/n ') == 'y'
 		if update:
