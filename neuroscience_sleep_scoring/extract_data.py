@@ -275,7 +275,7 @@ def save_to_edf(data, filename, sample_rate,channel_labels):
 	print(f"Saved EDF file: {filename}")
   
 def make_edf_file(d,highpass_eeg = True, emg_highpass = 20,
-				  new_fs=250,chunk_size_hours = 24):
+				  new_fs=250,chunk_size_hours = 24,choose_savedir = False):
 	'''
 	This function will take the EEG and EMG data and save it to an EDF file.
 	d can also be a dictionary:
@@ -303,7 +303,10 @@ def make_edf_file(d,highpass_eeg = True, emg_highpass = 20,
 	animal= d['basename']
 	saved_edf_file_name = animal + f'_eegemg_%dHz_%dchunk_%d.edf'
 	datadir = d['rawdat_dir']
-	savedir = datadir + os.sep+ animal + '_edffiles' + os.sep
+	if not choose_savedir:
+		savedir = datadir + os.sep+ animal + '_edffiles' + os.sep
+	else:
+		savedir = d['savedir']
 	eeg1_save = savedir + animal+'_AD0_full_highpass%s.npy'%highpass_eeg
 	eeg2_save = savedir + animal+'_AD2_full_highpass%s.npy'%highpass_eeg
 	emg_save = savedir + animal+'_AD3_full_highpass%d.npy'%emg_highpass
