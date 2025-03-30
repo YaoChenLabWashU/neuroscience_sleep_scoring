@@ -320,7 +320,7 @@ def make_edf_file(d,highpass_eeg = True, emg_highpass = 20,
 		
 	fs = d['fs']
 	animal= d['basename']
-	saved_edf_file_name = animal + f'_eegemg_%dHz_%dchunk_%d.edf'
+	saved_edf_file_name = animal + f'_eegemg_hp%s_%dHz_%dchunk_%d.edf'
 	datadir = d['rawdat_dir']
 	if not choose_savedir:
 		savedir = datadir + os.sep+ animal + '_edffiles' + os.sep
@@ -362,7 +362,7 @@ def make_edf_file(d,highpass_eeg = True, emg_highpass = 20,
 	days = int(eeg_emg_data.shape[1]/(sample_rate*3600*chunk_size_hours))
 
 	for d in range(days):
-		filename = saved_edf_file_name % (sample_rate,chunk_size_hours,d)
+		filename = saved_edf_file_name % (highpass_eeg,sample_rate,chunk_size_hours,d)
 		print(filename)
 		rec_end = sample_rate*3600*chunk_size_hours*(d+1) if sample_rate*3600*chunk_size_hours*(d+1) <= eeg_emg_data.shape[1] else eeg_emg_data.shape[1]
 		save_to_edf(eeg_emg_data[:,sample_rate*3600*chunk_size_hours*d:rec_end], 
