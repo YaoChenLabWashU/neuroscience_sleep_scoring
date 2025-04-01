@@ -385,19 +385,3 @@ if __name__ == "__main__":
 			velocity_curve = input('Do you want to make the full velocity array (y/n)?')
 			if velocity_curve == 'y':
 				make_full_velocity_array(d['savedir'])
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
