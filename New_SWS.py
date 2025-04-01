@@ -219,8 +219,8 @@ def start_swscoring(d):
 
 	print('Loading EEG and EMG....')
 	downsampEEG = np.load(os.path.join(d['savedir'],'downsampEEG_Acq'+str(a)+'.npy'))
-	if d['emg']:
-		downsampEMG = np.load(os.path.join(d['savedir'],'downsampEMG_Acq'+str(a)+'.npy'))
+	downsampEMG = np.load(os.path.join(d['savedir'],'downsampEMG_Acq'+str(a)+'.npy'))
+
 	acq_len = np.size(downsampEEG)/d['fsd'] # fs: sampling rate, fsd: downsampled sampling rate
 	hour_segs = math.ceil(acq_len/3600) # acq_len in seconds, convert to hours
 	print('This acquisition has ' +str(hour_segs)+ ' segments.')
@@ -236,8 +236,7 @@ def start_swscoring(d):
 			eeg_df['EEGChannel'+str(e)] = np.load(os.path.join(eeg_dir, 'downsampEEG_Acq'+a+'_hr'+str(0)+'.npy'))
 			normVal.append(np.load(os.path.join(eeg_dir, d['basename']+'_normVal.npy')))
 
-		if d['emg']:
-			eeg_df['EMG'] = np.load(os.path.join(eeg_dir,'downsampEMG_Acq'+str(a) + '_hr' + str(h)+ '.npy'))
+		eeg_df['EMG'] = np.load(os.path.join(eeg_dir,'downsampEMG_Acq'+str(a) + '_hr' + str(h)+ '.npy'))
 	
 		# chop off the remainder that does not fit into the 4s epoch
 		seg_len = len(eeg_df)/d['fsd']
@@ -263,10 +262,7 @@ def start_swscoring(d):
 				wrong, = np.where(np.isnan(State))
 				State[wrong] = 0
 				s, = np.where(State == 0)
-				if 'EMG' not in eeg_df.columns:
-					this_emg = None
-				else:
-					this_emg = eeg_df['EMG']
+				this_emg = eeg_df['EMG']
 				State = display_and_fix_scoring(d, a, h, this_emg, State, False, None,
 										None, this_video, acq_start, v = v, movement_df = this_motion)
 				if np.any(State == 0):
@@ -293,12 +289,9 @@ def start_swscoring(d):
 					return
 
 				# feature list
-				if 'EMG' not in eeg_df.columns:
-					this_emg = None
-				else:
-					this_emg = eeg_df['EMG']
+				this_emg = eeg_df['EMG']
 
-				Features = SWS_utils.prepare_feature_data(FeatureDict, d['emg'])
+				Features = SWS_utils.prepare_feature_data(FeatureDict, d['movement'])
 
 				Predict_y = clf.predict(Features)
 				Predict_y = SWS_utils.fix_states(Predict_y)

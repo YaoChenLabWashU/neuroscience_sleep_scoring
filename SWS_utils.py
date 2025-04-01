@@ -315,10 +315,10 @@ def create_prediction_figure(d, Predict_y, is_predicted, clf, Features, fs, eeg_
     ax3.set_xticklabels([])
 
     plot_predicted(ax2, Predict_y, is_predicted, clf, Features)
-    if this_emg:
-        ax5.plot(EEG_t, this_emg, color= 'r')
-        ax5.set_xlim([EEG_t[0],EEG_t[-1]])
-        ax5.set_ylabel('EMG Amplitude')
+
+    ax5.plot(EEG_t, this_emg, color= 'r')
+    ax5.set_xlim([EEG_t[0],EEG_t[-1]])
+    ax5.set_ylabel('EMG Amplitude')
     fig1.tight_layout()
     fig1.subplots_adjust(wspace=0, hspace=0)
     
@@ -339,7 +339,7 @@ def build_joblib_name(d):
         jobname = d['mod_name'] + '_EMG'
         print("EMG flag on")
     else:
-        jobname = d['mod_name'] + '_no_EMG'
+        jobname = d['mod_name'] + '_noEMG'
         print('Just so you know...this model has no EMG')
     if d['movement']:
         jobname = jobname + '_movement'
@@ -624,27 +624,29 @@ def load_video(d, this_timestamp):
 
 def timestamp_extracting(timestamp_file):
     ## Dealing with old Bonsai files is deprecated
+    ts_datestring = time.ctime(os.path.getmtime(timestamp_file))
     timestamp_df = pd.read_csv(timestamp_file, header=None) 
     timestamp_df.columns = ['Timestamps']
     timestamp_df['Filename'] = timestamp_file
 
-    ts_format = '%Y-%m-%dT%H:%M:%S.%f'
+    ts_format1 = '%Y-%m-%dT%H:%M:%S.%f'
+    ts_format2 = '%a %b %d %H:%M:%S %Y'
     short_ts = [x[:-6] for x in list(timestamp_df['Timestamps'].loc[~timestamp_df['Timestamps'].isnull()])]
+    
+    if datetime.strptime(short_ts[-1][:-1], ts_format1) > datetime.strptime(ts_datestring, ts_format2):
+        time_adjust = datetime.strptime(short_ts[-1][:-1], ts_format1)-datetime.strptime(ts_datestring, ts_format2)
+    else:
+        time_adjust = datetime.strptime(ts_datestring, ts_format2)-datetime.strptime(short_ts[-1][:-1], ts_format1)
+    try:
+        assert time_adjust.days == 0
+    except AssertionError:
+        print('There is a problem with the timestamp adjustment')
+        sys.exit()
+    print(time_adjust.total_seconds())
     if len(short_ts) > 0:
-        timestamp_df['Timestamps'] = [datetime.strptime(short_ts[i][:-1], ts_format) for i in np.arange(len(short_ts))]
+        timestamp_df['Timestamps'] = [datetime.strptime(short_ts[i][:-1], ts_format1)-time_adjust for i in np.arange(len(short_ts))]
 
     return timestamp_df
-
-def pulling_timestamp(timestamp_df, acq_start, this_eeg, fsd):
-    acq_len = int(np.size(this_eeg)/fsd)
-    start_ts = acq_start
-    end_ts = start_ts+timedelta(seconds=acq_len)
-    ts_idx, = np.where(np.logical_and(timestamp_df['Timestamps'] < end_ts, timestamp_df['Timestamps'] > start_ts))
-    this_timestamp = timestamp_df.iloc[ts_idx]
-    offset_times = this_timestamp['Timestamps']-this_timestamp['Timestamps'].iloc[0]
-    this_timestamp['Offset_Time'] = [offset_times.iloc[i].total_seconds() for i in range(len(offset_times))]
-
-    return this_timestamp
 
 def initialize_vid_and_move(d, a, acq_start, acq_len):
     if d['vid']:
@@ -1064,7 +1066,17 @@ def get_AcqStart(d, a, acq_len):
         EEG_datetime = datetime.strptime(EEG_datestring, ts_format)
         acq_start = EEG_datetime-timedelta(seconds=acq_len)
     return acq_start
-    
+
+def pulling_timestamp(timestamp_df, acq_start, this_eeg, fsd):
+    acq_len = int(np.size(this_eeg)/fsd)
+    start_ts = acq_start
+    end_ts = start_ts+timedelta(seconds=acq_len)
+    ts_idx, = np.where(np.logical_and(timestamp_df['Timestamps'] < end_ts, timestamp_df['Timestamps'] > start_ts))
+    this_timestamp = timestamp_df.iloc[ts_idx]
+    offset_times = this_timestamp['Timestamps']-this_timestamp['Timestamps'].iloc[0]
+    this_timestamp['Offset_Time'] = [offset_times.iloc[i].total_seconds() for i in range(len(offset_times))]
+
+    return this_timestamp
 
 
 def print_instructions():
@@ -1132,6 +1144,7 @@ def print_instructions():
 
                                                ''')
 
+### - - - - - - - - - - - - - - - - DEPRECATED FUNCTIONS - - - - - - - - - -  - - ####
 
 
 
