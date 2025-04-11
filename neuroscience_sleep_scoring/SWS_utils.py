@@ -726,8 +726,9 @@ def movement_processing(this_motion, binsize = 4):
     # dy = []
     # t = []
     # ts = []
-    idxs = [np.where(np.logical_and(t_vect>=bins[i], t_vect<bins[i+1]))[0] 
-                for i in np.arange(0, np.size(bins)-1)]
+    # i checked and this is the same as before but 5min faster
+    binedges = t_vect.searchsorted(bins)
+    idxs = [np.array(np.arange(binedges[k], binedges[k+1])) for k in range(len(binedges)-1)]
     
     dx = [this_motion['X'].iloc[ii[-1]] - this_motion['X'].iloc[ii[0]] 
                 for ii in idxs if len(ii) > 0]
