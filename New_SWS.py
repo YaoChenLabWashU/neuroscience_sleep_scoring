@@ -236,7 +236,7 @@ def start_swscoring(d):
 			eeg_df['EEGChannel'+str(e)] = np.load(os.path.join(eeg_dir, 'downsampEEG_Acq'+a+'_hr'+str(0)+'.npy'))
 			normVal.append(np.load(os.path.join(eeg_dir, d['basename']+'_normVal.npy')))
 
-		eeg_df['EMG'] = np.load(os.path.join(eeg_dir,'downsampEMG_Acq'+str(a) + '_hr' + str(h)+ '.npy'))
+		eeg_df['EMG'] = np.load(os.path.join(d['savedir'],'downsampEMG_Acq'+str(a) + '_hr' + str(h)+ '.npy'))
 	
 		# chop off the remainder that does not fit into the 4s epoch
 		seg_len = len(eeg_df)/d['fsd']

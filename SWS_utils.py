@@ -1078,7 +1078,6 @@ def pulling_timestamp(timestamp_df, acq_start, this_eeg, fsd):
 
     return this_timestamp
 
-
 def print_instructions():
     print('''\
 
