@@ -150,7 +150,7 @@ def downsample_filter(filename_sw, EEG_channels = ['0','2']):
 				this_eeg = this_eeg[0:new_length]			
 				np.save(os.path.join(savedir, 'AD'+str(EEG_chan)+'_downsampled', 'downsampEEG_Acq'+str(a) + '_hr' + str(h)+ '.npy'), this_eeg)
 				if int(d['emg']) == 1:
-					np.save(os.path.join(savedir, 'AD'+str(EEG_chan)+'_downsampled', 'downsampEMG_Acq'+str(a) + '_hr' + str(h)+ '.npy'), this_emg)
+					np.save(os.path.join(savedir, 'downsampEMG_Acq'+str(a) + '_hr' + str(h)+ '.npy'), this_emg)
 
 def combine_bonsai_data(filename_sw, d):
 	videos = glob.glob(os.path.join(d['video_dir'], '*.mp4'))
