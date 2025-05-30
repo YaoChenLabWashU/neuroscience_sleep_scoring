@@ -327,8 +327,9 @@ def make_edf_file(d,highpass_eeg = True, emg_highpass = 10,
 	else:
 		emg = np.load(emg_save)
   
-		
-	eeg_emg_data = np.column_stack((eeg1,eeg2,emg)).squeeze().T
+	mindim = min(eeg1.shape[0], eeg2.shape[0], emg.shape[0])
+	print('EEG1 shape: %s, EEG2 shape: %s, EMG shape: %s'%(eeg1.shape, eeg2.shape, emg.shape))
+	eeg_emg_data = np.column_stack((eeg1[:mindim],eeg2[:mindim],emg[:mindim])).squeeze().T
 	del eeg1,eeg2,emg
 	sample_rate = new_fs
 	if new_fs != fs:
