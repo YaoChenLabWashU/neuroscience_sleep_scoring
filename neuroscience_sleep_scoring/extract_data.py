@@ -274,7 +274,7 @@ def save_to_edf(data, filename, sample_rate,channel_labels):
 		f.close()
 	print(f"Saved EDF file: {filename}")
   
-def make_edf_file(d,highpass_eeg = True, emg_highpass = 20,
+def make_edf_file(d,highpass_eeg = True, emg_highpass = 10,
 				  new_fs=250,chunk_size_hours = 24,choose_savedir = False):
 	'''
 	This function will take the EEG and EMG data and save it to an EDF file.

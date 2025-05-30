@@ -2,4 +2,6 @@
 venv/
 __pycache__/
 neuroscience_sleep_scoring.egg-info/
+neuroscience_sleep_scoring/venv/
 .DS_Store
+dlclive/output/
