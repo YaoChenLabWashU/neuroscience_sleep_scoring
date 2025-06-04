@@ -196,8 +196,13 @@ def combine_bonsai_data(filename_sw, d):
 		all_move_df.to_pickle(os.path.join(d['savedir'], 'All_movement.pkl'))
 
 def pulling_acqs(filename_sw):
-	with open(filename_sw, 'r') as f:
-			d = json.load(f)
+	if filename_sw is {}:
+		print("you entered a dict, using it as the settings file")
+		d = filename_sw
+	else:
+		with open(filename_sw, 'r') as f:
+				d = json.load(f)
+    
 	AD_file = glob.glob(os.path.join(d['rawdat_dir'], 'AD0_*'))
 	acqs = []
 	for fn in AD_file:
