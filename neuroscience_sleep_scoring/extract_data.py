@@ -239,8 +239,12 @@ def make_full_velocity_array(savedir, binsize = 4, return_array = False):
 		return v
 
 def get_normalizing_value(filename_sw, EEG_channels = ['0','2']):
-	with open(filename_sw, 'r') as f:
-		d = json.load(f)
+	if isinstance(filename_sw, dict):
+		print("you entered a dict, using it as the settings file")
+		d = filename_sw
+	else:
+		with open(filename_sw, 'r') as f:
+			d = json.load(f)
 	for EEG_chan in EEG_channels:
 		eeg_files = glob.glob(os.path.join(d['savedir'], 'AD'+str(EEG_chan)+'_downsampled','downsampEEG_Acq*_hr0.npy'))
 		all_tp = []
