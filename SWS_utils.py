@@ -344,7 +344,7 @@ def build_joblib_name(d):
     if d['movement']:
         jobname = jobname + '_movement'
     else:
-        jobname = jobname + '_no_movement'
+        jobname = jobname + '_nomovement'
     if len(d['EEG channel']) == 2:
         jobname = jobname + '_2chan'
     jobname = jobname + '.joblib'
@@ -771,7 +771,8 @@ def get_movement_segs(movement_df, time_window):
 
 def prepare_feature_data(FeatureDict, movement_flag, smooth = False):
     del FeatureDict['animal_name']
-    FeatureDict = adjust_movement(FeatureDict, movement_flag)
+    if movement_flag:
+        FeatureDict = adjust_movement(FeatureDict, movement_flag)
     if smooth:
         FeatureList = []
         for f in FeatureDict.keys():
@@ -836,24 +837,20 @@ def build_feature_dict(eeg_df, fsd, epochlen, normVal = None):
    
     return FeatureDict
 
-def adjust_movement(FeatureDict, movement_flag, epochlen = 4):
-    if movement_flag:
-        # this_video, v, this_motion = SWS_utils.initialize_vid_and_move(bonsai_v, vid_flag, movement_flag, video_dir, a, 
-        #   acq, this_eeg, fsd, EEG_datetime, extracted_dir)
-        v = FeatureDict['Velocity']
-        if np.size(v) > 900:
-            v_reshape = np.reshape(v, (-1,epochlen))
-            mean_v = np.mean(v_reshape, axis = 1)
-            mean_v[np.isnan(mean_v)] = 0
-        elif np.size(v) < 900:
-            diff = 900 - np.size(v)
-            nans = np.empty(diff)
-            nans[:] = 0
-            mean_v = np.concatenate((v, nans))
-        else:
-            mean_v = v
+def adjust_movement(FeatureDict, epochlen = 4):
+    v = FeatureDict['Velocity']
+    if np.size(v) > 900:
+        v_reshape = np.reshape(v, (-1,epochlen))
+        mean_v = np.mean(v_reshape, axis = 1)
+        mean_v[np.isnan(mean_v)] = 0
+    elif np.size(v) < 900:
+        diff = 900 - np.size(v)
+        nans = np.empty(diff)
+        nans[:] = 0
+        mean_v = np.concatenate((v, nans))
     else:
-        mean_v = np.zeros(900)
+        mean_v = v
+
     mean_v[np.isnan(mean_v)] = 0
     FeatureDict['Velocity'] = mean_v
     return FeatureDict

@@ -41,8 +41,8 @@ def on_press(event):
 
 def update_model(d, FeatureDict):
 	# Feed the data to retrain a model.
-
-	FeatureDict = SWS_utils.adjust_movement(FeatureDict, d['movement'], epochlen = d['epochlen'])
+	if d['movement']:
+		FeatureDict = SWS_utils.adjust_movement(FeatureDict, epochlen = d['epochlen'])
 
 	if 'EMGvar' in FeatureDict.keys():
 		FeatureDict['EMGvar'][np.isnan(FeatureDict['EMGvar'])] = 0
@@ -97,8 +97,12 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 	buffer_seconds = buffer*d['epochlen'] #amount of time in seconds added to beginning and end of trace to accomodate looking at early and late epochs
 	long_ThD, long_ThD_t = SWS_utils.add_buffer(ThD, ThD_t, buffer_seconds, fs = 1)
 	long_emg, long_emg_t = SWS_utils.add_buffer(this_emg, EEG_t, buffer_seconds, fs = 200)
-	long_v, long_v_t = SWS_utils.add_buffer(np.insert(v[0],0,0), np.insert(v[1],0,0), 
-		buffer_seconds, fs = 1/int(d['epochlen']))
+	if d['movement']:
+		long_v, long_v_t = SWS_utils.add_buffer(np.insert(v[0],0,0), np.insert(v[1],0,0), 
+			buffer_seconds, fs = 1/int(d['epochlen']))
+	else:
+		long_v = None
+		long_v_t = None
 
 	line1, line2, line3 = SWS_utils.create_zoomed_fig(ax8, ax9, ax10, long_emg, long_emg_t, 
 		long_ThD, long_ThD_t, long_v, long_v_t, start_trace, end_trace, 
@@ -246,8 +250,9 @@ def start_swscoring(d):
 		FeatureDict = SWS_utils.build_feature_dict(eeg_df, d['fsd'], d['epochlen'],
 			normVal = normVal)
 		this_video, v, this_motion = SWS_utils.initialize_vid_and_move(d, a, acq_start, acq_len)
-		FeatureDict['Velocity'] = v[0]
-		FeatureDict['animal_name'] = np.full(np.size(FeatureDict['Velocity']), d['mouse_name'])
+		if d['movement']:
+			FeatureDict['Velocity'] = v[0]
+		FeatureDict['animal_name'] = np.full(len(FeatureDict[list(FeatureDict.keys())[0]]), d['mouse_name'])
 
 		os.chdir(d['savedir'])
 
