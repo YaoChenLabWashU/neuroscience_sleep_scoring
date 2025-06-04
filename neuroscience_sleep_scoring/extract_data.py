@@ -68,8 +68,12 @@ def choosing_acquisition(filename_sw):
 		json.dump(d, f, indent=2)
 
 def downsample_filter(filename_sw, EEG_channels = ['0','2']):
-	with open(filename_sw, 'r') as f:
-			d = json.load(f)
+	if filename_sw is {}:
+		print("you entered a dict, using it as the settings file")
+		d = filename_sw
+	else:
+		with open(filename_sw, 'r') as f:
+				d = json.load(f)
 
 	rawdat_dir = str(d['rawdat_dir'])
 	model_dir = str(d['model_dir'])
