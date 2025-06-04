@@ -215,8 +215,9 @@ def pulling_acqs(filename_sw):
 			continue
 		acqs.append(acq_num)
 	d['Acquisition'] = sorted(acqs)
-	with open(filename_sw, 'w') as f:
-		json.dump(d, f, indent=2)
+	if not isinstance(filename_sw, dict):
+		with open(filename_sw, 'w') as f:
+			json.dump(d, f, indent=2)
 
 def alternate_label(this_video, csv_dir, i):
 	this_dir,fn = os.path.split(this_video)
