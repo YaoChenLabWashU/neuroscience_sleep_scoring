@@ -68,7 +68,7 @@ def choosing_acquisition(filename_sw):
 		json.dump(d, f, indent=2)
 
 def downsample_filter(filename_sw, EEG_channels = ['0','2']):
-	if filename_sw is {}:
+	if isinstance(filename_sw, dict):
 		print("you entered a dict, using it as the settings file")
 		d = filename_sw
 	else:
@@ -196,7 +196,7 @@ def combine_bonsai_data(filename_sw, d):
 		all_move_df.to_pickle(os.path.join(d['savedir'], 'All_movement.pkl'))
 
 def pulling_acqs(filename_sw):
-	if filename_sw is {}:
+	if isinstance(filename_sw, dict):
 		print("you entered a dict, using it as the settings file")
 		d = filename_sw
 	else:
