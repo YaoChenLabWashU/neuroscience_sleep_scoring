@@ -106,7 +106,7 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 
 	line1, line2, line3 = SWS_utils.create_zoomed_fig(ax8, ax9, ax10, long_emg, long_emg_t, 
 		long_ThD, long_ThD_t, long_v, long_v_t, start_trace, end_trace, 
-		epochlen = d['epochlen'], ThD_ylims = [0,30], emg_ylims = emg_ylims, v_ylims = v_ylims)
+		epochlen = d['epochlen'], ThD_ylims = [0,30], emg_ylims = ([-0.25, 0.25]), v_ylims = v_ylims)
 
 
 	ax6.set_xlim([-600, 600])
@@ -186,7 +186,7 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 			SWS_utils.correct_bins(start_bin, end_bin, ax2, new_state)
 			fig2.canvas.draw()
 			State[start_bin:end_bin] = new_state
-			if end_bin == 899:
+			if end_bin == len(State)-1:
 				State[end_bin] = new_state
 			np.save(os.path.join(d['savedir'], 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'), State)
 			cursor.bins = []
