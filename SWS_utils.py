@@ -622,7 +622,7 @@ def load_video(d, this_timestamp):
         fps[v] = cap[v].get(cv2.CAP_PROP_FPS)
     return cap, fps
 
-def timestamp_extracting(timestamp_file):
+def timestamp_extracting(timestamp_file, adjust = True):
     ## Dealing with old Bonsai files is deprecated
     ts_datestring = time.ctime(os.path.getmtime(timestamp_file))
     timestamp_df = pd.read_csv(timestamp_file, header=None) 
@@ -642,9 +642,15 @@ def timestamp_extracting(timestamp_file):
     except AssertionError:
         print('There is a problem with the timestamp adjustment')
         sys.exit()
-    print(time_adjust.total_seconds())
+    
     if len(short_ts) > 0:
-        timestamp_df['Timestamps'] = [datetime.strptime(short_ts[i][:-1], ts_format1)-time_adjust for i in np.arange(len(short_ts))]
+        if adjust:
+            print('adjusting....')
+            print(time_adjust.total_seconds())
+            timestamp_df['Timestamps'] = [datetime.strptime(short_ts[i][:-1], ts_format1)-time_adjust for i in np.arange(len(short_ts))]
+        else:
+            print('No adjusting...')
+            timestamp_df['Timestamps'] = [datetime.strptime(short_ts[i][:-1], ts_format1) for i in np.arange(len(short_ts))]
 
     return timestamp_df
 

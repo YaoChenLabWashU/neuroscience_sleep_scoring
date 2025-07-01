@@ -190,10 +190,8 @@ def combine_bonsai_data(filename_sw, d):
 	if d['movement']:
 		all_move_df.to_pickle(os.path.join(d['savedir'], 'All_movement.pkl'))
 
-def pulling_acqs(filename_sw):
-	with open(filename_sw, 'r') as f:
-			d = json.load(f)
-	AD_file = glob.glob(os.path.join(d['rawdat_dir'], 'AD0_*'))
+def pulling_acqs(rawdat_dir, write_to_file = None):
+	AD_file = glob.glob(os.path.join(rawdat_dir, 'AD0_*'))
 	acqs = []
 	for fn in AD_file:
 		filename = os.path.split(fn)[1]
@@ -204,9 +202,14 @@ def pulling_acqs(filename_sw):
 		except ValueError:
 			continue
 		acqs.append(acq_num)
-	d['Acquisition'] = sorted(acqs)
-	with open(filename_sw, 'w') as f:
-		json.dump(d, f, indent=2)
+	if write_to_file:
+		with open(write_to_file, 'r') as f:
+			d = json.load(f)
+		d['Acquisition'] = sorted(acqs)
+		with open(write_to_file, 'w') as f:
+			json.dump(d, f, indent=2)
+	else:
+		return sorted(acqs)
 
 def alternate_label(this_video, csv_dir, i):
 	this_dir,fn = os.path.split(this_video)
