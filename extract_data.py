@@ -373,8 +373,15 @@ if __name__ == "__main__":
 		choosing_acquisition(args[1])
 		downsample_filter(args[1])
 		get_normalizing_value(args[1])
-		make_edf_file(d,highpass_eeg = True, emg_highpass = 20,
-                new_fs=250,chunk_size_hours = 24,check_emg_artifacts=True)
+		# Ask the user if they want to create an EDF file
+		create_edf = input("Do you want to create an EDF file? (y/n): ").strip().lower()
+		if create_edf == 'y':
+			make_edf_file(d, highpass_eeg=True, emg_highpass=20,
+                          new_fs=250, chunk_size_hours=24, check_emg_artifacts=True)
+		elif create_edf == 'n':
+			print("Skipping EDF file creation.")
+		else:
+			print("Invalid input. Skipping EDF file creation.")
 		if d['movement']:
 			combine_bonsai_data(args[1], d)
 			plt.close('all')
