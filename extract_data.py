@@ -34,27 +34,41 @@ def choosing_acquisition(filename_sw):
 
 	poss_files = glob.glob('AD'+str(EEG_chan[0])+'*.mat')
 	acq = []
-	for ii in poss_files:
-		print(ii)
-		try:
-			idx1 = ii.find('_')
-			idx2 = ii.find('.mat')
-			int(ii[idx1+1:idx2])
+	# Ask the user if they want to add all acquisitions or select individually
+	add_all = input("Do you want to add all acquisitions? (y/n): ").strip().lower()
+	if add_all == 'y':
+		for ii in poss_files:
+			try:
+				idx1 = ii.find('_')
+				idx2 = ii.find('.mat')
+				acq.append(int(ii[idx1 + 1:idx2]))
+			except ValueError:
+				continue
+		print("All acquisitions have been added.")
+	elif add_all == 'n':
+		for ii in poss_files:
+			print(ii)
+			try:
+				idx1 = ii.find('_')
+				idx2 = ii.find('.mat')
+				int(ii[idx1 + 1:idx2])
+			except ValueError:
+				continue
+			eeg = scipy.io.loadmat(ii)[ii[0:idx2]][0][0][0][0]
+			acq_len = np.size(eeg) / fs
+			print('This acquisition is ' + str(round(acq_len / 60, 1)) + ' minutes')
+			decision = input('Would you like to use this acquisition? (y/n): ').strip().lower()
 
-		except ValueError:
-			continue 
-		eeg = scipy.io.loadmat(ii)[ii[0:idx2]][0][0][0][0]
-		acq_len = np.size(eeg)/fs
-		print('This acquisition is ' + str(round(acq_len/60, 1)) + ' minutes')
-		decision = input('Would you like to use this acquisition? (y/n)')
+			if decision == 'y':
+				acq.append(int(ii[idx1 + 1:idx2]))
+			elif decision == 'n':
+				print('Ok, not adding this one.')
+			else:
+				print('Invalid input. Skipping this acquisition.')
+	else:
+		print("Invalid input. No acquisitions were added.")
+		return
 
-		if decision == 'y':
-			acq.append(int(ii[idx1+1:idx2]))
-		elif decision == 'n':
-			print('Ok, not adding this one')
-		else: 
-			print('I did not understand that input. Please run this function again.')
-			return
 	print('Here are the acquisitions you chose: ')
 	print(sorted(acq))
 
