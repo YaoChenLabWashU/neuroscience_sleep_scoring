@@ -49,8 +49,6 @@ def update_model(d, FeatureDict):
 	df_additions = pd.DataFrame(FeatureDict)
 	# df_additions[pd.isnull(FeatureDict['EMGvar'])] = 0
 	mod_name = d['mod_name']
-	if len(d['EEG channel']) == 2:
-		mod_name = mod_name+'_2chan'
 	Sleep_Model = SWS_utils.update_sleep_df(d['model_dir'], mod_name, df_additions)
 	jobname = SWS_utils.build_joblib_name(d)
 	x_features = SWS_utils.get_xfeatures(FeatureDict)
@@ -321,10 +319,11 @@ def start_swscoring(d):
 		plt.close('all')
 			# Store the result.
 
-def load_data_for_sw(filename_sw):
+def load_data_for_sw(filename_sw, return_data = False):
 	with open(filename_sw, 'r') as f:
 		d = json.load(f)
-
+	if return_data:
+		return d
 	start_swscoring(d)
 
 def build_model(filename_sw):

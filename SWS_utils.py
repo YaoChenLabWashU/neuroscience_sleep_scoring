@@ -347,20 +347,25 @@ def build_joblib_name(d):
         jobname = jobname + '_nomovement'
     if len(d['EEG channel']) == 2:
         jobname = jobname + '_2chan'
+    elif len(d['EEG channel']) == 1:
+        jobname = jobname + '_1chan_chan'+str(d['EEG channel'][0])
     jobname = jobname + '.joblib'
 
     return jobname
 
-def get_xfeatures(FeatureDict):
+def get_xfeatures(FeatureDict, movement_flag = 1, emg_flag = 1):
+    remove_list = ['State','animal_name']
+    if not movement_flag:
+        remove_list.append('Velocity')
+    if not emg_flag:
+        EMG_features = [s for s in x_features if 'EMG' in s]
+        remove_list = np.concatenate([remove_list, EMG_features])
     x_features = list(FeatureDict.keys())
-    try:
-        x_features.remove('State')
-    except ValueError:
-        pass
-    try:   
-        x_features.remove('animal_name')
-    except ValueError:
-        pass
+    for r in remove_list:
+        try:
+            x_features.remove(r)
+        except ValueError:
+            pass
     return x_features
 
 def retrain_model(Sleep_Model, x_features, model_dir, jobname):

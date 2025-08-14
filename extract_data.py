@@ -396,9 +396,9 @@ if __name__ == "__main__":
 			print("Skipping EDF file creation.")
 		else:
 			print("Invalid input. Skipping EDF file creation.")
-		if d['movement']:
-			combine_bonsai_data(args[1], d)
-			plt.close('all')
-			velocity_curve = input('Do you want to make the full velocity array (y/n)?')
-			if velocity_curve == 'y':
-				make_full_velocity_array(d['savedir'])
+		# if d['movement']:
+		combine_bonsai_data(args[1], d)
+		plt.close('all')
+		velocity_curve = input('Do you want to make the full velocity array (y/n)?')
+		if velocity_curve == 'y':
+			make_full_velocity_array(d['savedir'])
