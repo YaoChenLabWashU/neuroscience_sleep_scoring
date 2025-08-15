@@ -44,11 +44,15 @@ def update_model(d, FeatureDict):
 	if d['movement']:
 		FeatureDict = SWS_utils.adjust_movement(FeatureDict, epochlen = d['epochlen'])
 
+	FeatureDict = SWS_utils.adjust_movement(FeatureDict, d['movement'], epochlen = d['epochlen'])
+
 	if 'EMGvar' in FeatureDict.keys():
 		FeatureDict['EMGvar'][np.isnan(FeatureDict['EMGvar'])] = 0
 	df_additions = pd.DataFrame(FeatureDict)
 	# df_additions[pd.isnull(FeatureDict['EMGvar'])] = 0
 	mod_name = d['mod_name']
+	if len(d['EEG channel']) == 2:
+		mod_name = mod_name+'_2chan'
 	Sleep_Model = SWS_utils.update_sleep_df(d['model_dir'], mod_name, df_additions)
 	jobname = SWS_utils.build_joblib_name(d)
 	x_features = SWS_utils.get_xfeatures(FeatureDict)
@@ -248,9 +252,8 @@ def start_swscoring(d):
 		FeatureDict = SWS_utils.build_feature_dict(eeg_df, d['fsd'], d['epochlen'],
 			normVal = normVal)
 		this_video, v, this_motion = SWS_utils.initialize_vid_and_move(d, a, acq_start, acq_len)
-		if d['movement']:
-			FeatureDict['Velocity'] = v[0]
-		FeatureDict['animal_name'] = np.full(len(FeatureDict[list(FeatureDict.keys())[0]]), d['mouse_name'])
+		FeatureDict['Velocity'] = v[0]
+		FeatureDict['animal_name'] = np.full(np.size(FeatureDict['Velocity']), d['mouse_name'])
 
 		os.chdir(d['savedir'])
 
