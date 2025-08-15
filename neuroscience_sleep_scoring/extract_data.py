@@ -291,7 +291,11 @@ def save_to_edf(data, filename, sample_rate,channel_labels):
 		f.writeSamples(data)
 		f.close()
 	print(f"Saved EDF file: {filename}")
-  
+ 
+def get_phys_fs(f):
+    hs = scipy.io.loadmat(f,squeeze_me=True)[os.path.split(f)[1][:-4]]['UserData'].item()['headerString'].item()
+    return int(hs[hs.find('inputRate=')+10:].split('\r')[0])
+ 
 def make_edf_file(d,eeg_highpass = 1, emg_highpass = 20,
 				  new_fs=250,chunk_size_hours = 24,check_emg_artifacts=False,
       				choose_savedir = False):
