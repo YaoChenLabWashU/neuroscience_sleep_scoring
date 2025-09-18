@@ -1,7 +1,0 @@
-numpy
-scipy
-matplotlib
-psutil
-pandas
-natsort
-pyedflib
