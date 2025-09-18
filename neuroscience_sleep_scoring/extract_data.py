@@ -312,7 +312,8 @@ def save_to_edf(data, filename, sample_rate,channel_labels):
 	print(f"Saved EDF file: {filename}")
   
 def make_edf_file(d,highpass_eeg = True, emg_highpass = 20,
-				  new_fs=250,chunk_size_hours = 24,check_emg_artifacts=False):
+				  new_fs=250,chunk_size_hours = 24,check_emg_artifacts=False,
+      				choose_savedir = False):
 	'''
 	This function will take the EEG and EMG data and save it to an EDF file.
 	d can also be a dictionary:
@@ -338,12 +339,15 @@ def make_edf_file(d,highpass_eeg = True, emg_highpass = 20,
 		
 	fs = d['fs']
 	animal= d['basename']
-	saved_edf_file_name = animal + f'_eegemg_%dHz_%dchunk_%d.edf'
+	saved_edf_file_name = animal + f'_eegemg_hp%s_%dHz_%dchunk_%d.edf'
 	datadir = d['rawdat_dir']
-	savedir = os.path.join(datadir, animal+'_edffiles')
-	eeg1_save = os.path.join(savedir,animal+'_AD0_full_highpass%s.npy'%highpass_eeg)
-	eeg2_save = os.path.join(savedir,animal+'_AD2_full_highpass%s.npy'%highpass_eeg)
-	emg_save = os.path.join(savedir,animal+'_AD3_full_highpass%d.npy'%emg_highpass)
+	if not choose_savedir:
+		savedir = datadir + os.sep+ animal + '_edffiles' + os.sep
+	else:
+		savedir = d['savedir']
+	eeg1_save = savedir + animal+'_AD0_full_highpass%s.npy'%highpass_eeg
+	eeg2_save = savedir + animal+'_AD2_full_highpass%s.npy'%highpass_eeg
+	emg_save = savedir + animal+'_AD3_full_highpass%d.npy'%emg_highpass
 	os.makedirs(savedir, exist_ok = True)
 	#
 	if not os.path.exists(eeg1_save):
@@ -377,8 +381,8 @@ def make_edf_file(d,highpass_eeg = True, emg_highpass = 20,
 	days = int(eeg_emg_data.shape[1]/(sample_rate*3600*chunk_size_hours))
 
 	for d in range(days):
-		filename = saved_edf_file_name % (sample_rate,chunk_size_hours,d)
-		print(filename,flush=True)
+		filename = saved_edf_file_name % (highpass_eeg,sample_rate,chunk_size_hours,d)
+		print(filename)
 		rec_end = sample_rate*3600*chunk_size_hours*(d+1) if sample_rate*3600*chunk_size_hours*(d+1) <= eeg_emg_data.shape[1] else eeg_emg_data.shape[1]
 		save_to_edf(eeg_emg_data[:,sample_rate*3600*chunk_size_hours*d:rec_end], 
 				savedir + os.sep + filename, 
