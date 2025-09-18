@@ -35,7 +35,7 @@ def choosing_acquisition(filename_sw):
 	poss_files = glob.glob('AD'+str(EEG_chan[0])+'*.mat')
 	acq = []
 	# Ask the user if they want to add all acquisitions or select individually
-	add_all = input("Do you want to add all acquisitions? (y/n): ").strip().lower()
+	add_all = input("Do you want to add all acquisitions? (y/n/length): ").strip().lower()
 	if add_all == 'y':
 		for ii in poss_files:
 			try:
@@ -65,6 +65,25 @@ def choosing_acquisition(filename_sw):
 				print('Ok, not adding this one.')
 			else:
 				print('Invalid input. Skipping this acquisition.')
+	elif add_all == 'length':
+		min_length = int(input('What is the minimum length (in minutes) of acquisition you want to include? ').strip())
+		for ii in poss_files:
+			print(ii)
+			try:
+				idx1 = ii.find('_')
+				idx2 = ii.find('.mat')
+				int(ii[idx1 + 1:idx2])
+			except ValueError:
+				continue
+			eeg = scipy.io.loadmat(ii)[ii[0:idx2]][0][0][0][0]
+			acq_len = np.size(eeg) / fs
+			print('This acquisition is ' + str(round(acq_len / 60, 1)) + ' minutes')
+			if acq_len/60 >= min_length:
+				acq.append(int(ii[idx1 + 1:idx2]))
+				print('Adding this acquisition.')
+			else:
+				print('Not adding this acquisition.')
+
 	else:
 		print("Invalid input. No acquisitions were added.")
 		return
@@ -359,7 +378,7 @@ def make_edf_file(d,highpass_eeg = True, emg_highpass = 20,
 
 	for d in range(days):
 		filename = saved_edf_file_name % (sample_rate,chunk_size_hours,d)
-		print(filename)
+		print(filename,flush=True)
 		rec_end = sample_rate*3600*chunk_size_hours*(d+1) if sample_rate*3600*chunk_size_hours*(d+1) <= eeg_emg_data.shape[1] else eeg_emg_data.shape[1]
 		save_to_edf(eeg_emg_data[:,sample_rate*3600*chunk_size_hours*d:rec_end], 
 				savedir + os.sep + filename, 
@@ -396,8 +415,8 @@ if __name__ == "__main__":
 			print("Skipping EDF file creation.")
 		else:
 			print("Invalid input. Skipping EDF file creation.")
-		# if d['movement']:
-		combine_bonsai_data(args[1], d)
+		if d['movement']:
+			combine_bonsai_data(args[1], d)
 		plt.close('all')
 		velocity_curve = input('Do you want to make the full velocity array (y/n)?')
 		if velocity_curve == 'y':
