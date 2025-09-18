@@ -44,11 +44,15 @@ def update_model(d, FeatureDict):
 	if d['movement']:
 		FeatureDict = SWS_utils.adjust_movement(FeatureDict, epochlen = d['epochlen'])
 
+	FeatureDict = SWS_utils.adjust_movement(FeatureDict, d['movement'], epochlen = d['epochlen'])
+
 	if 'EMGvar' in FeatureDict.keys():
 		FeatureDict['EMGvar'][np.isnan(FeatureDict['EMGvar'])] = 0
 	df_additions = pd.DataFrame(FeatureDict)
 	# df_additions[pd.isnull(FeatureDict['EMGvar'])] = 0
 	mod_name = d['mod_name']
+	if len(d['EEG channel']) == 2:
+		mod_name = mod_name+'_2chan'
 	Sleep_Model = SWS_utils.update_sleep_df(d['model_dir'], mod_name, df_additions)
 	jobname = SWS_utils.build_joblib_name(d)
 	x_features = SWS_utils.get_xfeatures(FeatureDict)

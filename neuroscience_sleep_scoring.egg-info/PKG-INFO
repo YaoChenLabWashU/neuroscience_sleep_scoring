@@ -1,4 +1,4 @@
-Metadata-Version: 2.2
+Metadata-Version: 2.1
 Name: neuroscience_sleep_scoring
 Version: 1.0.0
 Summary: A package for sleep scoring rodent EEG+EMG.
@@ -16,10 +16,3 @@ Requires-Dist: psutil
 Requires-Dist: pandas
 Requires-Dist: natsort
 Requires-Dist: pyedflib
-Dynamic: author
-Dynamic: author-email
-Dynamic: classifier
-Dynamic: home-page
-Dynamic: requires-dist
-Dynamic: requires-python
-Dynamic: summary

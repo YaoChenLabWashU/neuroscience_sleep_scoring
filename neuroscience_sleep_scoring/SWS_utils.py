@@ -315,7 +315,6 @@ def create_prediction_figure(d, Predict_y, is_predicted, clf, Features, fs, eeg_
     ax3.set_xticklabels([])
 
     plot_predicted(ax2, Predict_y, is_predicted, clf, Features)
-
     ax5.plot(EEG_t, this_emg, color= 'r')
     ax5.set_xlim([EEG_t[0],EEG_t[-1]])
     ax5.set_ylabel('EMG Amplitude')
@@ -330,6 +329,7 @@ def update_sleep_df(model_dir, mod_name, df_additions):
         Sleep_Model = pd.concat([Sleep_Model,df_additions], ignore_index = True)
     except FileNotFoundError:
         print('no model created...I will save this one')
+        df_additions.to_pickle(model_dir + mod_name + '_model.pkl')
         Sleep_Model = df_additions
     Sleep_Model.to_pickle(model_dir + mod_name + '_model.pkl')
     return Sleep_Model
@@ -344,7 +344,7 @@ def build_joblib_name(d):
         jobname = jobname + '_EMG'
         print("EMG flag on")
     else:
-        jobname = jobname + '_noEMG'
+        jobname = d['mod_name'] + '_noEMG'
         print('Just so you know...this model has no EMG')
     if d['movement']:
         jobname = jobname + '_movement'
@@ -648,7 +648,7 @@ def timestamp_extracting(timestamp_file, adjust = True):
     except AssertionError:
         print('There is a problem with the timestamp adjustment')
         sys.exit()
-    
+    print(time_adjust.total_seconds())
     if len(short_ts) > 0:
         if adjust:
             print('adjusting....')
@@ -744,8 +744,9 @@ def movement_processing(this_motion, binsize = 4):
     # dy = []
     # t = []
     # ts = []
-    idxs = [np.where(np.logical_and(t_vect>=bins[i], t_vect<bins[i+1]))[0] 
-                for i in np.arange(0, np.size(bins)-1)]
+    # i checked and this is the same as before but 5min faster
+    binedges = t_vect.searchsorted(bins)
+    idxs = [np.array(np.arange(binedges[k], binedges[k+1])) for k in range(len(binedges)-1)]
     
     dx = [this_motion['X'].iloc[ii[-1]] - this_motion['X'].iloc[ii[0]] 
                 for ii in idxs if len(ii) > 0]
@@ -788,7 +789,7 @@ def prepare_feature_data(FeatureDict, movement_flag, smooth = False):
     if smooth:
         FeatureList = []
         for f in FeatureDict.keys():
-            FeatureList_smoothed.append(signal.medfilt(FeatureDict[f], 5))
+            FeatureList.append(signal.medfilt(FeatureDict[f], 5))
     else:
         FeatureList = list(FeatureDict.values())
     Features = np.column_stack((FeatureList))
