@@ -246,7 +246,7 @@ def start_swscoring(d):
 		FeatureDict = SWS_utils.build_feature_dict(eeg_df, d['fsd'], d['epochlen'],
 			normVal = normVal)
 		this_video, v, this_motion = SWS_utils.initialize_vid_and_move(d, a, acq_start, acq_len)
-		FeatureDict['Velocity'] = v[0]
+		FeatureDict['Velocity'] = v[0] if v is not None else None #np.zeros(np.size(FeatureDict['delta_pre']))
 		FeatureDict['animal_name'] = np.full(np.size(FeatureDict['Velocity']), d['mouse_name'])
 
 		os.chdir(d['savedir'])

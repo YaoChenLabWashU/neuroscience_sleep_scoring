@@ -298,7 +298,7 @@ def get_phys_fs(f):
  
 def make_edf_file(d,eeg_highpass = 1, emg_highpass = 20,
 				  new_fs=250,chunk_size_hours = 24,check_emg_artifacts=False,
-      				choose_savedir = False):
+      				choose_savedir = False, force_new_eeg = False):
 	'''
 	This function will take the EEG and EMG data and save it to an EDF file.
 	d can also be a dictionary:
@@ -335,17 +335,17 @@ def make_edf_file(d,eeg_highpass = 1, emg_highpass = 20,
 	emg_save = savedir + animal+'_AD3_full_highpass%d.npy'%emg_highpass
 	os.makedirs(savedir, exist_ok = True)
 	#
-	if not os.path.exists(eeg1_save):
+	if not os.path.exists(eeg1_save) or force_new_eeg:
 		eeg1 = make_numpy_files(os.path.join(datadir,'AD0*.mat'),eeg1_save,eeg_highpass)
 	else:
 		eeg1 = np.load(eeg1_save)
 	#	
-	if not os.path.exists(eeg2_save):
+	if not os.path.exists(eeg2_save) or force_new_eeg:
 		eeg2 = make_numpy_files(os.path.join(datadir,'AD2*.mat'),eeg2_save,eeg_highpass)
 	else:
 		eeg2 = np.load(eeg2_save)
 	#	
-	if not os.path.exists(emg_save):
+	if not os.path.exists(emg_save) or force_new_eeg:
 		emg = make_numpy_files(os.path.join(datadir,'AD3*.mat'),emg_save,emg_highpass)
 	else:
 		emg = np.load(emg_save)
@@ -367,7 +367,8 @@ def make_edf_file(d,eeg_highpass = 1, emg_highpass = 20,
 		down = int(fs/np.gcd(new_fs,fs))
 		eeg_emg_data = signal.resample_poly(eeg_emg_data,up,down,axis=1)
 		
-	days = int(eeg_emg_data.shape[1]/(sample_rate*3600*chunk_size_hours))
+	days = int(eeg_emg_data.shape[1]/(sample_rate*3600*chunk_size_hours)) + 1
+	print('Total number of days: %d'%days)
 
 	for d in range(days):
 		filename = saved_edf_file_name % (eeg_highpass,sample_rate,chunk_size_hours,d)
