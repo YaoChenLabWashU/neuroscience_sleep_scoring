@@ -15,6 +15,7 @@ setup(
         "psutil",
         "pandas",
         "natsort",
+        "opencv-python",
         "pyedflib"
     ],
     classifiers=[

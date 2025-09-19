@@ -315,6 +315,7 @@ def create_prediction_figure(d, Predict_y, is_predicted, clf, Features, fs, eeg_
     ax3.set_xticklabels([])
 
     plot_predicted(ax2, Predict_y, is_predicted, clf, Features)
+
     ax5.plot(EEG_t, this_emg, color= 'r')
     ax5.set_xlim([EEG_t[0],EEG_t[-1]])
     ax5.set_ylabel('EMG Amplitude')
@@ -329,19 +330,13 @@ def update_sleep_df(model_dir, mod_name, df_additions):
         Sleep_Model = pd.concat([Sleep_Model,df_additions], ignore_index = True)
     except FileNotFoundError:
         print('no model created...I will save this one')
-        df_additions.to_pickle(model_dir + mod_name + '_model.pkl')
         Sleep_Model = df_additions
     Sleep_Model.to_pickle(model_dir + mod_name + '_model.pkl')
     return Sleep_Model
 
 def build_joblib_name(d):
-    jobname = 'EEG'
-    if len(d['EEG channel']) == 2:
-        jobname = jobname + '_2chan'
-    elif len(d['EEG channel']) == 1:
-        jobname = jobname + '_1chan_chan'+str(d['EEG channel'][0])
     if d['emg']:
-        jobname = jobname + '_EMG'
+        jobname = d['mod_name'] + '_EMG'
         print("EMG flag on")
     else:
         jobname = d['mod_name'] + '_noEMG'
@@ -349,7 +344,9 @@ def build_joblib_name(d):
     if d['movement']:
         jobname = jobname + '_movement'
     else:
-        jobname = jobname + '_nomovement'
+        jobname = jobname + '_no_movement'
+    if len(d['EEG channel']) == 2:
+        jobname = jobname + '_2chan'
     jobname = jobname + '.joblib'
 
     return jobname

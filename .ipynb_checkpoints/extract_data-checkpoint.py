@@ -1,4 +1,8 @@
 from tabnanny import check
+<<<<<<<< HEAD:.ipynb_checkpoints/extract_data-checkpoint.py
+========
+from tabnanny import check
+>>>>>>>> ef4bb470eebac275a66731355c21f4d25b3ad57c:neuroscience_sleep_scoring/extract_data.py
 import numpy as np
 import glob
 import json
@@ -67,8 +71,12 @@ def choosing_acquisition(filename_sw):
 		json.dump(d, f, indent=2)
 
 def downsample_filter(filename_sw, EEG_channels = ['0','2']):
-	with open(filename_sw, 'r') as f:
-			d = json.load(f)
+	if isinstance(filename_sw, dict):
+		print("you entered a dict, using it as the settings file")
+		d = filename_sw
+	else:
+		with open(filename_sw, 'r') as f:
+				d = json.load(f)
 
 	rawdat_dir = str(d['rawdat_dir'])
 	model_dir = str(d['model_dir'])
@@ -191,8 +199,13 @@ def combine_bonsai_data(filename_sw, d):
 		all_move_df.to_pickle(os.path.join(d['savedir'], 'All_movement.pkl'))
 
 def pulling_acqs(filename_sw):
-	with open(filename_sw, 'r') as f:
-			d = json.load(f)
+	if isinstance(filename_sw, dict):
+		print("you entered a dict, using it as the settings file")
+		d = filename_sw
+	else:
+		with open(filename_sw, 'r') as f:
+				d = json.load(f)
+    
 	AD_file = glob.glob(os.path.join(d['rawdat_dir'], 'AD0_*'))
 	acqs = []
 	for fn in AD_file:
@@ -205,8 +218,11 @@ def pulling_acqs(filename_sw):
 			continue
 		acqs.append(acq_num)
 	d['Acquisition'] = sorted(acqs)
-	with open(filename_sw, 'w') as f:
-		json.dump(d, f, indent=2)
+	if not isinstance(filename_sw, dict):
+		with open(filename_sw, 'w') as f:
+			json.dump(d, f, indent=2)
+	else:
+		return d
 
 def alternate_label(this_video, csv_dir, i):
 	this_dir,fn = os.path.split(this_video)
@@ -226,8 +242,12 @@ def make_full_velocity_array(savedir, binsize = 4, return_array = False):
 		return v
 
 def get_normalizing_value(filename_sw, EEG_channels = ['0','2']):
-	with open(filename_sw, 'r') as f:
-		d = json.load(f)
+	if isinstance(filename_sw, dict):
+		print("you entered a dict, using it as the settings file")
+		d = filename_sw
+	else:
+		with open(filename_sw, 'r') as f:
+			d = json.load(f)
 	for EEG_chan in EEG_channels:
 		eeg_files = glob.glob(os.path.join(d['savedir'], 'AD'+str(EEG_chan)+'_downsampled','downsampEEG_Acq*_hr0.npy'))
 		all_tp = []
@@ -274,9 +294,20 @@ def save_to_edf(data, filename, sample_rate,channel_labels):
 		f.writeSamples(data)
 		f.close()
 	print(f"Saved EDF file: {filename}")
+<<<<<<<< HEAD:.ipynb_checkpoints/extract_data-checkpoint.py
   
 def make_edf_file(d,highpass_eeg = True, emg_highpass = 20,
 				  new_fs=250,chunk_size_hours = 24,check_emg_artifacts=False):
+========
+ 
+def get_phys_fs(f):
+    hs = scipy.io.loadmat(f,squeeze_me=True)[os.path.split(f)[1][:-4]]['UserData'].item()['headerString'].item()
+    return int(hs[hs.find('inputRate=')+10:].split('\r')[0])
+ 
+def make_edf_file(d,eeg_highpass = 1, emg_highpass = 20,
+				  new_fs=250,chunk_size_hours = 24,check_emg_artifacts=False,
+      				choose_savedir = False, force_new_eeg = False):
+>>>>>>>> ef4bb470eebac275a66731355c21f4d25b3ad57c:neuroscience_sleep_scoring/extract_data.py
 	'''
 	This function will take the EEG and EMG data and save it to an EDF file.
 	d can also be a dictionary:
@@ -293,7 +324,7 @@ def make_edf_file(d,highpass_eeg = True, emg_highpass = 20,
 		eeg = np.concatenate([scipy.io.loadmat(f)[os.path.split(f)[1][:-4]][0][0][0][0] for f in files])
 		fs = d['fs']
 		nyq = 0.5*fs
-		if highpass_eeg:
+		if highpass is not None:
 			b,a = signal.butter(3, highpass,fs=fs, btype = 'highpass',output='ba')
 			eeg = signal.filtfilt(b,a,eeg)
 		print('saving numpy file: %s'%savename)
@@ -302,8 +333,9 @@ def make_edf_file(d,highpass_eeg = True, emg_highpass = 20,
 		
 	fs = d['fs']
 	animal= d['basename']
-	saved_edf_file_name = animal + f'_eegemg_%dHz_%dchunk_%d.edf'
+	saved_edf_file_name = animal + f'_eegemg_hp%s_%dHz_%dchunk_%d.edf'
 	datadir = d['rawdat_dir']
+<<<<<<<< HEAD:.ipynb_checkpoints/extract_data-checkpoint.py
 	savedir = os.path.join(datadir, animal+'_edffiles')
 	eeg1_save = os.path.join(savedir,animal+'_AD0_full_highpass%s.npy'%highpass_eeg)
 	eeg2_save = os.path.join(savedir,animal+'_AD2_full_highpass%s.npy'%highpass_eeg)
@@ -324,28 +356,67 @@ def make_edf_file(d,highpass_eeg = True, emg_highpass = 20,
 		emg = make_numpy_files(os.path.join(datadir,'AD3*.mat'),emg_save,emg_highpass)
 	else:
 		emg = np.load(emg_save)
+========
+	if not choose_savedir:
+		savedir = datadir + os.sep+ animal + '_edffiles' + os.sep
+	else:
+		savedir = d['savedir']
+	eeg1_save = savedir + animal+'_AD0_full_highpass%s.npy'%eeg_highpass
+	eeg2_save = savedir + animal+'_AD2_full_highpass%s.npy'%eeg_highpass
+	emg_save = savedir + animal+'_AD3_full_highpass%d.npy'%emg_highpass
+	os.makedirs(savedir, exist_ok = True)
+	#
+	if not os.path.exists(eeg1_save) or force_new_eeg:
+		eeg1 = make_numpy_files(os.path.join(datadir,'AD0*.mat'),eeg1_save,eeg_highpass)
+	else:
+		eeg1 = np.load(eeg1_save)
+	#	
+	if not os.path.exists(eeg2_save) or force_new_eeg:
+		eeg2 = make_numpy_files(os.path.join(datadir,'AD2*.mat'),eeg2_save,eeg_highpass)
+	else:
+		eeg2 = np.load(eeg2_save)
+	#	
+	if not os.path.exists(emg_save) or force_new_eeg:
+		emg = make_numpy_files(os.path.join(datadir,'AD3*.mat'),emg_save,emg_highpass)
+	else:
+		emg = np.load(emg_save)
+  
+>>>>>>>> ef4bb470eebac275a66731355c21f4d25b3ad57c:neuroscience_sleep_scoring/extract_data.py
 	if check_emg_artifacts:
 		thresh = 5.5*np.std(emg) + np.mean(emg)
 		clipped_indxs = emg > thresh
 		emg[clipped_indxs] = thresh
 		print('Clipped EMG at %d spots'%sum(clipped_indxs))
+<<<<<<<< HEAD:.ipynb_checkpoints/extract_data-checkpoint.py
 		
 	eeg_emg_data = np.column_stack((eeg1,eeg2,emg)).squeeze().T
+========
+  
+	mindim = min(eeg1.shape[0], eeg2.shape[0], emg.shape[0])
+	print('EEG1 shape: %s, EEG2 shape: %s, EMG shape: %s'%(eeg1.shape, eeg2.shape, emg.shape))
+	eeg_emg_data = np.column_stack((eeg1[:mindim],eeg2[:mindim],emg[:mindim])).squeeze().T
+>>>>>>>> ef4bb470eebac275a66731355c21f4d25b3ad57c:neuroscience_sleep_scoring/extract_data.py
 	del eeg1,eeg2,emg
+		
 	sample_rate = new_fs
 	if new_fs != fs:
 		up = int(new_fs/np.gcd(new_fs,fs))
 		down = int(fs/np.gcd(new_fs,fs))
 		eeg_emg_data = signal.resample_poly(eeg_emg_data,up,down,axis=1)
 		
-	days = int(eeg_emg_data.shape[1]/(sample_rate*3600*chunk_size_hours))
+	days = int(eeg_emg_data.shape[1]/(sample_rate*3600*chunk_size_hours)) + 1
+	print('Total number of days: %d'%days)
 
 	for d in range(days):
-		filename = saved_edf_file_name % (sample_rate,chunk_size_hours,d)
+		filename = saved_edf_file_name % (eeg_highpass,sample_rate,chunk_size_hours,d)
 		print(filename)
 		rec_end = sample_rate*3600*chunk_size_hours*(d+1) if sample_rate*3600*chunk_size_hours*(d+1) <= eeg_emg_data.shape[1] else eeg_emg_data.shape[1]
 		save_to_edf(eeg_emg_data[:,sample_rate*3600*chunk_size_hours*d:rec_end], 
 				savedir + os.sep + filename, 
+<<<<<<<< HEAD:.ipynb_checkpoints/extract_data-checkpoint.py
+========
+				savedir + os.sep + filename, 
+>>>>>>>> ef4bb470eebac275a66731355c21f4d25b3ad57c:neuroscience_sleep_scoring/extract_data.py
 				sample_rate, 
 				['EEG_AD0', 'EEG_AD2', 'EMG_filt'])  # Save to EDF file
 
@@ -370,7 +441,11 @@ if __name__ == "__main__":
 		choosing_acquisition(args[1])
 		downsample_filter(args[1])
 		get_normalizing_value(args[1])
+<<<<<<<< HEAD:.ipynb_checkpoints/extract_data-checkpoint.py
 		make_edf_file(d,highpass_eeg = True, emg_highpass = 20,
+========
+		make_edf_file(d,eeg_highpass = 1, emg_highpass = 20,
+>>>>>>>> ef4bb470eebac275a66731355c21f4d25b3ad57c:neuroscience_sleep_scoring/extract_data.py
                 new_fs=250,chunk_size_hours = 24,check_emg_artifacts=True)
 		if d['movement']:
 			combine_bonsai_data(args[1], d)

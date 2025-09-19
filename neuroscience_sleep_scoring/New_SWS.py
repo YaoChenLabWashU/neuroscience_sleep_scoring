@@ -225,8 +225,8 @@ def start_swscoring(d):
 
 	print('Loading EEG and EMG....')
 	downsampEEG = np.load(os.path.join(d['savedir'],'downsampEEG_Acq'+str(a)+'.npy'))
-	downsampEMG = np.load(os.path.join(d['savedir'],'downsampEMG_Acq'+str(a)+'.npy'))
-
+	if d['emg']:
+		downsampEMG = np.load(os.path.join(d['savedir'],'downsampEMG_Acq'+str(a)+'.npy'))
 	acq_len = np.size(downsampEEG)/d['fsd'] # fs: sampling rate, fsd: downsampled sampling rate
 	hour_segs = math.ceil(acq_len/3600) # acq_len in seconds, convert to hours
 	print('This acquisition has ' +str(hour_segs)+ ' segments.')
