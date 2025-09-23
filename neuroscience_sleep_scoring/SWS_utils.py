@@ -335,20 +335,22 @@ def update_sleep_df(model_dir, mod_name, df_additions):
     return Sleep_Model
 
 def build_joblib_name(d):
+    jobname = 'EEG'
+    if len(d['EEG channel']) == 2:
+        jobname = jobname + '_2chan'
+    elif len(d['EEG channel']) == 1:
+        jobname = jobname + '_1chan_chan'+str(d['EEG channel'][0])
     if d['emg']:
-        jobname = d['mod_name'] + '_EMG'
+        jobname = jobname + '_EMG'
         print("EMG flag on")
     else:
-        jobname = d['mod_name'] + '_noEMG'
+        jobname = jobname + '_noEMG'
         print('Just so you know...this model has no EMG')
     if d['movement']:
         jobname = jobname + '_movement'
     else:
-        jobname = jobname + '_no_movement'
-    if len(d['EEG channel']) == 2:
-        jobname = jobname + '_2chan'
+        jobname = jobname + '_nomovement'
     jobname = jobname + '.joblib'
-
     return jobname
 
 def get_xfeatures(FeatureDict, movement_flag = 1, emg_flag = 1):
