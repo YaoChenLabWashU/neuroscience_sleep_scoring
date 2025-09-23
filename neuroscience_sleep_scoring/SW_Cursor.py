@@ -87,8 +87,8 @@ class Cursor(object):
             self.set_cross_hair_visible(True)
             x, y = event.xdata, event.ydata
             # update the line positions
-            self.horizontal_line.set_ydata(y)
-            self.vertical_line.set_xdata(x)
+            self.horizontal_line.set_ydata([y,y])
+            self.vertical_line.set_xdata([x,x])
             self.text.set_text('x=%1.2f, y=%1.2f' % (x, y))
             self.ax2.figure.canvas.draw()
 

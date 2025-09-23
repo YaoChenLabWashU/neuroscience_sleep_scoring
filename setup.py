@@ -16,7 +16,10 @@ setup(
         "pandas",
         "natsort",
         "opencv-python",
-        "pyedflib"
+        "pyedflib",
+	    "scikit-learn",
+	    "seaborn",
+        "audioop-lts"
     ],
     classifiers=[
         "Programming Language :: Python :: 3",
