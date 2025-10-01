@@ -17,9 +17,8 @@ setup(
         "natsort",
         "opencv-python",
         "pyedflib",
-	    "scikit-learn",
-	    "seaborn",
-        "audioop-lts"
+	"scikit-learn",
+	"seaborn"
     ],
     classifiers=[
         "Programming Language :: Python :: 3",
