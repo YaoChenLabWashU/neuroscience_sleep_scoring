@@ -434,8 +434,10 @@ if __name__ == "__main__":
 		choosing_acquisition(args[1])
 		downsample_filter(args[1])
 		get_normalizing_value(args[1])
-		make_edf_file(d,eeg_highpass = 1, emg_highpass = 20,
-                new_fs=250,chunk_size_hours = 24,check_emg_artifacts=True)
+		edf_flag = input('Do you want to make an edf file right now? (y/n)') == 'y'
+		if edf_flag:
+			make_edf_file(d,eeg_highpass = 1, emg_highpass = 20,
+	                new_fs=250,chunk_size_hours = 24,check_emg_artifacts=True)
 		if d['movement']:
 			combine_bonsai_data(args[1], d)
 			plt.close('all')
