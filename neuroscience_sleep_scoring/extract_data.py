@@ -66,7 +66,7 @@ def choosing_acquisition(filename_sw):
 			else:
 				print('Invalid input. Skipping this acquisition.')
 	elif add_all == 'length':
-		min_length = int(input('What is the minimum length (in minutes) of acquisition you want to include? ').strip())
+		min_length = float(input('What is the minimum length (in seconds) of acquisition you want to include? ').strip())
 		for ii in poss_files:
 			print(ii)
 			try:
@@ -77,8 +77,8 @@ def choosing_acquisition(filename_sw):
 				continue
 			eeg = scipy.io.loadmat(ii)[ii[0:idx2]][0][0][0][0]
 			acq_len = np.size(eeg) / fs
-			print('This acquisition is ' + str(round(acq_len / 60, 1)) + ' minutes')
-			if acq_len/60 >= min_length:
+			print('This acquisition is ' + str(round(acq_len , 1)) + ' seconds')
+			if acq_len >= min_length:
 				acq.append(int(ii[idx1 + 1:idx2]))
 				print('Adding this acquisition.')
 			else:
