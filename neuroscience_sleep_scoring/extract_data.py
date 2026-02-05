@@ -1,4 +1,5 @@
 from tabnanny import check
+from matplotlib.pylab import datetime64
 import numpy as np
 import glob
 import json
@@ -35,7 +36,7 @@ def choosing_acquisition(filename_sw):
 	poss_files = glob.glob('AD'+str(EEG_chan[0])+'*.mat')
 	acq = []
 	# Ask the user if they want to add all acquisitions or select individually
-	add_all = input("Do you want to add all acquisitions? (y/n/length): ").strip().lower()
+	add_all = input("Do you want to add all acquisitions? (y/n/length/range): ").strip().lower()
 	if add_all == 'y':
 		for ii in poss_files:
 			try:
@@ -81,6 +82,23 @@ def choosing_acquisition(filename_sw):
 			if acq_len >= min_length:
 				acq.append(int(ii[idx1 + 1:idx2]))
 				print('Adding this acquisition.')
+			else:
+				print('Not adding this acquisition.')
+	elif add_all == 'range':
+		start_acq = int(input('What acquisition do you wish to start at?').strip())
+		end_acq = int(input('What acquisition do you wish to end at?').strip())
+		for ii in poss_files:
+			print(ii)
+			try:
+				idx1 = ii.find('_')
+				idx2 = ii.find('.mat')
+				acq = int(ii[idx1 + 1:idx2])
+			except ValueError:
+				continue
+			print(f'Current acquisition: {acq}')
+			if acq >= start_acq and acq <= end_acq:
+				acq.append(int(ii[idx1 + 1:idx2]))
+				print('\tAdding this acquisition.')
 			else:
 				print('Not adding this acquisition.')
 
@@ -145,14 +163,24 @@ def downsample_filter(filename_sw, EEG_channels = ['0','2']):
 			Wn = [filt_low/nyq,filt_high/nyq] # Cutoff frequencies
 			f_eeg = EEG_files[fil]
 			f_emg = EMG_files[fil]
-			eeg = scipy.io.loadmat(f_eeg)['AD'+EEG_chan+'_'+str(acq[fil])]
+			try:
+				eeg = scipy.io.loadmat(f_eeg)['AD'+EEG_chan+'_'+str(acq[fil])]
+			except KeyError:
+				print(f'KeyError: Trying alternate key for file {f_eeg}')
+				eeg = scipy.io.loadmat(f_eeg)[f'AD{EEG_chan}']
+				print(f'Loaded successfully with alternate key, saved with AD{EEG_chan}')
 			eeg = eeg[0][0][0][0]
 			B, A = signal.butter(N, Wn, btype='bandpass',output='ba')
 			eegfilt = signal.filtfilt(B,A, eeg)
 			acq_len = np.size(eegfilt)/fs
 			new_len = acq_len*fsd
 			if emg_flag == 1:
-				emg = scipy.io.loadmat(f_emg)['AD'+EMG_chan+'_'+str(acq[fil])]
+				try:
+					emg = scipy.io.loadmat(f_emg)['AD'+EMG_chan+'_'+str(acq[fil])]
+				except KeyError:
+					print(f'KeyError: Trying alternate key for file {f_emg}')
+					emg = scipy.io.loadmat(f_emg)[f'AD{EMG_chan}']
+					print(f'Loaded successfully with alternate key, it was saved with AD{EMG_chan} (memory saving method)')
 				emg = emg[0][0][0][0]
 				Wn = [10/nyq] # Cutoff frequencies
 				B, A = signal.butter(N, Wn, btype='highpass',output='ba')
@@ -189,18 +217,18 @@ def downsample_filter(filename_sw, EEG_channels = ['0','2']):
 					np.save(os.path.join(savedir, 'downsampEMG_Acq'+str(a) + '_hr' + str(h)+ '.npy'), this_emg)
 
 def combine_bonsai_data(filename_sw, d):
-	videos = glob.glob(os.path.join(d['video_dir'], '*.mp4'))
+	videos = [v for v in glob.glob(os.path.join(d['video_dir'], '*.mp4')) if '_labeled' not in v]
 	if len(videos) == 0:
-		videos = glob.glob(os.path.join(d['video_dir'], '*.avi'))
+		videos = [v for v in glob.glob(os.path.join(d['video_dir'], '*.avi')) if '_labeled' not in v]
 	if len(videos) == 0:
 		print('No videos found! Please check directory')
 		sys.exit()
 	videos = SWS_utils.sort_files(videos, d['basename'], d['csv_dir'])
 
-	timestamp_files = glob.glob(os.path.join(d['csv_dir'], '*imestamp*.csv'))
+	timestamp_files = glob.glob(os.path.join(d['csv_dir'], '*imestamp*'))
 	timestamp_files = SWS_utils.sort_files(timestamp_files, d['basename'], d['csv_dir'])
 	all_ts_df  = pd.DataFrame(columns = ['Timestamps', 'Filename'])
-	
+	print('timestamp_files:',timestamp_files)
 	if d['movement']:
 		if d['DLC']:
 			all_move_df = pd.DataFrame(columns = ['Timestamps', 'X','Y','Likelihood','Filename'])
@@ -213,11 +241,19 @@ def combine_bonsai_data(filename_sw, d):
 			print(timestamp_files, sep="\n")
 			print(movement_files, sep="\n")
 			sys.exit()
-
 	for i in range(len(timestamp_files)):
-		timestamp_df = SWS_utils.timestamp_extracting(timestamp_files[i])
+		if not d['rpi']:
+			timestamp_df = SWS_utils.timestamp_extracting(timestamp_files[i])
+		else: 
+			timestamp_df = pd.read_csv(timestamp_files[i], header=None) 
+			timestamp_df.columns = ['Timestamps']
+			timestamp_df['Filename'] = timestamp_files[i]
+			if timestamp_df['Timestamps'].dtype != datetime64:
+				timestamp_df['Timestamps'] = pd.to_datetime(timestamp_df['Timestamps'],format = '%Y-%m-%dT%H:%M:%S.%f',exact=False)
+   
 		all_ts_df  = pd.concat([all_ts_df, timestamp_df])
 		if d['movement']:
+			print(movement_files[i])
 			movement_df = SWS_utils.movement_extracting(movement_files[i], d)
 			bad_frames, = np.where(movement_df['Likelihood'] < 0.8)
 			perc_bad = np.size(bad_frames)/len(movement_df.index)			
@@ -326,8 +362,10 @@ def save_to_edf(data, filename, sample_rate,channel_labels):
 		f.close()
 	print(f"Saved EDF file: {filename}")
 
-def get_phys_fs(f):
-    hs = scipy.io.loadmat(f,squeeze_me=True)[os.path.split(f)[1][:-4]]['UserData'].item()['headerString'].item()
+def get_phys_fs(f, variable_name=None):
+    if variable_name is None:
+        variable_name = os.path.split(f)[1][:-4]
+    hs = scipy.io.loadmat(f,squeeze_me=True)[variable_name]['UserData'].item()['headerString'].item()
     return int(hs[hs.find('inputRate=')+10:].split('\r')[0])
  
 def make_edf_file(d,eeg_highpass = 1, emg_highpass = 20,
@@ -341,12 +379,16 @@ def make_edf_file(d,eeg_highpass = 1, emg_highpass = 20,
 		'rawdat_dir': '/path/to/rawdata',
 		'fs': 2000}
 	'''
-	def make_numpy_files(fileglob,savename,highpass):
+	def make_numpy_files(fileglob,savename,highpass,varname = None):
 		files = glob.glob(fileglob)
 		files = [f for f in natsort.natsorted(files) if 'avg' not in f]
 		
 		print('loading files')
-		eeg = np.concatenate([scipy.io.loadmat(f)[os.path.split(f)[1][:-4]][0][0][0][0] for f in files])
+		if varname is None:
+			eeg = np.concatenate([scipy.io.loadmat(f)[os.path.split(f)[1][:-4]][0][0][0][0] for f in files])
+		else:
+			eeg = np.concatenate([scipy.io.loadmat(f)[varname][0][0][0][0] for f in files])
+			print(f'Loaded successfully with alternate key, saved with memory saving method')
 		fs = d['fs']
 		nyq = 0.5*fs
 		if highpass is not None:
@@ -370,17 +412,17 @@ def make_edf_file(d,eeg_highpass = 1, emg_highpass = 20,
 	os.makedirs(savedir, exist_ok = True)
 	#
 	if not os.path.exists(eeg1_save) or force_new_eeg:
-		eeg1 = make_numpy_files(os.path.join(datadir,'AD0*.mat'),eeg1_save,eeg_highpass)
+		eeg1 = make_numpy_files(os.path.join(datadir,'AD0*.mat'),eeg1_save,eeg_highpass,varname = 'AD0')
 	else:
 		eeg1 = np.load(eeg1_save)
 	#	
 	if not os.path.exists(eeg2_save) or force_new_eeg:
-		eeg2 = make_numpy_files(os.path.join(datadir,'AD2*.mat'),eeg2_save,eeg_highpass)
+		eeg2 = make_numpy_files(os.path.join(datadir,'AD2*.mat'),eeg2_save,eeg_highpass,varname = 'AD2')
 	else:
 		eeg2 = np.load(eeg2_save)
 	#	
 	if not os.path.exists(emg_save) or force_new_eeg:
-		emg = make_numpy_files(os.path.join(datadir,'AD3*.mat'),emg_save,emg_highpass)
+		emg = make_numpy_files(os.path.join(datadir,'AD3*.mat'),emg_save,emg_highpass, varname = 'AD3')
 	else:
 		emg = np.load(emg_save)
   
@@ -432,15 +474,19 @@ if __name__ == "__main__":
 		with open(args[1], 'r') as f:
 				d = json.load(f)
 		choosing_acquisition(args[1])
-		downsample_filter(args[1])
-		get_normalizing_value(args[1])
+		phys_flag = input('Do you want to analyze physiology data right now? (y/n)') == 'y'
+		if phys_flag:
+			downsample_filter(args[1])
+			get_normalizing_value(args[1])
 		edf_flag = input('Do you want to make an edf file right now? (y/n)') == 'y'
 		if edf_flag:
 			make_edf_file(d,eeg_highpass = 1, emg_highpass = 20,
 	                new_fs=250,chunk_size_hours = 24,check_emg_artifacts=True)
-		if d['movement']:
+   
+		if d['movement'] | d['vid']:
 			combine_bonsai_data(args[1], d)
 			plt.close('all')
-			velocity_curve = input('Do you want to make the full velocity array (y/n)?')
-			if velocity_curve == 'y':
-				make_full_velocity_array(d['savedir'])
+			if d['movement']:
+				velocity_curve = input('Do you want to make the full velocity array (y/n)?')
+				if velocity_curve == 'y':
+					make_full_velocity_array(d['savedir'])

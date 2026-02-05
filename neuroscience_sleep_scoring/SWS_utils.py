@@ -1,6 +1,6 @@
 import os
 import numpy as np
-import sys
+import sys, re
 from scipy.integrate import simpson as simps
 from scipy import signal, io
 import matplotlib.pyplot as plt
@@ -27,6 +27,9 @@ import seaborn as sns
 import shutil
 import matplotlib.colors as mcolors
 import PKA_Sleep as PKA
+
+# Global dictionary to store video window properties
+_video_window_props = {'x': None, 'y': None, 'width': None, 'height': None}
 
 def generate_signal(downsamp_signal, epochlen, fs): # fs = fsd here
     # mean of 4 seconds
@@ -411,6 +414,18 @@ def pull_up_movie(d, cap, start, end, vid_file, epochlen, this_timestamp):
         print('No video availabile during this time.')
         return
     score_win = np.arange(score_win_idx1, int(score_win_idx2))
+    
+    # Create window
+    cv2.namedWindow('Frame', cv2.WINDOW_NORMAL)
+    
+    # Restore previous window position and size if available
+    if _video_window_props['width'] is not None and _video_window_props['height'] is not None:
+        cv2.resizeWindow('Frame', _video_window_props['width'], _video_window_props['height'])
+    else: 
+        cv2.resizeWindow('Frame', 640, 480)  # Default size
+    if _video_window_props['x'] is not None and _video_window_props['y'] is not None:
+        cv2.moveWindow('Frame', _video_window_props['x'], _video_window_props['y'])
+    
     for f in np.arange(start, end+200):
         cap[v].set(1, f)
         ret, frame = cap[v].read()
@@ -421,6 +436,19 @@ def pull_up_movie(d, cap, start, end, vid_file, epochlen, this_timestamp):
             key = cv2.waitKey(1) & 0xFF
             if key == ord('v'):
                 break
+    
+    # Save window position and size before closing
+    try:
+        rect = cv2.getWindowImageRect('Frame')
+        print('Window properties saved: ', rect)
+        _video_window_props['x'] = rect[0]
+        _video_window_props['y'] = rect[1]
+        _video_window_props['width'] = rect[2]
+        _video_window_props['height'] = rect[3]
+    except:
+        # If window properties can't be retrieved, keep previous values
+        pass
+    
     cv2.destroyAllWindows()
 
     #Creates line objects for the fine graph that plots data over 12s intervals
@@ -680,7 +708,8 @@ def initialize_vid_and_move(d, a, acq_start, acq_len):
                 t, header = None).iloc[0][0][:-7], '%Y-%m-%dT%H:%M:%S.%f') for t in timestamp_list]
             acq_idx, = np.where([(acq_start > first_ts[ii]) & 
                 (acq_start < first_ts[ii+1]) for ii in range(len(first_ts)-1)])
-            this_video = video_list[acq_idx[0]]
+            print('HERE',len(first_ts)-1,first_ts,acq_start, acq_idx)
+            this_video = video_list[acq_idx[0]] if acq_idx.size > 0 else video_list[0]
     else:
         this_video = None
         print('no video available')
@@ -995,6 +1024,8 @@ def get_videofn_from_csv(d, csv_filename):
     num = csv_filename[str_idx1:str_idx2]
     fn = os.path.split(csv_filename)[1]
     v = os.path.join(d['video_dir'], d['basename']+num+'.mp4')
+    if not os.path.exists(v):
+        v = glob.glob(os.path.join(d['video_dir'], d['basename'] + f'*[!0-9]{num}.mp4'))[0]
     return v
 def define_microarousals(sleep_states, epoch_len):
     wake_idx = PKA.find_continuous(sleep_states, [1,4])
@@ -1027,25 +1058,40 @@ def sort_timestamp_files(timestamp_dir):
     file_labels = []
     for t in timestamp_list:
         idx1 = t.find('timestamp')+9
-        idx2 = t.find('.csv')
+        idx2 = t.find('.csv') if t.find('.csv') != -1 else None
         file_labels.append(int(t[idx1:idx2]))
     sorted_file_labels = np.asarray(file_labels)[sorting_idx]
 
     return sorted_file_labels
 
 def sort_files(file_list, basename, timestamp_dir):
+    print(file_list)
+    print(basename)
+    print(timestamp_dir)
     sorted_file_labels = sort_timestamp_files(timestamp_dir)
     fn_only = [os.path.splitext(os.path.basename(l))[0] for l in file_list]
     ext = os.path.splitext(file_list[0])[1]
     if ext == '.mp4':
-        file_nums = [int(i[i.find(basename)+len(basename):]) for i in fn_only]
+        try:
+            file_nums = [int(i[i.find(basename)+len(basename):].strip('vid')) for i in fn_only]
+        except:
+            file_nums = [int(re.findall(r'(?<=[timestamp,motion,vid])\d+',i)[0]) for i in fn_only]
     if ext == '.csv':
-        if 'motion' in file_list[0]:
-            file_nums = [int(i[i.find('motion')+len('motion'):]) for i in fn_only]
-        elif 'timestamp' in file_list[0]:
-            file_nums = [int(i[i.find('timestamp')+len('timestamp'):]) for i in fn_only]
-        else:
+        try:
+            if 'motion' in file_list[0]:
+                file_nums = [int(i[i.find('motion')+len('motion'):]) for i in fn_only]
+            elif 'timestamp' in file_list[0]:
+                file_nums = [int(i[i.find('timestamp')+len('timestamp'):]) for i in fn_only]
+            else:
+                print('I do not know what type of files these are....')
+        except:
+            file_nums = [int(re.findall(r'(?<=[timestamp,motion,vid])\d+',i)[0]) for i in fn_only]
+    else:
+        try:
+            file_nums = [int(re.findall(r'(?<=[timestamp,motion,vid])\d+',i)[0]) for i in fn_only]
+        except:
             print('I do not know what type of files these are....')
+
     if len(file_nums) != len(sorted_file_labels):
         print('You have timestamp files for the following numbers but they do not appear in the given list:')
         print([n for n in sorted_file_labels if n not in file_nums], sep="\n")

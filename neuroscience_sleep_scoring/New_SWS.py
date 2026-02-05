@@ -66,10 +66,8 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 	plt.ion()
 	i = 0
 	this_bin = 1*d['fsd']*d['epochlen'] #number of EEG data points in one epoch
-	eeg_AD0 = np.load(os.path.join(d['savedir'],'AD0_downsampled', 
-		'downsampEEG_Acq'+a+'_hr'+str(h)+'.npy'))
-	eeg_AD2 = np.load(os.path.join(d['savedir'],'AD2_downsampled', 
-		'downsampEEG_Acq'+a+'_hr'+str(h)+'.npy'))
+	eeg_AD0 = np.load(os.path.join(d['savedir'],'AD0_downsampled', 'downsampEEG_Acq'+a+'_hr'+str(h)+'.npy'))
+	eeg_AD2 = np.load(os.path.join(d['savedir'],'AD2_downsampled', 'downsampEEG_Acq'+a+'_hr'+str(h)+'.npy'))
 
 	EEG_t = np.arange(np.size(eeg_AD0))/d['fsd'] #time array for EEG data
 	start_trace = int(i-(4*d['epochlen'])) #timepoint in seconds that the plotted trace will start
@@ -123,13 +121,62 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 	plt.ion()	
 	State = deepcopy(State_input)
 	#init cursor and it's libraries from SW_Cursor.py
-	cursor = Cursor(ax1, ax2, ax5)	
+	# Pass all fig1 axes for full-height crosshair
+	all_fig1_axes = [ax1, ax2, ax3, ax4, ax5]
+	cursor = Cursor(ax1, ax2, ax5, all_axes=all_fig1_axes, epochlen=d['epochlen'])
+	
+	# Set up video data for preview mode
+	if d['vid']:
+		cursor.video_cap = cap
+		cursor.video_timestamp = this_timestamp
+		cursor.video_d = d
+	
+	# Set up magnify callback
+	def magnify_update(time_sec):
+		"""Update fig2 to show ±30s around cursor position."""
+		half_window = 90  # seconds
+		mag_start = time_sec - half_window
+		mag_end = time_sec + half_window
+		
+		# Update zoomed traces (ax8, ax9, ax10)
+		start_idx_ThD = np.where(long_ThD_t >= mag_start)[0]
+		end_idx_ThD = np.where(long_ThD_t <= mag_end)[0]
+		if len(start_idx_ThD) > 0 and len(end_idx_ThD) > 0:
+			s_idx, e_idx = start_idx_ThD[0], end_idx_ThD[-1]
+			line1.set_xdata(long_ThD_t[s_idx:e_idx+1])
+			line1.set_ydata(long_ThD[s_idx:e_idx+1])
+			ax8.set_xlim(mag_start, mag_end)
+		
+		if long_emg is not None:
+			start_idx_emg = np.where(long_emg_t >= mag_start)[0]
+			end_idx_emg = np.where(long_emg_t <= mag_end)[0]
+			if len(start_idx_emg) > 0 and len(end_idx_emg) > 0:
+				s_idx, e_idx = start_idx_emg[0], end_idx_emg[-1]
+				line2.set_xdata(long_emg_t[s_idx:e_idx+1])
+				line2.set_ydata(long_emg[s_idx:e_idx+1])
+				ax10.set_xlim(mag_start, mag_end)
+		
+		if long_v is not None:
+			v_idx = np.where(np.logical_and(long_v_t >= mag_start, long_v_t <= mag_end))[0]
+			if len(v_idx) > 0:
+				line3.set_xdata(long_v_t[v_idx])
+				line3.set_ydata(long_v[v_idx])
+				ax9.set_xlim(mag_start, mag_end)
+		
+		# Update additional spectrograms xlim
+		ax6.set_xlim([time_sec - half_window, time_sec + half_window])
+		ax7.set_xlim([time_sec - half_window, time_sec + half_window])
+		line4.set_xdata([time_sec, time_sec])
+		line5.set_xdata([time_sec, time_sec])
+		
+		fig2.canvas.draw_idle()
+	
+	cursor.magnify_callback = magnify_update
 
 	cID = fig1.canvas.mpl_connect('button_press_event', cursor.on_click)
 
-
 	cID4 = fig1.canvas.mpl_connect('motion_notify_event', cursor.on_mouse_move)
-	cID4 = fig1.canvas.mpl_connect('motion_notify_event', cursor.on_mouse_move)
+	fig1.canvas.mpl_connect('resize_event', cursor.on_resize)
 
 	#Ok so I think that the quotes is the specific event to trigger and the second arg is the function to run when that happens?
 	cID2 = fig1.canvas.mpl_connect('axes_enter_event', cursor.in_axes)
@@ -168,6 +215,8 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 
 
 			plt.show()
+			# Invalidate blitting background so new marker positions are captured
+			cursor.background = None
 			cursor.replot = False
 
 
@@ -180,13 +229,48 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 			print(f'changing bins: {start_bin} to {end_bin}')
 			SWS_utils.clear_bins(bins, ax2)
 			fig2.canvas.draw()
-			# new_state = int(input('What state should these be?: '))
-			try:
-				new_state = int(input('What state should these be?: '))
-			except:
-				new_state = int(input('What state should these be?: '))
+			def choose_state_popup(popup_xy=None):
+				try:
+					import tkinter as tk
+					from tkinter import font as tkfont
+				except Exception:
+					return None
+				result = {'val': None}
+				root = tk.Tk()
+				root.title('Select State')
+				root.resizable(False, False)
+				root.attributes('-topmost', True)
+				bold_font = tkfont.Font(weight='bold')
+				label = tk.Label(root, text='Choose state', font=bold_font)
+				label.pack(padx=8, pady=6)
+				def set_val(v):
+					result['val'] = v
+					root.destroy()
+				btn1 = tk.Button(root, text='1: Wake', width=16, bg='green', fg='white', font=bold_font,
+					command=lambda: set_val(1))
+				btn2 = tk.Button(root, text='2: NREM', width=16, bg='blue', fg='white', font=bold_font,
+					command=lambda: set_val(2))
+				btn3 = tk.Button(root, text='3: REM', width=16, bg='red', fg='white', font=bold_font,
+					command=lambda: set_val(3))
+				btn1.pack(padx=8, pady=4)
+				btn2.pack(padx=8, pady=4)
+				btn3.pack(padx=8, pady=6)
+				if popup_xy is not None:
+					x, y = popup_xy
+					root.geometry(f'+{int(x)+10}+{int(y)+10}')
+				root.mainloop()
+				return result['val']
+
+			new_state = choose_state_popup(cursor.popup_xy)
+			if new_state is None:
+				try:
+					new_state = int(input('What state should these be?: '))
+				except Exception:
+					new_state = int(input('What state should these be?: '))
 			SWS_utils.correct_bins(start_bin, end_bin, ax2, new_state)
 			fig2.canvas.draw()
+			# Invalidate blitting cache so updated state colors are captured
+			cursor.background = None
 			State[start_bin:end_bin] = new_state
 			if end_bin == len(State)-1:
 				State[end_bin] = new_state
@@ -257,7 +341,7 @@ def start_swscoring(d):
 		FeatureDict['animal_name'] = np.full(len(FeatureDict[list(FeatureDict.keys())[0]]), d['mouse_name'])
 
 		os.chdir(d['savedir'])
-
+		this_emg = eeg_df['EMG']
 		check = input('Do you want to check and fix existing scoring (c) or score new dataset (s)?: c/s ')
 		while check != 'c' and check != 's':
 			check = input(
@@ -269,7 +353,7 @@ def start_swscoring(d):
 				wrong, = np.where(np.isnan(State))
 				State[wrong] = 0
 				s, = np.where(State == 0)
-				this_emg = eeg_df['EMG']
+				
 				State = display_and_fix_scoring(d, a, h, this_emg, State, False, None,
 										None, this_video, acq_start, v = v, movement_df = this_motion)
 				if np.any(State == 0):
@@ -296,7 +380,7 @@ def start_swscoring(d):
 					return
 
 				# feature list
-				this_emg = eeg_df['EMG']
+				
 
 				Features = SWS_utils.prepare_feature_data(FeatureDict, d['movement'])
 
