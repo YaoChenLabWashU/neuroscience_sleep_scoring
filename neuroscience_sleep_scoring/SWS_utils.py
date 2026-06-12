@@ -57,7 +57,7 @@ def bandPower(this_eeg, fsd, freq_dict = None, minfreq = 0.5, maxfreq = 16, wind
     freq_res = freqs[1]-freqs[0]
     if freq_dict:
         for k in list(freq_dict.keys()):
-            print('Calculating ' + k + ' Band Power...')
+            # print('Calculating ' + k + ' Band Power...')
             idx_low = freq_dict[k][0]
             idx_high = freq_dict[k][1]
             power_dict[k] = simps(Pxx[np.where(np.logical_and(freqs>=idx_low,freqs<=idx_high))], 
