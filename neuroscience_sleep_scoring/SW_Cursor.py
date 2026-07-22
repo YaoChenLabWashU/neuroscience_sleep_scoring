@@ -2,17 +2,20 @@ import math
 import matplotlib.pyplot as plt
 import numpy as np
 import cv2
+import tkinter as tk
+from tkinter import font as tkfont
 
 DEBUG = False
 
 class Cursor(object):
-    def __init__(self, ax1, ax2, ax4, all_axes=None, epochlen=4):
+    def __init__(self, ax1, ax2, ax4, all_axes=None, epochlen=4, fig2_axes=None):
         self.clicked=False
         self.second_click = False
         self.ax1 = ax1
         self.ax2 = ax2
         self.ax4 = ax4
         self.all_axes = all_axes if all_axes else [ax1, ax2, ax4]
+        self.fig2_axes = fig2_axes if fig2_axes else []  # ax6-ax10
         self.movie_mode = False
         self.epochlen = epochlen
         self.bins = []
@@ -25,28 +28,56 @@ class Cursor(object):
         # Replot flags
         self.replot = False
         self.replotx = 0
+        
+        # Current position in seconds for crosshair sync
+        self.current_x_sec = 0
 
-        # Preview mode (p key) - drag to see video frames
-        self.preview_mode = False
+        # Video window with slider (p key opens)
         self.video_cap = None
         self.video_timestamp = None
         self.video_d = None
-        self.preview_window_name = 'Preview'
+        self.preview_window_name = 'Frame'
         self.preview_window_open = False
+        self._preview_visible = False  # Track whether window is currently visible
         self.last_preview_frame_idx = None
+        self._video_slider_max = 1000
+        self._video_max_time = 0
         
-        # Magnify mode (m key) - show zoomed view around cursor
+        # Magnify mode ('g' key) - show zoomed view around cursor
         self.magnify_mode = False
         self.magnify_callback = None  # Callback to update magnified view
+        self.magnify_half_window = 90  # ±seconds for magnify view (adjustable via 'v')
+        self.magnify_emg_ylim = None
+
+        # When set (by 'm' microarousal), the main loop assigns this state to the
+        # selected bin(s) and skips the state-selection popup. Cleared after use.
+        self.forced_state = None
+
+        # Cached video file reference to reduce lookup overhead
+        self._cached_video_filename = None
+        self._cached_video_cap_ref = None
+
+        # Help window reference (persistent, non-modal)
+        self._help_window = None
+
+        # Recursion guard for magnify/preview callbacks
+        self._in_magnify_callback = False
 
         # Blitting support
         self.background = None
+        self.background_fig2 = None
 
-        # Create vertical lines for ALL axes (for full-height crosshair)
+        # Create vertical lines for ALL fig1 axes (for full-height crosshair)
         self.vertical_lines = []
         for ax in self.all_axes:
             vline = ax.axvline(color='k', lw=0.8, ls='--', animated=True)
             self.vertical_lines.append(vline)
+        
+        # Create vertical lines for fig2 axes
+        self.vertical_lines_fig2 = []
+        for ax in self.fig2_axes:
+            vline = ax.axvline(color='k', lw=0.8, ls='--', animated=True)
+            self.vertical_lines_fig2.append(vline)
         
         # Horizontal line and text only in ax2
         self.horizontal_line = ax2.axhline(color='k', lw=0.8, ls='--', animated=True)
@@ -61,6 +92,14 @@ class Cursor(object):
 
         line2 = ax2.plot([0,0], [self.ylims_ax2[0], self.ylims_ax2[1]], linewidth = 0.5, color = 'k')
         ml2 = line2.pop(0)
+        
+        # Current epoch marker line in ax2 (moved with 'c' key)
+        # ANIMATED so it can be blitted for speed
+        self.current_epoch_t = 0
+        self.epoch_marker = ax2.axvline(0, linewidth=1.5, color='darkblue', animated=True)
+
+        # Separate recursion guard for video slider (don't reuse _in_magnify_callback)
+        self._in_slider_callback = False
 
         self.movement_x_axis = np.linspace(0,60,900)
         self.spect_x_axis = np.linspace(199,1442, 900)
@@ -75,6 +114,10 @@ class Cursor(object):
         """Invalidate blitting background on window resize."""
         self.background = None
 
+    def on_resize_fig2(self, event):
+        """Invalidate blitting background on fig2 resize."""
+        self.background_fig2 = None
+
     def on_move(self, event):
         if DEBUG: print('on move')
 
@@ -83,27 +126,66 @@ class Cursor(object):
             if DEBUG: print('DONE SCORING')
             self.DONE = True
         elif event.key == 'p':
-            self.preview_mode = not self.preview_mode
-            if self.preview_mode:
-                print('Preview mode ON - move on spectrogram to preview')
-                self._ensure_preview_window()
+            # Toggle video window visibility
+            if self.video_cap is not None:
+                self._toggle_preview_window()
             else:
-                print('Preview mode OFF')
-                if self.preview_window_open:
-                    try:
-                        cv2.destroyWindow(self.preview_window_name)
-                    except Exception:
-                        pass
-                    self.preview_window_open = False
+                print('No video available')
             self.background = None  # Invalidate to recapture
         elif event.key == 'm':
-            # Toggle magnify mode
+            # Microarousal: drop a single Wake (state 1) bin at the cursor
+            # position. forced_state tells the main loop to apply it directly
+            # and skip the state-selection popup.
+            bin_idx = int(self.current_x_sec // self.epochlen)
+            if bin_idx < 0:
+                bin_idx = 0
+            self.bins = [bin_idx, bin_idx + 1]
+            self.forced_state = 1
+            self.change_bins = True
+            self.clicked = False
+            print(f'Microarousal: Wake bin {bin_idx} (t={bin_idx*self.epochlen}s)')
+        elif event.key == 'g':
+            # Toggle magnify mode (live zoomed view that follows the cursor)
             self.magnify_mode = not self.magnify_mode
             if self.magnify_mode:
-                print('Magnify mode ON - drag cursor to see ±30s zoomed view')
+                print(f'Magnify mode ON - drag cursor to see \u00b1{self.magnify_half_window}s zoomed view')
             else:
                 print('Magnify mode OFF')
             self.background = None
+        elif event.key == 'v':
+            # Show magnify settings popup
+            self._show_magnify_settings()
+        elif event.key == 'c':
+            # Move current bin marker to cursor position
+            bin_idx = int(self.current_x_sec // self.epochlen)
+            self.epoch_marker.set_xdata([bin_idx, bin_idx])
+            self.current_epoch_t = self.current_x_sec
+            # Invalidate background so next blit recaptures with new marker position
+            self.background = None
+            if DEBUG: print(f'Moved current bin marker to bin {bin_idx}')
+        elif event.key == 'o':
+            # Play 4s video clip at current cursor position
+            if self.video_cap is not None and self.video_timestamp is not None:
+                self._play_clip_at_current_bin()
+            else:
+                print('No video available')
+        elif event.key == 'i':
+            # Show quick reference GUI (persistent, non-modal)
+            self._show_help_popup()
+        elif event.key == 'r':
+            # Cancel current bin selection
+            if self.clicked:
+                self.clicked = False
+                self.bins = []
+                print('Selection cancelled')
+        elif event.key == 'left':
+            if self.clicked and len(self.bins) == 1:
+                self.bins[0] = max(0, self.bins[0] - 1)
+                print(f'Selection start: bin {self.bins[0]}')
+        elif event.key == 'right':
+            if self.clicked and len(self.bins) == 1:
+                self.bins[0] = self.bins[0] + 1
+                print(f'Selection start: bin {self.bins[0]}')
         elif event.key in [1,2,3,4]:
             self.STATE.append(event.key)
         elif event.key == 'l':
@@ -115,6 +197,174 @@ class Cursor(object):
             self.lines[0] = line1.pop(0)
             self.lines[1] = line2.pop(0)
 
+    def _show_magnify_settings(self):
+        """Show popup to adjust magnify view parameters."""
+        try:
+            root = tk.Tk()
+            root.title('Magnify Settings')
+            root.resizable(False, False)
+            root.attributes('-topmost', True)
+            
+            bold_font = tkfont.Font(weight='bold')
+            
+            tk.Label(root, text='Magnify Window Settings', font=bold_font).pack(padx=10, pady=6)
+            
+            # Half window size slider
+            tk.Label(root, text='Time window (±seconds):').pack(padx=10, pady=2)
+            var_window = tk.IntVar(value=self.magnify_half_window)
+            scale = tk.Scale(root, from_=10, to=300, orient='horizontal', 
+                           variable=var_window, length=200)
+            scale.pack(padx=10, pady=2)
+
+            # EMG y-limits
+            tk.Label(root, text='EMG y-limits (min, max):').pack(padx=10, pady=2)
+            emg_frame = tk.Frame(root)
+            emg_frame.pack(padx=10, pady=2)
+            emg_min_var = tk.StringVar(value='' if self.magnify_emg_ylim is None else str(self.magnify_emg_ylim[0]))
+            emg_max_var = tk.StringVar(value='' if self.magnify_emg_ylim is None else str(self.magnify_emg_ylim[1]))
+            tk.Entry(emg_frame, textvariable=emg_min_var, width=8).pack(side='left', padx=4)
+            tk.Entry(emg_frame, textvariable=emg_max_var, width=8).pack(side='left', padx=4)
+            
+            def apply_settings():
+                self.magnify_half_window = var_window.get()
+                emg_min = emg_min_var.get().strip()
+                emg_max = emg_max_var.get().strip()
+                if emg_min and emg_max:
+                    try:
+                        self.magnify_emg_ylim = (float(emg_min), float(emg_max))
+                    except ValueError:
+                        self.magnify_emg_ylim = None
+                else:
+                    self.magnify_emg_ylim = None
+                print(f'Magnify window set to ±{self.magnify_half_window}s')
+                # Apply EMG ylim immediately to both fig1 and fig2 EMG axes
+                if self.magnify_emg_ylim is not None:
+                    # ax4 is the fig1 EMG axis
+                    self.ax4.set_ylim(self.magnify_emg_ylim)
+                    # fig2_axes[4] is ax10 (fig2 EMG axis) if it exists
+                    if len(self.fig2_axes) > 4:
+                        self.fig2_axes[4].set_ylim(self.magnify_emg_ylim)
+                    self.background = None
+                    self.background_fig2 = None
+                    self.ax4.figure.canvas.draw_idle()
+                    if len(self.fig2_axes) > 0:
+                        self.fig2_axes[0].figure.canvas.draw_idle()
+                root.destroy()
+            
+            tk.Button(root, text='Apply', command=apply_settings, width=12).pack(padx=10, pady=8)
+            root.mainloop()
+        except Exception as e:
+            if DEBUG: print(f'Settings popup error: {e}')
+
+    def _show_help_popup(self):
+        """Show keyboard shortcuts reference as a blocking, closeable window."""
+        try:
+            root = tk.Tk()
+            root.title('Keyboard Shortcuts')
+            root.resizable(False, False)
+            root.attributes('-topmost', True)
+
+            bold_font = tkfont.Font(weight='bold')
+
+            shortcuts = [
+                ('click x2', 'Select start/end bins, then pick state'),
+                ('m', 'Microarousal: drop a single Wake bin at cursor'),
+                ('d', 'Done scoring (save and close)'),
+                ('o', 'Play 4s video clip at cursor'),
+                ('p', 'Toggle video window visibility'),
+                ('g', 'Toggle magnify mode'),
+                ('v', 'Magnify view settings'),
+                ('c', 'Move current bin marker to cursor'),
+                ('←/→', 'Nudge selection start (after 1st click)'),
+                ('r', 'Cancel current selection'),
+                ('l', 'Toggle line marker'),
+                ('1/2/3/4', 'Set state (Wake/NREM/REM/Other)'),
+                ('i', 'Show this help'),
+            ]
+
+            tk.Label(root, text='Keyboard Shortcuts', font=bold_font).pack(padx=12, pady=8)
+
+            frame = tk.Frame(root)
+            frame.pack(padx=12, pady=4)
+            for key, desc in shortcuts:
+                row = tk.Frame(frame)
+                row.pack(fill='x', pady=1)
+                tk.Label(row, text=key, font=bold_font, width=8, anchor='e').pack(side='left')
+                tk.Label(row, text=f'  {desc}', anchor='w').pack(side='left')
+
+            def on_close():
+                root.destroy()
+
+            root.protocol('WM_DELETE_WINDOW', on_close)
+            tk.Button(root, text='Close', command=on_close, width=10).pack(pady=8)
+            root.mainloop()
+        except Exception as e:
+            if DEBUG: print(f'Help popup error: {e}')
+
+
+    def _play_clip_at_current_bin(self):
+        """Play a 4-second video clip at the current cursor position."""
+        if self.video_timestamp is None or self.video_cap is None:
+            return
+        try:
+            time_sec = self.current_x_sec
+            epochlen = self.epochlen
+            offset_times = self.video_timestamp['Offset_Time'].values
+            
+            # Find frame range for this bin's epoch window
+            clip_start = time_sec
+            clip_end = time_sec + epochlen
+            
+            start_pos = np.searchsorted(offset_times, clip_start, side='right') - 1
+            end_pos = np.searchsorted(offset_times, clip_end, side='right') - 1
+            if start_pos < 0:
+                start_pos = 0
+            if end_pos >= len(offset_times):
+                end_pos = len(offset_times) - 1
+            
+            start_frame = self.video_timestamp.index[start_pos]
+            end_frame = self.video_timestamp.index[end_pos]
+            
+            csv_filename = self.video_timestamp['Filename'][start_frame]
+            from neuroscience_sleep_scoring import SWS_utils
+            v = SWS_utils.get_videofn_from_csv(self.video_d, csv_filename)
+            if v not in self.video_cap or not self.video_cap[v].isOpened():
+                print('Cannot open video file')
+                return
+            
+            cap = self.video_cap[v]
+            
+            # Ensure preview window exists
+            if not self.preview_window_open:
+                self._ensure_preview_window()
+            elif not self._preview_visible:
+                self._show_preview_window()
+            
+            print(f'Playing clip: bin {int(time_sec//epochlen)}, t={time_sec:.1f}s to {clip_end:.1f}s')
+            for f_idx in range(start_frame, end_frame + 1):
+                cap.set(cv2.CAP_PROP_POS_FRAMES, f_idx)
+                ret, frame = cap.read()
+                if ret:
+                    # Overlay timestamp info
+                    index_vals = self.video_timestamp.index.values
+                    if f_idx in self.video_timestamp.index:
+                        t = float(self.video_timestamp.loc[f_idx, 'Offset_Time'])
+                    else:
+                        pos = np.searchsorted(index_vals, f_idx)
+                        if pos >= len(offset_times):
+                            pos = len(offset_times) - 1
+                        t = offset_times[pos]
+                    label = f"t={t:.2f}s  bin={int(t//epochlen)}  frame={f_idx}"
+                    cv2.putText(frame, label, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+                    cv2.imshow(self.preview_window_name, frame)
+                    key = cv2.waitKey(1) & 0xFF
+                    if key == ord('q') or key == 27:  # q or ESC to stop
+                        break
+            # After clip, show the last frame (static)
+            self.last_preview_frame_idx = None
+            self._show_preview_frame(time_sec)
+        except Exception as e:
+            if DEBUG: print(f'Clip playback error: {e}')
 
     def _x_for_axis(self, ax, x):
         if ax == self.ax2:
@@ -122,8 +372,14 @@ class Cursor(object):
         return x
 
     def _event_x_to_seconds(self, event):
+        # Handle fig1 axes
         if event.inaxes == self.ax2:
             return event.xdata * self.epochlen
+        if event.inaxes in self.all_axes:
+            return event.xdata
+        # Handle fig2 axes - they use seconds directly
+        if event.inaxes in self.fig2_axes:
+            return event.xdata
         return event.xdata
 
     def _set_cursor_x(self, x, y=None):
@@ -133,15 +389,66 @@ class Cursor(object):
             ax = self.all_axes[i]
             x_mapped = self._x_for_axis(ax, x)
             vline.set_xdata([x_mapped, x_mapped])
+        # Update fig2 vertical lines (fig2 uses seconds directly)
+        for vline in self.vertical_lines_fig2:
+            vline.set_xdata([x, x])
 
-    # This works, but doesn't refresh fast enough. I think this is a limit of matplotlib however and out of my control
     def set_cross_hair_visible(self, visible):
         need_redraw = self.horizontal_line.get_visible() != visible
         self.horizontal_line.set_visible(visible)
         for vline in self.vertical_lines:
             vline.set_visible(visible)
+        for vline in self.vertical_lines_fig2:
+            vline.set_visible(visible)
         self.text.set_visible(visible)
         return need_redraw
+
+    def on_mouse_move_fig2(self, event):
+        """Handle mouse movement on fig2 (detailed view). Only active in magnify mode."""
+        if not self.magnify_mode:
+            return
+        if not event.inaxes or event.inaxes not in self.fig2_axes:
+            return
+        
+        # Initialize background for blitting on first call
+        if self.background_fig2 is None and len(self.fig2_axes) > 0:
+            fig2 = self.fig2_axes[0].figure
+            fig2.canvas.draw()
+            self.background_fig2 = fig2.canvas.copy_from_bbox(fig2.bbox)
+        
+        x_sec = event.xdata
+        self.current_x_sec = x_sec
+        
+        # Update fig2 lines
+        for vline in self.vertical_lines_fig2:
+            vline.set_xdata([x_sec, x_sec])
+        
+        # Blit fig2
+        if self.background_fig2 is not None and len(self.fig2_axes) > 0:
+            fig2 = self.fig2_axes[0].figure
+            fig2.canvas.restore_region(self.background_fig2)
+            for i, vline in enumerate(self.vertical_lines_fig2):
+                self.fig2_axes[i].draw_artist(vline)
+            fig2.canvas.blit(fig2.bbox)
+        
+        # Also update fig1 crosshair
+        self._set_cursor_x(x_sec)
+        if self.background is not None:
+            self.ax2.figure.canvas.restore_region(self.background)
+            self.ax2.draw_artist(self.horizontal_line)
+            self.ax2.draw_artist(self.epoch_marker)
+            for i, vline in enumerate(self.vertical_lines):
+                self.all_axes[i].draw_artist(vline)
+            self.ax2.draw_artist(self.text)
+            self.ax2.figure.canvas.blit(self.ax2.figure.bbox)
+        
+        # Magnify mode callback - follows fast cursor on fig2
+        if self.magnify_callback is not None and not self._in_magnify_callback:
+            self._in_magnify_callback = True
+            try:
+                self.magnify_callback(x_sec)
+            finally:
+                self._in_magnify_callback = False
 
     def on_mouse_move(self, event):
         # Initialize background for blitting on first call
@@ -158,6 +465,7 @@ class Cursor(object):
             if not self.horizontal_line.get_visible():
                 self.set_cross_hair_visible(True)
             x_sec = self._event_x_to_seconds(event)
+            self.current_x_sec = x_sec  # Track current position
             y = event.ydata
             
             # Update the line positions - vertical line across all axes
@@ -166,54 +474,150 @@ class Cursor(object):
 
             self.ax2.figure.canvas.restore_region(self.background)
             self.ax2.draw_artist(self.horizontal_line)
+            self.ax2.draw_artist(self.epoch_marker)
             for i, vline in enumerate(self.vertical_lines):
                 self.all_axes[i].draw_artist(vline)
             self.ax2.draw_artist(self.text)
             self.ax2.figure.canvas.blit(self.ax2.figure.bbox)
             
-            # Preview mode: show video frame at cursor position
-            if self.preview_mode and event.inaxes == self.ax1 and self.video_cap is not None:
+            # Update fig2 lines if available
+            if len(self.fig2_axes) > 0:
+                if self.background_fig2 is None:
+                    fig2 = self.fig2_axes[0].figure
+                    fig2.canvas.draw()
+                    self.background_fig2 = fig2.canvas.copy_from_bbox(fig2.bbox)
+                fig2 = self.fig2_axes[0].figure
+                fig2.canvas.restore_region(self.background_fig2)
+                for i, vline in enumerate(self.vertical_lines_fig2):
+                    self.fig2_axes[i].draw_artist(vline)
+                fig2.canvas.blit(fig2.bbox)
+            
+            # Magnify mode: update zoomed view following fast cursor
+            if self.magnify_mode and self.magnify_callback is not None and not self._in_magnify_callback:
+                self._in_magnify_callback = True
                 try:
-                    self._show_preview_frame(x_sec)
-                except Exception:
-                    self.preview_mode = False
-                    self.background = None
-
-            # Magnify mode: update zoomed view
-            if self.magnify_mode and event.inaxes == self.ax1 and self.magnify_callback is not None:
-                self.magnify_callback(x_sec)
+                    self.magnify_callback(x_sec)
+                finally:
+                    self._in_magnify_callback = False
 
     def _show_preview_frame(self, time_sec):
-        """Show video frame at the given time in seconds."""
+        """Show video frame at the given time in seconds. Only updates if window is visible."""
         if self.video_timestamp is None or self.video_cap is None:
             return
+        if not self.preview_window_open or not self._preview_visible:
+            return
         try:
-            # Find frame index for this time
-            idx = self.video_timestamp.index[self.video_timestamp['Offset_Time'] <= time_sec]
-            if len(idx) == 0:
+            # Find frame index for this time using searchsorted for speed
+            offset_times = self.video_timestamp['Offset_Time'].values
+            pos = np.searchsorted(offset_times, time_sec, side='right') - 1
+            if pos < 0:
                 return
-            frame_idx = idx[-1]
+            frame_idx = self.video_timestamp.index[pos]
 
             if self.last_preview_frame_idx == frame_idx:
                 return
             self.last_preview_frame_idx = frame_idx
             
-            # Get video filename and read frame
-            from neuroscience_sleep_scoring import SWS_utils
-            v = SWS_utils.get_videofn_from_csv(self.video_d, self.video_timestamp['Filename'][frame_idx])
-            if v in self.video_cap and self.video_cap[v].isOpened():
-                self.video_cap[v].set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
-                ret, frame = self.video_cap[v].read()
-                if ret:
-                    self._ensure_preview_window()
-                    bin_idx = int(time_sec // self.epochlen)
-                    label = f"t={time_sec:.2f}s  bin={bin_idx}  frame={frame_idx}"
-                    cv2.putText(frame, label, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-                    cv2.imshow(self.preview_window_name, frame)
-                    cv2.waitKey(1)
-                    self._update_preview_window_props()
+            # Get video capture reference, using cache to skip repeated lookups
+            csv_filename = self.video_timestamp['Filename'][frame_idx]
+            if csv_filename != self._cached_video_filename or self._cached_video_cap_ref is None:
+                from neuroscience_sleep_scoring import SWS_utils
+                v = SWS_utils.get_videofn_from_csv(self.video_d, csv_filename)
+                if v in self.video_cap and self.video_cap[v].isOpened():
+                    self._cached_video_filename = csv_filename
+                    self._cached_video_cap_ref = self.video_cap[v]
+                else:
+                    return
+            
+            cap = self._cached_video_cap_ref
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+            ret, frame = cap.read()
+            if ret:
+                bin_idx = int(time_sec // self.epochlen)
+                label = f"t={time_sec:.2f}s  bin={bin_idx}  frame={frame_idx}"
+                cv2.putText(frame, label, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+                cv2.imshow(self.preview_window_name, frame)
+                # Update slider position (use _in_slider_callback guard to prevent recursion)
+                if self._video_max_time > 0 and self._video_slider_max > 0 and not self._in_slider_callback:
+                    self._in_slider_callback = True
+                    try:
+                        slider_val = int((time_sec / self._video_max_time) * self._video_slider_max)
+                        slider_val = max(0, min(slider_val, self._video_slider_max))
+                        cv2.setTrackbarPos('Time', self.preview_window_name, slider_val)
+                    finally:
+                        self._in_slider_callback = False
+                cv2.waitKey(1)
         except Exception as e:
             if DEBUG: print(f'Preview error: {e}')
+
+    def _on_video_slider(self, val):
+        """Callback for video slider trackbar."""
+        if self._video_max_time <= 0:
+            return
+        # Guard against recursion: _show_preview_frame calls setTrackbarPos which calls this
+        if self._in_slider_callback:
+            return
+        self._in_slider_callback = True
+        try:
+            time_sec = (val / self._video_slider_max) * self._video_max_time
+            self.current_x_sec = time_sec
+            self._set_cursor_x(time_sec)
+            self._show_preview_frame(time_sec)
+            # Update fig1 cursor via blit
+            fig = self.ax2.figure
+            if self.background is None:
+                fig.canvas.draw()
+                self.background = fig.canvas.copy_from_bbox(fig.bbox)
+            try:
+                fig.canvas.restore_region(self.background)
+                for i, vline in enumerate(self.vertical_lines):
+                    self.all_axes[i].draw_artist(vline)
+                self.ax2.draw_artist(self.horizontal_line)
+                self.ax2.draw_artist(self.epoch_marker)
+                self.ax2.draw_artist(self.text)
+                fig.canvas.blit(fig.bbox)
+            except Exception:
+                pass
+            # Trigger magnify update if in magnify mode
+            if self.magnify_mode and self.magnify_callback is not None:
+                self.magnify_callback(time_sec)
+        finally:
+            self._in_slider_callback = False
+
+    def _toggle_preview_window(self):
+        """Toggle video window visibility. Creates once, then shows/hides."""
+        if not self.preview_window_open:
+            # First time: create the window
+            self._ensure_preview_window()
+            self._show_preview_frame(self.current_x_sec)
+            print('Video window opened - use slider or arrows to navigate')
+        elif self._preview_visible:
+            # Hide the window - save geometry first
+            self._update_preview_window_props()
+            try:
+                cv2.setWindowProperty(self.preview_window_name, cv2.WND_PROP_VISIBLE, 0)
+            except Exception:
+                pass
+            self._preview_visible = False
+            print('Video window hidden (press p or e to show)')
+        else:
+            # Show the window again at its existing position/size
+            self._show_preview_window()
+            self.last_preview_frame_idx = None  # Force frame refresh
+            self._show_preview_frame(self.current_x_sec)
+            print('Video window shown')
+
+    def _show_preview_window(self):
+        """Make the existing preview window visible again without changing its size/position."""
+        try:
+            cv2.setWindowProperty(self.preview_window_name, cv2.WND_PROP_VISIBLE, 1)
+        except Exception:
+            # If setWindowProperty doesn't work, recreate the window
+            self.preview_window_open = False
+            self._ensure_preview_window()
+            return
+        # Don't resize or move - let the window keep its current user-set geometry
+        self._preview_visible = True
 
     def _ensure_preview_window(self):
         from neuroscience_sleep_scoring import SWS_utils
@@ -230,7 +634,14 @@ class Cursor(object):
             cv2.setWindowProperty(self.preview_window_name, cv2.WND_PROP_TOPMOST, 1)
         except Exception:
             pass
+        # Add slider for video navigation
+        self._video_slider_max = 1000
+        self._video_max_time = 0
+        if self.video_timestamp is not None and len(self.video_timestamp) > 0:
+            self._video_max_time = self.video_timestamp['Offset_Time'].max()
+        cv2.createTrackbar('Time', self.preview_window_name, 0, self._video_slider_max, self._on_video_slider)
         self.preview_window_open = True
+        self._preview_visible = True
 
     def _update_preview_window_props(self):
         from neuroscience_sleep_scoring import SWS_utils
@@ -312,15 +723,8 @@ class Cursor(object):
 
         if DEBUG: print("self.clicked = " + str(self.clicked))
 
-        if self.preview_mode and event.inaxes == self.ax1:
-            if event.xdata is None:
-                return
-            time_sec = self._event_x_to_seconds(event)
-            self._show_preview_frame(time_sec)
-            self._set_cursor_x(time_sec)
-            self.preview_mode = False
-            self.background = None
-            if DEBUG: print('Preview mode OFF')
+        # Ignore clicks in fig2 axes
+        if event.inaxes in self.fig2_axes:
             return
 
         if self.movie_mode:
@@ -330,11 +734,20 @@ class Cursor(object):
                 print(f'x: {event.x}')
         elif self.clicked:
             if DEBUG: print('click registered')
+            if event.inaxes == self.ax1:
+                # Allow spectrogram clicks even if a bin selection is pending
+                self.clicked = False
+                self.bins = []
+                self.replot = True
+                self.replotx = event.xdata
+                return
             if event.inaxes == self.ax2:
                 if self.clicked == True:
                     if DEBUG: print(F'SECOND CLICK ----  xdata:{event.xdata} x:{event.x} axes: {event.inaxes}')
                     self.popup_xy = self._get_screen_xy(event)
                     self.bins.append(math.floor(event.xdata))
+                    # Sort bins so start < end regardless of click order
+                    self.bins = sorted(self.bins)
                     self.clicked = False
                     self.change_bins = True
         else:
