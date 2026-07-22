@@ -16,6 +16,7 @@ import joblib
 import pandas as pd
 import warnings
 from neuroscience_sleep_scoring import SWS_utils, extract_data
+import datetime as dt
 from datetime import datetime
 from neuroscience_sleep_scoring.SW_Cursor import Cursor
 from neuroscience_sleep_scoring.SW_Cursor import ScoringCursor
@@ -25,6 +26,60 @@ from datetime import datetime, timedelta
 from scipy import io
 
 key_stroke = 0
+
+# A single hidden Tk root is reused for the state-selection popup so we don't
+# construct/tear down a whole Tk() (and its event loop) on every bin correction.
+_state_popup_root = None
+
+def choose_state_popup(popup_xy=None):
+	"""Ask which state to assign to the selected bins. Returns 1/2/3 or None.
+
+	Reuses one persistent hidden root; each call spawns a lightweight Toplevel
+	and blocks on wait_window (same blocking UX as before, far less overhead).
+	"""
+	global _state_popup_root
+	try:
+		import tkinter as tk
+		from tkinter import font as tkfont
+	except Exception:
+		return None
+	try:
+		if _state_popup_root is None or not _state_popup_root.winfo_exists():
+			_state_popup_root = tk.Tk()
+			_state_popup_root.withdraw()
+	except Exception:
+		_state_popup_root = tk.Tk()
+		_state_popup_root.withdraw()
+
+	result = {'val': None}
+	win = tk.Toplevel(_state_popup_root)
+	win.title('Select State')
+	win.resizable(False, False)
+	win.attributes('-topmost', True)
+	bold_font = tkfont.Font(weight='bold')
+	tk.Label(win, text='Choose state', font=bold_font).pack(padx=8, pady=6)
+
+	def set_val(v):
+		result['val'] = v
+		win.destroy()
+
+	tk.Button(win, text='1: Wake', width=16, bg='green', fg='white', font=bold_font,
+		command=lambda: set_val(1)).pack(padx=8, pady=4)
+	tk.Button(win, text='2: NREM', width=16, bg='blue', fg='white', font=bold_font,
+		command=lambda: set_val(2)).pack(padx=8, pady=4)
+	tk.Button(win, text='3: REM', width=16, bg='red', fg='white', font=bold_font,
+		command=lambda: set_val(3)).pack(padx=8, pady=6)
+	# Keyboard shortcuts so the popup can be answered without the mouse.
+	win.bind('1', lambda e: set_val(1))
+	win.bind('2', lambda e: set_val(2))
+	win.bind('3', lambda e: set_val(3))
+	if popup_xy is not None:
+		x, y = popup_xy
+		win.geometry(f'+{int(x)+10}+{int(y)+10}')
+	win.grab_set()
+	win.focus_force()
+	_state_popup_root.wait_window(win)
+	return result['val']
 
 def on_press(event):
 	global key_stroke
@@ -77,6 +132,7 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 		timestamp_df = pd.read_pickle(os.path.join(d['savedir'], 'All_timestamps.pkl'))
 		try:
 			this_timestamp = SWS_utils.pulling_timestamp(timestamp_df, acq_start, eeg_AD0, d['fsd'])
+			print(f'Using timestamp: {this_timestamp}')
 			cap, fps = SWS_utils.load_video(d, this_timestamp)
 		except IndexError:
 			d['vid'] = 0
@@ -87,8 +143,8 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 	ThD_t = np.arange(0, np.size(ThD))
 
 	fig2, (ax6, ax7, ax8, ax9, ax10) = plt.subplots(nrows=5, ncols=1, figsize=(14, 7.5))
-	fig1, ax1, ax2, ax3, ax4, ax5 = SWS_utils.create_prediction_figure(d, State_input, is_predicted, clf, 
-		Features, d['fsd'], eeg_AD0, eeg_AD2, this_emg, EEG_t, d['epochlen'], start_trace, end_trace, 
+	fig1, ax1, ax2, ax3, ax4, ax5, state_img = SWS_utils.create_prediction_figure(d, State_input, is_predicted, clf,
+		Features, d['fsd'], eeg_AD0, eeg_AD2, this_emg, EEG_t, d['epochlen'], start_trace, end_trace,
 		d['Maximum_Frequency'], d['Minimum_Frequency'], [ax6, ax7], v = v)
 	
 	v_ylims = list(ax4.get_ylim())
@@ -106,7 +162,7 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 
 	line1, line2, line3 = SWS_utils.create_zoomed_fig(ax8, ax9, ax10, long_emg, long_emg_t, 
 		long_ThD, long_ThD_t, long_v, long_v_t, start_trace, end_trace, 
-		epochlen = d['epochlen'], ThD_ylims = [0,30], emg_ylims = ([-0.25, 0.25]), v_ylims = v_ylims)
+		epochlen = d['epochlen'], ThD_ylims = [0,30], emg_ylims = ([-2, 2]), v_ylims = v_ylims)
 
 
 	ax6.set_xlim([-600, 600])
@@ -123,7 +179,8 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 	#init cursor and it's libraries from SW_Cursor.py
 	# Pass all fig1 axes for full-height crosshair
 	all_fig1_axes = [ax1, ax2, ax3, ax4, ax5]
-	cursor = Cursor(ax1, ax2, ax5, all_axes=all_fig1_axes, epochlen=d['epochlen'])
+	all_fig2_axes = [ax6, ax7, ax8, ax9, ax10]
+	cursor = Cursor(ax1, ax2, ax5, all_axes=all_fig1_axes, epochlen=d['epochlen'], fig2_axes=all_fig2_axes)
 	
 	# Set up video data for preview mode
 	if d['vid']:
@@ -133,8 +190,8 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 	
 	# Set up magnify callback
 	def magnify_update(time_sec):
-		"""Update fig2 to show ±30s around cursor position."""
-		half_window = 90  # seconds
+		"""Update fig2 to show around cursor position."""
+		half_window = cursor.magnify_half_window
 		mag_start = time_sec - half_window
 		mag_end = time_sec + half_window
 		
@@ -145,7 +202,6 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 			s_idx, e_idx = start_idx_ThD[0], end_idx_ThD[-1]
 			line1.set_xdata(long_ThD_t[s_idx:e_idx+1])
 			line1.set_ydata(long_ThD[s_idx:e_idx+1])
-			ax8.set_xlim(mag_start, mag_end)
 		
 		if long_emg is not None:
 			start_idx_emg = np.where(long_emg_t >= mag_start)[0]
@@ -154,14 +210,19 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 				s_idx, e_idx = start_idx_emg[0], end_idx_emg[-1]
 				line2.set_xdata(long_emg_t[s_idx:e_idx+1])
 				line2.set_ydata(long_emg[s_idx:e_idx+1])
-				ax10.set_xlim(mag_start, mag_end)
+				if cursor.magnify_emg_ylim is not None:
+					ax10.set_ylim(cursor.magnify_emg_ylim)
 		
 		if long_v is not None:
 			v_idx = np.where(np.logical_and(long_v_t >= mag_start, long_v_t <= mag_end))[0]
 			if len(v_idx) > 0:
 				line3.set_xdata(long_v_t[v_idx])
 				line3.set_ydata(long_v[v_idx])
-				ax9.set_xlim(mag_start, mag_end)
+		
+		# Align ALL detailed axes to the same x range
+		ax8.set_xlim(mag_start, mag_end)
+		ax9.set_xlim(mag_start, mag_end)
+		ax10.set_xlim(mag_start, mag_end)
 		
 		# Update additional spectrograms xlim
 		ax6.set_xlim([time_sec - half_window, time_sec + half_window])
@@ -169,14 +230,21 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 		line4.set_xdata([time_sec, time_sec])
 		line5.set_xdata([time_sec, time_sec])
 		
+		# Invalidate fig2 background after magnify update
+		cursor.background_fig2 = None
 		fig2.canvas.draw_idle()
 	
 	cursor.magnify_callback = magnify_update
 
+	# Connect fig1 events
 	cID = fig1.canvas.mpl_connect('button_press_event', cursor.on_click)
-
 	cID4 = fig1.canvas.mpl_connect('motion_notify_event', cursor.on_mouse_move)
 	fig1.canvas.mpl_connect('resize_event', cursor.on_resize)
+	
+	# Connect fig2 events for cursor interaction (no click handling)
+	fig2.canvas.mpl_connect('motion_notify_event', cursor.on_mouse_move_fig2)
+	fig2.canvas.mpl_connect('resize_event', cursor.on_resize_fig2)
+	fig2.canvas.mpl_connect('key_press_event', cursor.on_press)
 
 	#Ok so I think that the quotes is the specific event to trigger and the second arg is the function to run when that happens?
 	cID2 = fig1.canvas.mpl_connect('axes_enter_event', cursor.in_axes)
@@ -188,7 +256,14 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 	plt.show()
 	DONE = False
 	while not DONE:
-		plt.waitforbuttonpress()
+		# Use short timeout so key events on either figure are processed
+		try:
+			plt.waitforbuttonpress(timeout=0.15)
+		except Exception:
+			plt.pause(0.05)
+		# Skip iteration if no flags are set (timeout expired with no action)
+		if not cursor.replot and not cursor.change_bins and not cursor.DONE:
+			continue
 
 		if cursor.replot:
 			print("Replot of fig 1. called!")
@@ -199,17 +274,29 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 			print('Start Trace = '+str(replot_start) + ' seconds')
 			print('End Trace = ' + str(replot_end) + ' seconds')
 
+			# Update current epoch marker FIRST
+			cursor.current_epoch_t = this_epoch_t
+			bin_idx = int(this_epoch_t // d['epochlen'])
+			cursor.epoch_marker.set_xdata([bin_idx, bin_idx])
+			fig1.canvas.draw_idle()
+			fig1.canvas.flush_events()
+
+			# Update fig2 to show this epoch (when not in magnify mode) BEFORE video
+			if not cursor.magnify_mode and cursor.magnify_callback is not None:
+				cursor.magnify_callback(this_epoch_t)
+				fig2.canvas.flush_events()
+
 			SWS_utils.update_raw_trace(fig1, fig2, line1, line2, line3, line4, line5, long_emg, 
 				long_emg_t, long_ThD, long_ThD_t, long_v, long_v_t, markers, this_epoch_t, 
 				replot_start, replot_end, d['epochlen'])
+			
 			if d['vid']:
 				if this_epoch_t-d['epochlen'] < 0:
 					print('No video available for this bin')
 				else:
+					# Play video snippet at this epoch (same as before)
 					vid_start = int(this_timestamp.index[this_timestamp['Offset_Time']>(this_epoch_t-d['epochlen'])][0])
 					vid_end = int(this_timestamp.index[this_timestamp['Offset_Time']<((this_epoch_t)+(d['epochlen']*2))][-1])
-					this_timestamp['Offset_Time'][vid_start]
-
 					SWS_utils.pull_up_movie(d, cap, vid_start, vid_end, 
 						this_video, d['epochlen'], this_timestamp)
 
@@ -224,58 +311,33 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 
 		if cursor.change_bins:
 			bins = np.sort(cursor.bins)
-			start_bin = cursor.bins[0]
-			end_bin = cursor.bins[1]
+			start_bin = int(bins[0])
+			end_bin = int(bins[1])
 			print(f'changing bins: {start_bin} to {end_bin}')
-			SWS_utils.clear_bins(bins, ax2)
-			fig2.canvas.draw()
-			def choose_state_popup(popup_xy=None):
-				try:
-					import tkinter as tk
-					from tkinter import font as tkfont
-				except Exception:
-					return None
-				result = {'val': None}
-				root = tk.Tk()
-				root.title('Select State')
-				root.resizable(False, False)
-				root.attributes('-topmost', True)
-				bold_font = tkfont.Font(weight='bold')
-				label = tk.Label(root, text='Choose state', font=bold_font)
-				label.pack(padx=8, pady=6)
-				def set_val(v):
-					result['val'] = v
-					root.destroy()
-				btn1 = tk.Button(root, text='1: Wake', width=16, bg='green', fg='white', font=bold_font,
-					command=lambda: set_val(1))
-				btn2 = tk.Button(root, text='2: NREM', width=16, bg='blue', fg='white', font=bold_font,
-					command=lambda: set_val(2))
-				btn3 = tk.Button(root, text='3: REM', width=16, bg='red', fg='white', font=bold_font,
-					command=lambda: set_val(3))
-				btn1.pack(padx=8, pady=4)
-				btn2.pack(padx=8, pady=4)
-				btn3.pack(padx=8, pady=6)
-				if popup_xy is not None:
-					x, y = popup_xy
-					root.geometry(f'+{int(x)+10}+{int(y)+10}')
-				root.mainloop()
-				return result['val']
 
-			new_state = choose_state_popup(cursor.popup_xy)
-			if new_state is None:
-				try:
+			# 'm' (microarousal) forces a single Wake bin and skips the popup.
+			forced = getattr(cursor, 'forced_state', None)
+			if forced is not None:
+				new_state = forced
+				cursor.forced_state = None
+			else:
+				new_state = choose_state_popup(cursor.popup_xy)
+				if new_state is None:
 					new_state = int(input('What state should these be?: '))
-				except Exception:
-					new_state = int(input('What state should these be?: '))
-			SWS_utils.correct_bins(start_bin, end_bin, ax2, new_state)
-			fig2.canvas.draw()
-			# Invalidate blitting cache so updated state colors are captured
-			cursor.background = None
+
+			# --- State persistence: UNCHANGED from prior behavior ---
 			State[start_bin:end_bin] = new_state
 			if end_bin == len(State)-1:
 				State[end_bin] = new_state
 			np.save(os.path.join(d['savedir'], 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'), State)
+
+			# --- Fast display update: one set_data + one cheap redraw ---
+			SWS_utils.refresh_state_image(state_img, State)
+			cursor.background = None  # force blit background recapture on next move
+			fig1.canvas.draw_idle()
+			fig1.canvas.flush_events()
 			cursor.bins = []
+			cursor.clicked = False
 			cursor.change_bins = False
 		if cursor.DONE:
 			DONE = True
@@ -316,6 +378,7 @@ def start_swscoring(d):
 	print('This acquisition has ' +str(hour_segs)+ ' segments.')
 
 	acq_start = SWS_utils.get_AcqStart(d, a, acq_len)
+	print(f'Acquisition {a} start time: {acq_start} Acquisition length (s): {acq_len}')
 
 	for h in np.arange(hour_segs):
 		# FeatureDict = {}
@@ -335,7 +398,9 @@ def start_swscoring(d):
 		eeg_df = eeg_df.iloc[:new_length]
 		FeatureDict = SWS_utils.build_feature_dict(eeg_df, d['fsd'], d['epochlen'],
 			normVal = normVal)
+		print(f'Acquisition start time: {acq_start}')
 		this_video, v, this_motion = SWS_utils.initialize_vid_and_move(d, a, acq_start, acq_len)
+		print(f'Video name: {this_video}')
 		if d['movement']:
 			FeatureDict['Velocity'] = v[0]
 		FeatureDict['animal_name'] = np.full(len(FeatureDict[list(FeatureDict.keys())[0]]), d['mouse_name'])

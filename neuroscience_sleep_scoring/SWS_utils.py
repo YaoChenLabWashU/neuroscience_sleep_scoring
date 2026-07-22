@@ -21,7 +21,7 @@ from matplotlib import *
 import time
 import glob
 from dateutil.parser import parse
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, tzinfo, UTC
 import json
 import seaborn as sns
 import shutil
@@ -253,37 +253,58 @@ def my_specgram(x, ax = None, NFFT=400, Fs=200, Fc=0, detrend=mlab.detrend_none,
     else:
         return Pxx, freqs, bins
 
+# Color used to draw each scored state in the "Predicted States" row.
+# 0 is an unscored/unknown bin (was 'grey' when drawn as patches).
+STATE_COLORS = {0: 'grey', 1: 'green', 2: 'blue', 3: 'red', 4: 'purple'}
+
+def state_to_rgba(State):
+    """Map a 1-D array of state codes to an (N, 4) RGBA array for display.
+
+    Display-only: it never mutates or feeds back into the saved State array.
+    Unknown/NaN codes fall back to white so they stand out and can be fixed
+    later (matches the old 'mark it white' behavior).
+    """
+    State = np.asarray(State)
+    N = np.size(State)
+    rgba = np.ones((N, 4), dtype=float)  # default: opaque white
+    for s, c in STATE_COLORS.items():
+        idx = np.where(State == s)[0]
+        if idx.size:
+            rgba[idx] = mcolors.to_rgba(c)
+    return rgba
+
+def refresh_state_image(state_img, State):
+    """Update the state-row AxesImage in place from the current State array.
+
+    O(1) redraw: one set_data on a single artist, regardless of how many bins
+    have been scored. Replaces the old per-epoch Rectangle patches.
+    """
+    N = np.size(State)
+    state_img.set_data(state_to_rgba(State).reshape(1, N, 4))
+
 def plot_predicted(ax, Predict_y, is_predicted, clf, Features):
+    """Draw the predicted-states row as a single image plus a confidence line.
+
+    Returns the AxesImage so callers can update it cheaply via
+    refresh_state_image() instead of adding a patch per epoch.
+    """
     ax.set_title('Predicted States', x=0.5, y=0.7)
-    for state in np.arange(np.size(Predict_y)):
-        if Predict_y[state] == 0:
-            rect7 = patch.Rectangle((state, 0), 3.8, height = 1, color = 'grey')
-            ax.add_patch(rect7)           
-        if Predict_y[state] == 1:
-            rect7 = patch.Rectangle((state, 0), 3.8, height = 1, color = 'green')
-            ax.add_patch(rect7)
-        elif Predict_y[state] == 2:
-            rect7 = patch.Rectangle((state, 0), 3.8, height = 1, color = 'blue')
-            ax.add_patch(rect7)
-        elif Predict_y[state] == 3:
-            rect7 = patch.Rectangle((state, 0), 3.8, height = 1, color = 'red')
-            ax.add_patch(rect7)
-        elif Predict_y[state] == 4:
-            rect7 = patch.Rectangle((state, 0), 3.8, height=1, color='purple')
-            ax.add_patch(rect7)
-        else:
-            print("Model predicted an unknown state.")
+    N = np.size(Predict_y)
+    rgba = state_to_rgba(Predict_y)
+    state_img = ax.imshow(rgba.reshape(1, N, 4), aspect='auto', origin='lower',
+        extent=(0, N, 0, 1), interpolation='nearest', zorder=0)
     ax.set_ylim(0.3, 1)
     ax.set_yticklabels([])
-    ax.set_xlim(0, np.size(Predict_y))
-    ax.set_xticks(np.arange(100, np.size(Predict_y), 100))
+    ax.set_xlim(0, N)
+    ax.set_xticks(np.arange(100, N, 100))
     ax.tick_params(axis="x",direction="in", pad=-15)
     if is_predicted:
         predictions = clf.predict_proba(Features)
         confidence = np.max(predictions, 1)
     else:
-        confidence = np.ones(np.size(Predict_y))
-    ax.plot(confidence, color = 'k')
+        confidence = np.ones(N)
+    ax.plot(confidence, color = 'k', zorder=1)
+    return state_img
 
 # This is the plotting collection function for the coarse prediction figure
 def create_prediction_figure(d, Predict_y, is_predicted, clf, Features, fs, eeg_AD0, eeg_AD2, 
@@ -317,7 +338,7 @@ def create_prediction_figure(d, Predict_y, is_predicted, clf, Features, fs, eeg_
     ax1.xaxis.set_ticks_position('top')
     ax3.set_xticklabels([])
 
-    plot_predicted(ax2, Predict_y, is_predicted, clf, Features)
+    state_img = plot_predicted(ax2, Predict_y, is_predicted, clf, Features)
 
     ax5.plot(EEG_t, this_emg, color= 'r')
     ax5.set_xlim([EEG_t[0],EEG_t[-1]])
@@ -325,7 +346,7 @@ def create_prediction_figure(d, Predict_y, is_predicted, clf, Features, fs, eeg_
     fig1.tight_layout()
     fig1.subplots_adjust(wspace=0, hspace=0)
     
-    return fig1, ax1, ax2, ax3, ax4, ax5
+    return fig1, ax1, ax2, ax3, ax4, ax5, state_img
 
 def update_sleep_df(model_dir, mod_name, df_additions):
     try:
@@ -415,16 +436,22 @@ def pull_up_movie(d, cap, start, end, vid_file, epochlen, this_timestamp):
         return
     score_win = np.arange(score_win_idx1, int(score_win_idx2))
     
-    # Create window
-    cv2.namedWindow('Frame', cv2.WINDOW_NORMAL)
+    # Use persistent window - create if not existing, otherwise reuse
+    window_existed = True
+    try:
+        cv2.getWindowProperty('Frame', cv2.WND_PROP_VISIBLE)
+    except cv2.error:
+        cv2.namedWindow('Frame', cv2.WINDOW_NORMAL)
+        window_existed = False
     
-    # Restore previous window position and size if available
-    if _video_window_props['width'] is not None and _video_window_props['height'] is not None:
-        cv2.resizeWindow('Frame', _video_window_props['width'], _video_window_props['height'])
-    else: 
-        cv2.resizeWindow('Frame', 640, 480)  # Default size
-    if _video_window_props['x'] is not None and _video_window_props['y'] is not None:
-        cv2.moveWindow('Frame', _video_window_props['x'], _video_window_props['y'])
+    # Only set size/position on first creation, not on reuse
+    if not window_existed:
+        if _video_window_props['width'] is not None and _video_window_props['height'] is not None:
+            cv2.resizeWindow('Frame', _video_window_props['width'], _video_window_props['height'])
+        else: 
+            cv2.resizeWindow('Frame', 640, 480)  # Default size
+        if _video_window_props['x'] is not None and _video_window_props['y'] is not None:
+            cv2.moveWindow('Frame', _video_window_props['x'], _video_window_props['y'])
     
     for f in np.arange(start, end+200):
         cap[v].set(1, f)
@@ -437,7 +464,7 @@ def pull_up_movie(d, cap, start, end, vid_file, epochlen, this_timestamp):
             if key == ord('v'):
                 break
     
-    # Save window position and size before closing
+    # Save window position and size (but don't destroy - keep persistent)
     try:
         rect = cv2.getWindowImageRect('Frame')
         print('Window properties saved: ', rect)
@@ -448,8 +475,6 @@ def pull_up_movie(d, cap, start, end, vid_file, epochlen, this_timestamp):
     except:
         # If window properties can't be retrieved, keep previous values
         pass
-    
-    cv2.destroyAllWindows()
 
     #Creates line objects for the fine graph that plots data over 12s intervals
 def create_zoomed_fig(ax8, ax9, ax10, long_emg, long_emg_t, long_ThD, long_ThD_t, long_v, long_v_t, 
@@ -508,35 +533,9 @@ def add_buffer(data_array, t_array, buffer_seconds, fs):
         buffered_t = np.concatenate([pre_buffer, t_array, post_buffer])
         assert np.size(buffered_data) == np.size(buffered_t)
     return buffered_data, buffered_t
-def clear_bins(bins, ax2):
-    start_bin = bins[0]
-    end_bin = bins[1]
-    if end_bin-start_bin == 1:
-        end_bin = end_bin+1
-    for b in np.arange(start_bin, end_bin-1):
-        b = math.floor(b)
-        location = b
-        rectangle = patch.Rectangle((location, 0), 1.5, height = 2, color = 'white')
-        ax2.add_patch(rectangle)
-def correct_bins(start_bin, end_bin, ax2, new_state):
-    if end_bin-start_bin == 1:
-        end_bin = end_bin+1
-    for b in np.arange(start_bin, end_bin-1):
-        b = math.floor(b)
-        location = b
-        color = 'white'
-        if new_state == 1:
-            color = 'green'
-        if new_state == 2:
-            color = 'blue'
-        if new_state == 3:
-            color = 'red'
-        if new_state == 4:
-            color = 'purple'
-        print("color: " + str(color))
-        rectangle = patch.Rectangle((location, 0), 1.5, height = 2, color = color)
-        print('loc: ', location)
-        ax2.add_patch(rectangle)
+# NOTE: clear_bins()/correct_bins() (per-epoch Rectangle patches) were removed.
+# The state row is now a single AxesImage; update it with refresh_state_image()
+# after mutating the State array. See plot_predicted()/state_to_rgba() above.
 
 def create_scoring_figure(extracted_dir, a, this_eeg, this_emg, EEG_t, fsd, 
     maxfreq, minfreq, epochlen, v = None, additional_ax = None):
@@ -583,41 +582,25 @@ def update_raw_trace(fig1, fig2, line1, line2, line3, line4, line5, long_emg, lo
     start_idx_ThD = np.where(long_ThD_t>=start_trace)[0][0]
     end_idx_ThD = np.where(long_ThD_t<=end_trace)[0][-1]
 
-    try:
-        assert np.size(line1.get_ydata()) == (end_idx_ThD-start_idx_ThD)+1
-    except AssertionError:
-        diff = ((end_idx_ThD-start_idx_ThD)+1)-np.size(line1.get_ydata())
-        end_idx_ThD = end_idx_ThD-diff
-
+    line1.set_xdata(long_ThD_t[start_idx_ThD:end_idx_ThD+1])
     line1.set_ydata(long_ThD[start_idx_ThD:end_idx_ThD+1])
 
     if long_emg is not None: 
         start_idx_emg = np.where(long_emg_t>=start_trace)[0][0]
         end_idx_emg = np.where(long_emg_t<=end_trace)[0][-1]
-        try:
-            assert np.size(line2.get_ydata()) == (end_idx_emg-start_idx_emg)+1
-        except AssertionError:
-            diff = ((end_idx_emg-start_idx_emg)+1)-np.size(line2.get_ydata())
-            end_idx_emg = end_idx_emg-diff
 
+        line2.set_xdata(long_emg_t[start_idx_emg:end_idx_emg+1])
         line2.set_ydata(long_emg[start_idx_emg:end_idx_emg+1])
 
     if long_v is not None:
         v_idx, = np.where(np.logical_and(long_v_t>=start_trace, long_v_t<=end_trace))
-        # start_idx_v = np.where(v_t>=start_trace)[0][0]
-        # end_idx_v = np.where(v_t<=end_trace)[0][-1]
+        if len(v_idx) > 0:
+            line3.set_xdata(long_v_t[v_idx])
+            line3.set_ydata(long_v[v_idx])
 
-        try:
-            assert np.size(line3.get_xdata()) == np.size(v_idx)
-            y_update = long_v[v_idx]
-            # assert np.size(line3.get_ydata()) == (end_idx_v-start_idx_v)+1
-        except AssertionError:
-            y_update = np.empty(np.size(line3.get_xdata()))
-            y_update[:] = np.nan
-            if len(v_idx) != 0:
-                y_update[:len(v_idx)] = long_v[v_idx]            
-
-        line3.set_ydata(y_update)
+    # Align ALL detailed axes to the same x range
+    for ax_idx in [2, 3, 4]:  # ax8=ThD, ax9=velocity, ax10=EMG
+        fig2.axes[ax_idx].set_xlim(start_trace, end_trace)
 
     for i,m in enumerate(markers):
         if i == 1:
@@ -704,12 +687,21 @@ def initialize_vid_and_move(d, a, acq_start, acq_len):
                 print('No timestamp files found! Please check directory')
                 sys.exit()
             timestamp_list = sort_files(timestamp_list, d['basename'], d['csv_dir'])
-            first_ts = [datetime.strptime(pd.read_csv(
-                t, header = None).iloc[0][0][:-7], '%Y-%m-%dT%H:%M:%S.%f') for t in timestamp_list]
+            try: 
+                first_ts = [datetime.strptime(pd.read_csv(
+                    t, header = None).iloc[0][0], '%Y-%m-%dT%H:%M:%S.%f') for t in timestamp_list]
+            except Exception as e:
+                print(f"Error occurred while parsing timestamps: {e}")
+                first_ts = [datetime.strptime(pd.read_csv(
+                    t, header = None).iloc[0][0][:-7], '%Y-%m-%dT%H:%M:%S.%f') for t in timestamp_list]
+            for i,t in enumerate(first_ts):
+                print(f"Timestamp {i}: {t}")
             acq_idx, = np.where([(acq_start > first_ts[ii]) & 
                 (acq_start < first_ts[ii+1]) for ii in range(len(first_ts)-1)])
-            print('HERE',len(first_ts)-1,first_ts,acq_start, acq_idx)
+            print('HERE',len(first_ts)-1,first_ts[acq_idx[0]],first_ts[acq_idx[-1]],acq_start, acq_idx)
+            print(f'HERE: start: {acq_start}, first_ts: {first_ts}, last_ts: {first_ts[acq_idx[-1]]}, acq_idx: {acq_idx}')
             this_video = video_list[acq_idx[0]] if acq_idx.size > 0 else video_list[0]
+            print('Selected video: '+this_video)
     else:
         this_video = None
         print('no video available')
@@ -717,9 +709,13 @@ def initialize_vid_and_move(d, a, acq_start, acq_len):
         movement_df = pd.read_pickle(os.path.join(d['savedir'], 'All_movement.pkl'))
         start_ts = acq_start
         end_ts = start_ts+timedelta(seconds=acq_len)
+        print('Movement data from '+str(start_ts)+' to '+str(end_ts))
         move_idx, = np.where(
             (movement_df['Timestamps'] < end_ts) & (movement_df['Timestamps'] > start_ts))
+        print('Movement index bounds: ', move_idx[0], move_idx[-1]) if len(move_idx) > 0 else print('No movement data available during this time.')
         this_motion = movement_df.iloc[move_idx]
+        print(this_motion.head(1))
+        print(this_motion.tail(1))
         v = movement_processing(this_motion)
 
     else:
@@ -1051,9 +1047,14 @@ def get_eeg_file(basename, file_num):
     return this_file
 
 def sort_timestamp_files(timestamp_dir):
-    timestamp_list = glob.glob(os.path.join(timestamp_dir, '*timestamp*'))
-    first_ts = [datetime.strptime(pd.read_csv(
-        t, header = None).iloc[0][0][:-7], '%Y-%m-%dT%H:%M:%S.%f') for t in timestamp_list]
+    timestamp_list = glob.glob(os.path.join(timestamp_dir, '*timestamp*.*'))
+    try:
+        first_ts = [datetime.strptime(pd.read_csv(
+            t, header = None).iloc[0][0], '%Y-%m-%dT%H:%M:%S.%f') for t in timestamp_list]
+    except Exception as e:
+        print(f"Error occurred while parsing timestamps: {e}")
+        first_ts = [datetime.strptime(pd.read_csv(
+            t, header = None).iloc[0][0][:-7], '%Y-%m-%dT%H:%M:%S.%f') for t in timestamp_list]
     sorting_idx = np.argsort(first_ts)
     file_labels = []
     for t in timestamp_list:
@@ -1065,10 +1066,10 @@ def sort_timestamp_files(timestamp_dir):
     return sorted_file_labels
 
 def sort_files(file_list, basename, timestamp_dir):
-    print(file_list)
-    print(basename)
-    print(timestamp_dir)
+    
+
     sorted_file_labels = sort_timestamp_files(timestamp_dir)
+    print('sort files:', len(file_list), sorted_file_labels[0], sorted_file_labels[-1])
     fn_only = [os.path.splitext(os.path.basename(l))[0] for l in file_list]
     ext = os.path.splitext(file_list[0])[1]
     if ext == '.mp4':
@@ -1094,6 +1095,8 @@ def sort_files(file_list, basename, timestamp_dir):
 
     if len(file_nums) != len(sorted_file_labels):
         print('You have timestamp files for the following numbers but they do not appear in the given list:')
+        print(sorted_file_labels, sep="\n")
+        print(sorted(file_nums), sep="\n")
         print([n for n in sorted_file_labels if n not in file_nums], sep="\n")
         sys.exit()
 
@@ -1115,11 +1118,27 @@ def get_AcqStart(d, a, acq_len):
         trigger_times = trigger_times['trigger_times'][0]
         acq_start = datetime(*[int(ii) for ii in trigger_times[d['Acquisition'].index(int(a))][0]])
     else:
-        AD_file = os.path.join(d['rawdat_dir'], 'AD' + str(d['EEG channel'][0]) + '_'+str(a)+'.mat')
-        EEG_datestring = time.ctime(os.path.getmtime(AD_file))
-        ts_format = '%a %b %d %H:%M:%S %Y'
-        EEG_datetime = datetime.strptime(EEG_datestring, ts_format)
-        acq_start = EEG_datetime-timedelta(seconds=acq_len)
+        try:
+            print('AcqStart coming from Continuous Acquisition File')
+            cont_acq_file = os.path.join(d['rawdat_dir'], 'continuous*data_' +str(a)+'.mat')
+            trigger_times = {}
+            io.loadmat(glob.glob(cont_acq_file)[0], 
+                mdict=trigger_times,variable_names=['triggerTime'])
+            trigger_times = trigger_times['triggerTime'][0]
+            acq_start = datetime(*[int(ii) for ii in trigger_times]) #, tzinfo=UTC)
+            # spc_save_file = os.path.join(d['rawdat_dir'], f'{d['basename']}FLIM{a:03d}.mat')
+            # flimdatainfo = {}
+            # io.loadmat(glob.glob(spc_save_file)[0], 
+            #     mdict=flimdatainfo,variable_names=['spcSave'])
+            # flimdatainfo = flimdatainfo['spcSave']['datainfo'].item()['phys_triggerTime']
+            # acq_start = datetime(*[int(ii) for ii in flimdatainfo])
+        except:
+            print('No trigger times found, using EEG file timestamp instead. This is less accurate and may cause issues with video syncing if your computer clock was not accurate at the time of acquisition. Please check the timestamp of your EEG file and make sure it matches the time of acquisition.')
+            AD_file = os.path.join(d['rawdat_dir'], 'AD' + str(d['EEG channel'][0]) + '_'+str(a)+'.mat')
+            EEG_datestring = time.ctime(os.path.getmtime(AD_file))
+            ts_format = '%a %b %d %H:%M:%S %Y'
+            EEG_datetime = datetime.strptime(EEG_datestring, ts_format)
+            acq_start = EEG_datetime-timedelta(seconds=acq_len)
     return acq_start
 
 def pulling_timestamp(timestamp_df, acq_start, this_eeg, fsd):
