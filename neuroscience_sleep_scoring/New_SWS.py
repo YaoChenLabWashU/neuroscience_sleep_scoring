@@ -139,13 +139,14 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 			print("Timestamp information not available, turning off video access for this acquisition")
 
 	print('loading the theta ratio...')
-	ThD = SWS_utils.get_ThD(eeg_AD2, d['fsd']) #array of ThD values per second
+	ThD = SWS_utils.get_ThD(eeg_AD2, d['fsd'],
+		cache_file = SWS_utils.thd_cache_path(d['savedir'], a, h, 2)) #array of ThD values per second
 	ThD_t = np.arange(0, np.size(ThD))
 
 	fig2, (ax6, ax7, ax8, ax9, ax10) = plt.subplots(nrows=5, ncols=1, figsize=(14, 7.5))
 	fig1, ax1, ax2, ax3, ax4, ax5, state_img = SWS_utils.create_prediction_figure(d, State_input, is_predicted, clf,
 		Features, d['fsd'], eeg_AD0, eeg_AD2, this_emg, EEG_t, d['epochlen'], start_trace, end_trace,
-		d['Maximum_Frequency'], d['Minimum_Frequency'], [ax6, ax7], v = v)
+		d['Maximum_Frequency'], d['Minimum_Frequency'], [ax6, ax7], v = v, a = a, h = h)
 	
 	v_ylims = list(ax4.get_ylim())
 	emg_ylims = list(ax5.get_ylim())
@@ -343,6 +344,13 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 			DONE = True
 
 	print('successfully left GUI')
+	# Release any lazily-opened video captures so re-launching another
+	# acquisition in the same process (via the launcher) doesn't leak handles.
+	try:
+		if d['vid'] and 'cap' in locals() and hasattr(cap, 'release_all'):
+			cap.release_all()
+	except Exception:
+		pass
 	cv2.destroyAllWindows()
 	plt.close('all')
 	np.save(os.path.join(d['savedir'], 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'), State)

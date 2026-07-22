@@ -31,6 +31,48 @@ import PKA_Sleep as PKA
 # Global dictionary to store video window properties
 _video_window_props = {'x': None, 'y': None, 'width': None, 'height': None}
 
+# ---------------------------------------------------------------------------
+# Spectrogram disk cache
+#
+# The two EEG spectrograms and the theta/delta ratio are the dominant startup
+# cost (tens of thousands of overlapping FFTs per hour segment). We cache the
+# heavy compute to <savedir>/spectrogram_cache/ so re-opening an acquisition is
+# near-instant. The cache is purely derived/additive: deleting it just forces a
+# recompute, and nothing in the analysis pipeline reads it.
+# ---------------------------------------------------------------------------
+SPECT_CACHE_DIRNAME = 'spectrogram_cache'
+
+def spect_cache_dir(savedir):
+    return os.path.join(savedir, SPECT_CACHE_DIRNAME)
+
+def spect_cache_path(savedir, a, h, chan):
+    return os.path.join(spect_cache_dir(savedir), f'spect_Acq{a}_hr{h}_AD{chan}.npz')
+
+def thd_cache_path(savedir, a, h, chan):
+    return os.path.join(spect_cache_dir(savedir), f'thd_Acq{a}_hr{h}_AD{chan}.npz')
+
+def _cache_load(cache_file, expected):
+    """Return dict of arrays from cache_file if it exists and its stored params
+    match `expected` (dict of scalars). Otherwise return None."""
+    if not cache_file or not os.path.exists(cache_file):
+        return None
+    try:
+        dat = np.load(cache_file, allow_pickle=False)
+        for k, v in expected.items():
+            if k not in dat or not np.isclose(float(dat[k]), float(v)):
+                return None
+        return dat
+    except Exception as e:
+        print(f'Spectrogram cache read failed ({cache_file}): {e}; recomputing.')
+        return None
+
+def _cache_save(cache_file, arrays):
+    try:
+        os.makedirs(os.path.dirname(cache_file), exist_ok=True)
+        np.savez(cache_file, **arrays)
+    except Exception as e:
+        print(f'Spectrogram cache write failed ({cache_file}): {e}')
+
 def generate_signal(downsamp_signal, epochlen, fs): # fs = fsd here
     # mean of 4 seconds
     normmean = np.mean(downsamp_signal)
@@ -119,8 +161,8 @@ def random_forest_classifier(features, target):
     clf.fit(features, target)
     return clf
 
-def plot_spectrogram(ax, eegdat, fsd, minfreq = 1, maxfreq = 16, additional_ax = None, window_length = 10, 
-    noverlap = 9.9, vmin = -50, vmax = -10, window_type = None):
+def plot_spectrogram(ax, eegdat, fsd, minfreq = 1, maxfreq = 16, additional_ax = None, window_length = 10,
+    noverlap = 9.9, vmin = -50, vmax = -10, window_type = None, cache_file = None):
     dt = 1/fsd
     t_elapsed = eegdat.shape[0]/fsd
     t = np.arange(0.0, t_elapsed, dt)
@@ -132,7 +174,7 @@ def plot_spectrogram(ax, eegdat, fsd, minfreq = 1, maxfreq = 16, additional_ax =
         window_array = None
     if additional_ax:
         additional_ax.set_xlabel('Time (seconds)')
-        additional_ax.set_ylabel('Frequency (Hz)')      
+        additional_ax.set_ylabel('Frequency (Hz)')
 
     if ax:
         ax.set_xlabel('Time (seconds)')
@@ -140,21 +182,21 @@ def plot_spectrogram(ax, eegdat, fsd, minfreq = 1, maxfreq = 16, additional_ax =
     # the minfreq and maxfreq args will limit the frequencies
         Pxx, freqs, bins, im = my_specgram(eegdat, ax = ax, NFFT=int(NFFT), Fs=fsd, noverlap=int(noverlap),
                                     cmap=cm.get_cmap('plasma'), minfreq = minfreq, maxfreq = maxfreq,
-                                    xextent = (0,int(t_elapsed)), additional_ax = additional_ax, vmin = vmin, 
-                                    vmax = vmax, window = window_array)
+                                    xextent = (0,int(t_elapsed)), additional_ax = additional_ax, vmin = vmin,
+                                    vmax = vmax, window = window_array, cache_file = cache_file)
         return Pxx, freqs, bins, im
     else:
         Pxx, freqs, bins = my_specgram(eegdat, ax = ax, NFFT=int(NFFT), Fs=fsd, noverlap=int(noverlap),
                                     cmap=cm.get_cmap('plasma'), minfreq = minfreq, maxfreq = maxfreq,
-                                    xextent = (0,int(t_elapsed)), additional_ax = additional_ax, vmin = vmin, 
-                                    vmax = vmax, window = window_array)
+                                    xextent = (0,int(t_elapsed)), additional_ax = additional_ax, vmin = vmin,
+                                    vmax = vmax, window = window_array, cache_file = cache_file)
         return Pxx, freqs, bins
 
 def my_specgram(x, ax = None, NFFT=400, Fs=200, Fc=0, detrend=mlab.detrend_none,
              window=None, noverlap=200,
              cmap=None, xextent=None, pad_to=None, sides='default',
-             scale_by_freq=None, minfreq = None, maxfreq = None, additional_ax = None, vmin = -50, vmax = -10, 
-             **kwargs):
+             scale_by_freq=None, minfreq = None, maxfreq = None, additional_ax = None, vmin = -50, vmax = -10,
+             cache_file = None, **kwargs):
     """
     call signature::
 
@@ -219,8 +261,19 @@ def my_specgram(x, ax = None, NFFT=400, Fs=200, Fc=0, detrend=mlab.detrend_none,
 
     # this will fail if there isn't a current axis in the global scope
     #ax = gca()
-    Pxx, freqs, bins = mlab.specgram(x, NFFT, Fs, detrend,
-         window, noverlap, pad_to, sides, scale_by_freq)
+    # The mlab.specgram call below is the expensive part. If a cache_file is
+    # given and its stored (NFFT, Fs, noverlap, nx) match, reuse it; otherwise
+    # compute and (re)write the cache. minfreq/maxfreq/vmin/vmax are applied
+    # after caching so they can change without invalidating it.
+    _expected = {'NFFT': NFFT, 'Fs': Fs, 'noverlap': noverlap, 'nx': np.size(x)}
+    _cached = _cache_load(cache_file, _expected)
+    if _cached is not None:
+        Pxx, freqs, bins = _cached['Pxx'], _cached['freqs'], _cached['bins']
+    else:
+        Pxx, freqs, bins = mlab.specgram(x, NFFT, Fs, detrend,
+             window, noverlap, pad_to, sides, scale_by_freq)
+        if cache_file:
+            _cache_save(cache_file, dict(Pxx=Pxx, freqs=freqs, bins=bins, **_expected))
 
     # modified here
     #####################################
@@ -307,8 +360,8 @@ def plot_predicted(ax, Predict_y, is_predicted, clf, Features):
     return state_img
 
 # This is the plotting collection function for the coarse prediction figure
-def create_prediction_figure(d, Predict_y, is_predicted, clf, Features, fs, eeg_AD0, eeg_AD2, 
-    this_emg, EEG_t, epochlen, start, end, maxfreq, minfreq, additional_axes, v = None):
+def create_prediction_figure(d, Predict_y, is_predicted, clf, Features, fs, eeg_AD0, eeg_AD2,
+    this_emg, EEG_t, epochlen, start, end, maxfreq, minfreq, additional_axes, v = None, a = None, h = None):
     plt.ion()
     vmin = d['vmin']
     vmax = d['vmax']
@@ -330,10 +383,14 @@ def create_prediction_figure(d, Predict_y, is_predicted, clf, Features, fs, eeg_
             horizontalalignment='center', verticalalignment='center')
     ax4.set_yticklabels([])
     ax4.set_xticklabels([])
-    Pxx, freqs, bins, im = plot_spectrogram(ax1, eeg_AD0, fs, maxfreq = maxfreq, minfreq = minfreq, 
-        additional_ax = additional_axes[0], vmin = vmin, vmax = vmax)
-    Pxx, freqs, bins, im = plot_spectrogram(ax3, eeg_AD2, fs, maxfreq = maxfreq, minfreq = minfreq, 
-        additional_ax = additional_axes[1], vmin = vmin, vmax = vmax)
+    # Cache the two EEG spectrograms per acquisition/hour/channel when we know
+    # the identity (a, h). eeg_AD0/eeg_AD2 correspond to channels 0 and 2.
+    cache0 = spect_cache_path(d['savedir'], a, h, 0) if a is not None and h is not None else None
+    cache2 = spect_cache_path(d['savedir'], a, h, 2) if a is not None and h is not None else None
+    Pxx, freqs, bins, im = plot_spectrogram(ax1, eeg_AD0, fs, maxfreq = maxfreq, minfreq = minfreq,
+        additional_ax = additional_axes[0], vmin = vmin, vmax = vmax, cache_file = cache0)
+    Pxx, freqs, bins, im = plot_spectrogram(ax3, eeg_AD2, fs, maxfreq = maxfreq, minfreq = minfreq,
+        additional_ax = additional_axes[1], vmin = vmin, vmax = vmax, cache_file = cache2)
 
     ax1.xaxis.set_ticks_position('top')
     ax3.set_xticklabels([])
@@ -626,16 +683,53 @@ def make_marker(fig, x, epochlen):
         markers.append(marker)
     return markers
 
+class LazyVideoCaptures:
+    """Dict-like container of cv2.VideoCapture keyed by video path, opened on
+    first access. Opening every VideoCapture up front was a big chunk of startup
+    time; most scoring sessions only ever touch one or two video files.
+
+    Membership (`v in caps`) is True for any known file (from the timestamps)
+    without opening it, so the existing `if v not in cap ...` guards still work.
+    """
+    def __init__(self, d, known_paths):
+        self.d = d
+        self._known = set(known_paths)
+        self._caps = {}
+
+    def __contains__(self, v):
+        return v in self._caps or v in self._known
+
+    def __getitem__(self, v):
+        cap = self._caps.get(v)
+        if cap is None:
+            print('Opening video ' + str(v) + '...')
+            cap = cv2.VideoCapture(v)
+            self._caps[v] = cap
+            self._known.add(v)
+        return cap
+
+    def get(self, v, default=None):
+        try:
+            return self[v]
+        except Exception:
+            return default
+
+    def values(self):
+        return self._caps.values()
+
+    def release_all(self):
+        for c in self._caps.values():
+            try:
+                c.release()
+            except Exception:
+                pass
+
 def load_video(d, this_timestamp):
-    print('Loading video now, this might take a second....')
-    cap = {}
-    fps = {}
-    these_ts_files = np.unique(this_timestamp['Filename'])
-    for ts in these_ts_files:
-        v = get_videofn_from_csv(d, ts)
-        print('Loading '+v+'...')
-        cap[v] = cv2.VideoCapture(v)
-        fps[v] = cap[v].get(cv2.CAP_PROP_FPS)
+    # Build the set of expected video paths without opening any of them; each
+    # VideoCapture is opened lazily on first use (see LazyVideoCaptures).
+    known = [get_videofn_from_csv(d, ts) for ts in np.unique(this_timestamp['Filename'])]
+    cap = LazyVideoCaptures(d, known)
+    fps = {}  # kept for call-site compatibility; populated lazily if needed
     return cap, fps
 
 def timestamp_extracting(timestamp_file, adjust = True):
@@ -724,12 +818,19 @@ def initialize_vid_and_move(d, a, acq_start, acq_len):
     return this_video, v, this_motion
 
 
-def get_ThD(this_eeg, fsd):
+def get_ThD(this_eeg, fsd, cache_file = None):
+    # Cache the final theta/delta ratio array (that's all callers consume).
+    _expected = {'Fs': fsd, 'nx': np.size(this_eeg)}
+    _cached = _cache_load(cache_file, _expected)
+    if _cached is not None:
+        return _cached['ThD']
     Pxx, freqs, bins = my_specgram(this_eeg, Fs = fsd)
     delta_band = np.sum(Pxx[np.where(np.logical_and(freqs>=1,freqs<=4))],axis = 0)
     theta_band = np.sum(Pxx[np.where(np.logical_and(freqs>=5,freqs<=8))],axis = 0)
-
-    return theta_band/delta_band
+    ThD = theta_band/delta_band
+    if cache_file:
+        _cache_save(cache_file, dict(ThD=ThD, **_expected))
+    return ThD
 
 def movement_extracting(movement_file, d):
     if d['DLC']:
