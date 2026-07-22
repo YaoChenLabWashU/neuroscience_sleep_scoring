@@ -119,6 +119,10 @@ def update_model(d, FeatureDict):
 def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, Features, this_video,
 	acq_start, v = None, movement_df = None, buffer = 4):
 	plt.ion()
+	# Restore saved window layout: seed the video window props before it opens,
+	# and remember the figure geometries to reapply once the figures exist.
+	_layout = SWS_utils.load_layout()
+	SWS_utils.restore_video_window_props(_layout)
 	i = 0
 	this_bin = 1*d['fsd']*d['epochlen'] #number of EEG data points in one epoch
 	eeg_AD0 = np.load(os.path.join(d['savedir'],'AD0_downsampled', 'downsampEEG_Acq'+a+'_hr'+str(h)+'.npy'))
@@ -255,6 +259,18 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 
 	#This is the loop that manages the interface
 	plt.show()
+
+	# Reapply saved figure positions now that the windows exist.
+	SWS_utils.apply_figure_geometry(fig1, _layout.get('fig1'))
+	SWS_utils.apply_figure_geometry(fig2, _layout.get('fig2'))
+
+	# Auto-open the video at the first frame (previously required a keypress).
+	if d['vid'] and cursor.video_cap is not None:
+		try:
+			cursor._toggle_preview_window()
+		except Exception as e:
+			print(f'Could not auto-open video: {e}')
+
 	DONE = False
 	while not DONE:
 		# Use short timeout so key events on either figure are processed
@@ -344,6 +360,17 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 			DONE = True
 
 	print('successfully left GUI')
+	# Persist window layout (figure geometry + video window) for the next launch.
+	try:
+		if getattr(cursor, 'preview_window_open', False) and getattr(cursor, '_preview_visible', False):
+			cursor._update_preview_window_props()
+	except Exception:
+		pass
+	SWS_utils.update_layout(
+		fig1=SWS_utils.get_figure_geometry(fig1),
+		fig2=SWS_utils.get_figure_geometry(fig2),
+		video=dict(SWS_utils._video_window_props),
+	)
 	# Release any lazily-opened video captures so re-launching another
 	# acquisition in the same process (via the launcher) doesn't leak handles.
 	try:

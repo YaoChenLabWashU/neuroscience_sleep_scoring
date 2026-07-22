@@ -32,6 +32,65 @@ import PKA_Sleep as PKA
 _video_window_props = {'x': None, 'y': None, 'width': None, 'height': None}
 
 # ---------------------------------------------------------------------------
+# Persistent window layout
+#
+# matplotlib figure positions are not remembered between runs, so the user had
+# to rearrange every window each time a new acquisition was opened. We persist
+# the geometry of the two scoring figures, the cv2 video window and the launcher
+# to a small JSON in the home dir and reapply it on launch. Backend is TkAgg, so
+# figure geometry is the Tk "WxH+X+Y" string from the manager window.
+# ---------------------------------------------------------------------------
+LAYOUT_PATH = os.path.join(os.path.expanduser('~'), '.sleep_scoring_gui_layout.json')
+
+def load_layout():
+    try:
+        with open(LAYOUT_PATH, 'r') as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def save_layout(layout):
+    try:
+        with open(LAYOUT_PATH, 'w') as f:
+            json.dump(layout, f, indent=2)
+    except Exception as e:
+        print(f'Could not save window layout: {e}')
+
+def update_layout(**kwargs):
+    """Merge the given keys (dropping None values) into the saved layout."""
+    layout = load_layout()
+    for k, v in kwargs.items():
+        if v is not None:
+            layout[k] = v
+    save_layout(layout)
+
+def get_figure_geometry(fig):
+    """Return the Tk 'WxH+X+Y' geometry string for a matplotlib figure, or None."""
+    try:
+        return fig.canvas.manager.window.wm_geometry()
+    except Exception:
+        return None
+
+def apply_figure_geometry(fig, geo):
+    """Apply a saved 'WxH+X+Y' geometry string to a matplotlib figure window."""
+    if not geo:
+        return
+    try:
+        fig.canvas.manager.window.wm_geometry(geo)
+    except Exception as e:
+        print(f'Could not restore figure geometry: {e}')
+
+def restore_video_window_props(layout=None):
+    """Seed the cv2 video-window props from the saved layout before it opens."""
+    if layout is None:
+        layout = load_layout()
+    vid = layout.get('video')
+    if isinstance(vid, dict):
+        for k in ('x', 'y', 'width', 'height'):
+            if vid.get(k) is not None:
+                _video_window_props[k] = vid[k]
+
+# ---------------------------------------------------------------------------
 # Spectrogram disk cache
 #
 # The two EEG spectrograms and the theta/delta ratio are the dominant startup
