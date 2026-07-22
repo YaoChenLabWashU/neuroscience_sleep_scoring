@@ -385,25 +385,34 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 	return State
 
 
-def start_swscoring(d):
-	# mostly for deprecated packages
-	print('this code is supressing warnings')
-	warnings.filterwarnings("ignore")
-	print('These are the available acquisitions: '+ str(d['Acquisition']))
+def scored_acquisitions(d):
+	"""Return the sorted list of acquisition numbers that already have a State file."""
 	state_files = glob.glob(os.path.join(d['savedir'], 'StatesAcq*.npy'))
-	scored_acqs = []
+	scored = []
 	for sf in state_files:
 		filename = os.path.split(sf)[1]
 		idx1 = filename.find('q')
 		idx2 = filename.find('_')
 		try:
-			acq_num = int(filename[idx1+1:idx2])
+			scored.append(int(filename[idx1+1:idx2]))
 		except ValueError:
 			continue
-		scored_acqs.append(acq_num)
-	print('These are the acquisitions that have a previous State file: ' + str(sorted(scored_acqs)))
-	a = input('Which acqusition do you want to score?')
+	return sorted(set(scored))
 
+def score_acquisition(d, a, use_model=True, mode='s',
+		update_model_after=None, update_log_after=None):
+	"""Score (or check) a single acquisition without terminal prompts.
+
+	Parameters that used to be answered via input() are now explicit so the
+	launcher can drive this directly:
+	  - a: acquisition number (int or str)
+	  - use_model: use the random-forest model to pre-predict (mode 's' only)
+	  - mode: 's' = score new dataset, 'c' = check/fix existing scoring
+	  - update_model_after / update_log_after: True/False to skip the prompt,
+	    or None to fall back to the interactive prompt (legacy behavior).
+	"""
+	a = str(a)
+	warnings.filterwarnings("ignore")
 	print('Loading EEG and EMG....')
 	downsampEEG = np.load(os.path.join(d['savedir'],'downsampEEG_Acq'+str(a)+'.npy'))
 	if d['emg']:
@@ -425,7 +434,7 @@ def start_swscoring(d):
 			normVal.append(np.load(os.path.join(eeg_dir, d['basename']+'_normVal.npy')))
 
 		eeg_df['EMG'] = np.load(os.path.join(d['savedir'],'downsampEMG_Acq'+str(a) + '_hr' + str(h)+ '.npy'))
-	
+
 		# chop off the remainder that does not fit into the 4s epoch
 		seg_len = len(eeg_df)/d['fsd']
 		nearest_epoch = math.floor(seg_len/d['epochlen'])
@@ -442,18 +451,15 @@ def start_swscoring(d):
 
 		os.chdir(d['savedir'])
 		this_emg = eeg_df['EMG']
-		check = input('Do you want to check and fix existing scoring (c) or score new dataset (s)?: c/s ')
-		while check != 'c' and check != 's':
-			check = input(
-				'Only c/s is accepted. Do you want to check and fix existing scoring (c) or score new dataset (s)?: c/s ')
-		if check == 'c':
+		State = None
+		if mode == 'c':
 			try:
 				# if some portion of the file has been previously scored
 				State = np.load(os.path.join(d['savedir'], 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'))
 				wrong, = np.where(np.isnan(State))
 				State[wrong] = 0
 				s, = np.where(State == 0)
-				
+
 				State = display_and_fix_scoring(d, a, h, this_emg, State, False, None,
 										None, this_video, acq_start, v = v, movement_df = this_motion)
 				if np.any(State == 0):
@@ -461,26 +467,21 @@ def start_swscoring(d):
 					zero_check = input('Do you want to go back and fix this right now? (y/n)' ) == 'y'
 					if zero_check:
 						State = display_and_fix_scoring(d, a, h, this_emg, State, False, None,
-										None, this_video, acq_start, v = v, movement_df = this_motion)					
+										None, this_video, acq_start, v = v, movement_df = this_motion)
 					else:
 						print('Ok, but please do not update the model until you fix them')
 			except FileNotFoundError:
 				# if the file is a brand new one for scoring
 				print("There is no existing scoring.")
 
-		elif check == 's':
-			model = input('Use a random forest? y/n: ') == 'y'
-
-			if model:
+		else:  # mode == 's'
+			if use_model:
 				jobname = SWS_utils.build_joblib_name(d)
 				try:
 					clf = joblib.load(os.path.join(d['model_dir'], jobname))
 				except FileNotFoundError:
 					print("You don't have a model to work with.")
 					return
-
-				# feature list
-				
 
 				Features = SWS_utils.prepare_feature_data(FeatureDict, d['movement'])
 
@@ -493,19 +494,50 @@ def start_swscoring(d):
 				State = np.zeros(int(acq_len/d['epochlen']))
 				State = display_and_fix_scoring(d, a, h, this_emg, State, False, None,
 										None, this_video, acq_start, v = v, movement_df = this_motion)
-		
+
+		if State is None:
+			# Nothing was scored (e.g. 'check' mode with no existing file).
+			plt.close('all')
+			continue
+
 		FeatureDict['State'] = State
 
-		update = input('Do you want to update the model?: y/n ') == 'y'
+		if update_model_after is None:
+			update = input('Do you want to update the model?: y/n ') == 'y'
+		else:
+			update = bool(update_model_after)
 		if update:
-			update_model(d, FeatureDict)					
+			update_model(d, FeatureDict)
 			model_log(d['modellog_dir'], 0, d['species'], d['mouse_name'], d['mod_name'], a)
-		logq = input('Do you want to update your personal log?: y/n ') == 'y'
+
+		if update_log_after is None:
+			logq = input('Do you want to update your personal log?: y/n ') == 'y'
+		else:
+			logq = bool(update_log_after)
 		if logq:
 			personal_log(d['personallog_dir'], d['mouse_name'], d['savedir'], a)
-			
+
 		plt.close('all')
 			# Store the result.
+
+def start_swscoring(d):
+	"""Legacy terminal-prompt entry point. The launcher is now the primary UI;
+	this remains as a fallback and delegates to score_acquisition."""
+	# mostly for deprecated packages
+	print('this code is supressing warnings')
+	warnings.filterwarnings("ignore")
+	print('These are the available acquisitions: '+ str(d['Acquisition']))
+	print('These are the acquisitions that have a previous State file: ' + str(scored_acquisitions(d)))
+	a = input('Which acqusition do you want to score?')
+	check = input('Do you want to check and fix existing scoring (c) or score new dataset (s)?: c/s ')
+	while check != 'c' and check != 's':
+		check = input(
+			'Only c/s is accepted. Do you want to check and fix existing scoring (c) or score new dataset (s)?: c/s ')
+	use_model = True
+	if check == 's':
+		use_model = input('Use a random forest? y/n: ') == 'y'
+	# update_model_after / update_log_after left as None -> prompt (legacy).
+	score_acquisition(d, a, use_model=use_model, mode=check)
 
 def load_data_for_sw(filename_sw, return_data = False):
 	with open(filename_sw, 'r') as f:
@@ -605,11 +637,11 @@ def personal_log(log_dir, mouse_name, save_dir, a):
 
 if __name__ == "__main__":
 	args = sys.argv
-	# Why do we need to assert this??? Why the heck would you care if you execute from the same dir if we don't use relative paths anywhere else in the code
-	# assert args[0] == 'New_SWS.py'
-	if len(args) < 2:
-		print("You need to specify the path of your Score_Settings.json. For instance, run `python New_SWS.py /home/ChenLab_Sleep_Scoring/Score_Settings.json`.")
-	elif len(args) > 2:
-		print("You only need to specify the path of your Score_Settings.json. For instance, run `python New_SWS.py /home/ChenLab_Sleep_Scoring/Score_Settings.json`.")
+	# The central launcher is now the entry point. An optional settings-JSON path
+	# pre-loads that file; otherwise the launcher opens with a Browse button.
+	if len(args) > 2:
+		print("You only need to specify the path of your Score_Settings.json (optional). For instance, run `python New_SWS.py /home/ChenLab_Sleep_Scoring/Score_Settings.json`.")
 	else:
-		load_data_for_sw(args[1])
+		settings = args[1] if len(args) == 2 else None
+		from neuroscience_sleep_scoring.ScoringLauncher import launch
+		launch(settings)
