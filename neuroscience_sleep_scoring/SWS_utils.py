@@ -151,6 +151,47 @@ def spect_cache_path(savedir, a, h, chan):
 def thd_cache_path(savedir, a, h, chan):
     return os.path.join(spect_cache_dir(savedir), f'thd_Acq{a}_hr{h}_AD{chan}.npz')
 
+def spectrogram_cached(d, a):
+    """Quick check: is the spectrogram cache present for acquisition a?
+    Uses the hr0 file for each EEG channel as the indicator."""
+    savedir = d['savedir']
+    chans = list(d['EEG channel'])
+    if not chans:
+        return False
+    # NOTE: `from pylab import *` shadows builtin all() with numpy.all(), which
+    # mis-handles a generator (always True). Pass a list so np.all evaluates it.
+    return bool(all([os.path.exists(spect_cache_path(savedir, a, 0, c)) for c in chans]))
+
+def precompute_acq_spectrograms(d, a, EEG_channels=None):
+    """Compute and cache the spectrograms (and theta/delta) for one acquisition
+    across all hour segments and EEG channels. Returns the number of segments
+    cached. Shared by extract_data_zbr and the launcher's precache dialog so the
+    GUI always reads exactly what was precomputed."""
+    if EEG_channels is None:
+        EEG_channels = [str(c) for c in d['EEG channel']]
+    savedir = d['savedir']
+    fsd = int(d['fsd'])
+    minf = d['Minimum_Frequency']
+    maxf = d['Maximum_Frequency']
+    os.makedirs(spect_cache_dir(savedir), exist_ok=True)
+    n = 0
+    for chan in EEG_channels:
+        eeg_dir = os.path.join(savedir, 'AD'+str(chan)+'_downsampled')
+        for f in glob.glob(os.path.join(eeg_dir, 'downsampEEG_Acq'+str(a)+'_hr*.npy')):
+            base = os.path.split(f)[1]
+            try:
+                h = int(base[base.rfind('_hr')+3:base.rfind('.npy')])
+            except ValueError:
+                continue
+            eeg = np.load(f)
+            # ax=None => compute + write cache only, no drawing.
+            plot_spectrogram(None, eeg, fsd, minfreq=minf, maxfreq=maxf,
+                cache_file=spect_cache_path(savedir, a, h, int(chan)))
+            if int(chan) == 2:
+                get_ThD(eeg, fsd, cache_file=thd_cache_path(savedir, a, h, 2))
+            n += 1
+    return n
+
 def _cache_load(cache_file, expected):
     """Return dict of arrays from cache_file if it exists and its stored params
     match `expected` (dict of scalars). Otherwise return None."""

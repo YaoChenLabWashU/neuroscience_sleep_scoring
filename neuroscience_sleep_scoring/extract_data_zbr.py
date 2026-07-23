@@ -306,9 +306,10 @@ def alternate_label(this_video, csv_dir, i):
 	new_label = input('What label do you want to use?')
 	return new_label
 
-def precompute_spectrograms(filename_sw, EEG_channels = None):
-	"""Pre-generate and cache every acquisition/hour spectrogram (both EEG
-	channels) plus the theta/delta ratio, so the scoring GUI opens instantly.
+def precompute_spectrograms(filename_sw, EEG_channels = None, acqs = None):
+	"""Pre-generate and cache spectrograms (both EEG channels) plus the
+	theta/delta ratio for every acquisition/hour, so the scoring GUI opens
+	instantly. Pass acqs to limit to a subset.
 
 	Writes to the same <savedir>/spectrogram_cache/ that the GUI reads via
 	SWS_utils, using the identical compute path, so a warm cache is always a hit.
@@ -320,37 +321,15 @@ def precompute_spectrograms(filename_sw, EEG_channels = None):
 	else:
 		with open(filename_sw, 'r') as f:
 			d = json.load(f)
-	if EEG_channels is None:
-		EEG_channels = [str(c) for c in d['EEG channel']]
-	savedir = d['savedir']
-	fsd = int(d['fsd'])
-	minf = d['Minimum_Frequency']
-	maxf = d['Maximum_Frequency']
-	os.makedirs(SWS_utils.spect_cache_dir(savedir), exist_ok = True)
+	if acqs is None:
+		acqs = d['Acquisition']
 	n_done = 0
-	for a in d['Acquisition']:
-		for chan in EEG_channels:
-			eeg_dir = os.path.join(savedir, 'AD'+str(chan)+'_downsampled')
-			files = glob.glob(os.path.join(eeg_dir, 'downsampEEG_Acq'+str(a)+'_hr*.npy'))
-			for f in files:
-				base = os.path.split(f)[1]
-				try:
-					h = int(base[base.rfind('_hr')+3:base.rfind('.npy')])
-				except ValueError:
-					continue
-				eeg = np.load(f)
-				cache = SWS_utils.spect_cache_path(savedir, a, h, int(chan))
-				# ax=None => compute + write cache only, no drawing.
-				SWS_utils.plot_spectrogram(None, eeg, fsd, minfreq = minf, maxfreq = maxf,
-					cache_file = cache)
-				# The GUI derives theta/delta from EEG channel 2.
-				if int(chan) == 2:
-					SWS_utils.get_ThD(eeg, fsd,
-						cache_file = SWS_utils.thd_cache_path(savedir, a, h, 2))
-				n_done += 1
-				print(f'Cached spectrogram: Acq{a} hr{h} AD{chan}')
+	for a in acqs:
+		n = SWS_utils.precompute_acq_spectrograms(d, a, EEG_channels)
+		n_done += n
+		print(f'Cached Acq{a} ({n} segment(s))')
 	print(f'Done. Pre-computed {n_done} spectrogram segment(s) into '
-		+ SWS_utils.spect_cache_dir(savedir))
+		+ SWS_utils.spect_cache_dir(d['savedir']))
 
 def make_full_velocity_array(savedir, binsize = 4, return_array = False):
 	movement_df = pd.read_pickle(os.path.join(savedir, 'All_movement.pkl'))
