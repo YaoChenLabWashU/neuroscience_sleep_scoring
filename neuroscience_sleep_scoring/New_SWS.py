@@ -52,6 +52,40 @@ def _ask_yes_no(title, message, default_yes=True):
 			return default_yes
 		return resp == 'y'
 
+def _state_strip_color(state_value):
+	"""Plot color for one epoch's state in the detailed scoring strip. Matches the
+	main hypnogram colors (SWS_utils.STATE_COLORS); unknown/NaN -> white."""
+	try:
+		if np.isnan(state_value):
+			return 'white'
+	except (TypeError, ValueError):
+		pass
+	return SWS_utils.STATE_COLORS.get(int(state_value), 'white')
+
+def draw_state_strip(ax_state, State, this_epoch_t, start_trace, end_trace, epochlen):
+	"""Draw the sleep state of every epoch visible in the detailed (fig2) window.
+
+	Ported/adapted from Kane's New_SWS_kg.py: the zoomed panels use coordinates
+	relative to the current epoch (current epoch at x=0, each epoch epochlen wide).
+	One colored rectangle per visible epoch (color from State), with the current
+	epoch outlined in yellow. Clicking a rectangle relabels that epoch (see the
+	on_state_strip_click handler wired in display_and_fix_scoring)."""
+	ax_state.clear()
+	cur_idx = int(round(this_epoch_t / epochlen))
+	first_rel = int(math.floor(start_trace / epochlen))
+	last_rel = int(math.ceil(end_trace / epochlen))
+	for rel in range(first_rel, last_rel):
+		abs_idx = cur_idx + rel
+		x = rel * epochlen
+		color = _state_strip_color(State[abs_idx]) if 0 <= abs_idx < len(State) else 'white'
+		ax_state.add_patch(patch.Rectangle((x, 0), epochlen, 1, color=color, ec='k', lw=0.5))
+	ax_state.add_patch(patch.Rectangle((0, 0), epochlen, 1, fill=False, ec='#fac205', lw=2.5))
+	ax_state.set_xlim([start_trace, end_trace])
+	ax_state.set_ylim([0, 1])
+	ax_state.set_yticks([])
+	ax_state.set_ylabel('Sleep\nState')
+	ax_state.set_xlabel('Time (s) relative to current epoch (click an epoch to relabel)')
+
 def _recovery_path(d, a, h):
 	"""Path of the autosave/recovery file for one acquisition-hour. Kept in a
 	'recovery/' subdir (not the top-level savedir) so it is NOT picked up by the
@@ -176,7 +210,15 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 		cache_file = SWS_utils.thd_cache_path(d['savedir'], a, h, 2)) #array of ThD values per second
 	ThD_t = np.arange(0, np.size(ThD))
 
-	fig2, (ax6, ax7, ax8, ax9, ax10) = plt.subplots(nrows=5, ncols=1, figsize=(14, 7.5))
+	# fig2 rows: two +/-10 min overview spectrograms (ax6/ax7), zoomed velocity
+	# (ax9) and EMG (ax10), and the clickable per-epoch state strip (ax_state).
+	# The zoomed theta/delta trace (ax8) is drawn on a hidden throwaway axis so the
+	# state strip can take its visible slot. ax6/ax7 must stay the first two axes
+	# because SWS_utils.update_raw_trace indexes fig2.axes[0:2] for the overviews
+	# and fig2.axes[2:5] for the zoomed velocity/EMG/state panels.
+	fig2, (ax6, ax7, ax9, ax10, ax_state) = plt.subplots(nrows=5, ncols=1, figsize=(14, 8))
+	ax8 = fig2.add_axes([0, 0, 1e-3, 1e-3])
+	ax8.set_visible(False)
 	fig1, ax1, ax2, ax3, ax4, ax5, state_img = SWS_utils.create_prediction_figure(d, State_input, is_predicted, clf,
 		Features, d['fsd'], eeg_AD0, eeg_AD2, this_emg, EEG_t, d['epochlen'], start_trace, end_trace,
 		d['Maximum_Frequency'], d['Minimum_Frequency'], [ax6, ax7], v = v, a = a, h = h)
@@ -229,6 +271,15 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 				os.remove(recovery_path)
 			except OSError:
 				pass
+
+	# Track which epoch is centered in the detailed window (0 = first epoch) so the
+	# state strip and the strip-click handler always refer to the right epochs.
+	this_epoch_t = 0
+	# Draw the per-epoch state strip for the initial window, and leave room at the
+	# bottom for its x-label (tight_layout already ran before the strip existed).
+	draw_state_strip(ax_state, State, this_epoch_t, start_trace, end_trace, d['epochlen'])
+	fig2.subplots_adjust(bottom=0.1)
+	fig2.canvas.draw()
 	#init cursor and it's libraries from SW_Cursor.py
 	# Pass all fig1 axes for full-height crosshair
 	all_fig1_axes = [ax1, ax2, ax3, ax4, ax5]
@@ -289,15 +340,44 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 	
 	cursor.magnify_callback = magnify_update
 
+	def on_state_strip_click(event):
+		"""Click an epoch in the detailed state strip to relabel just that epoch.
+
+		Maps the click (x is seconds relative to the current epoch) to an absolute
+		epoch index, asks for the new state via the same popup used elsewhere,
+		applies it, autosaves to the recovery file, and refreshes both the main
+		hypnogram image and the strip."""
+		if event.inaxes is not ax_state or event.xdata is None or event.button != 1:
+			return
+		rel_epoch = int(math.floor(event.xdata / d['epochlen']))
+		cur_idx = int(round(this_epoch_t / d['epochlen']))
+		abs_idx = cur_idx + rel_epoch
+		if abs_idx < 0 or abs_idx >= len(State):
+			print('That epoch is outside the recording.')
+			return
+		popup_xy = cursor._get_screen_xy(event)
+		new_state = choose_state_popup(popup_xy)
+		if new_state is None:
+			return
+		State[abs_idx] = new_state
+		np.save(recovery_path, State)
+		SWS_utils.refresh_state_image(state_img, State)
+		fig1.canvas.draw()
+		cursor.background = fig1.canvas.copy_from_bbox(fig1.bbox)
+		draw_state_strip(ax_state, State, this_epoch_t, start_trace, end_trace, d['epochlen'])
+		fig2.canvas.draw()
+		print(f'Epoch {abs_idx} set to state {new_state}.')
+
 	# Connect fig1 events
 	cID = fig1.canvas.mpl_connect('button_press_event', cursor.on_click)
 	cID4 = fig1.canvas.mpl_connect('motion_notify_event', cursor.on_mouse_move)
 	fig1.canvas.mpl_connect('resize_event', cursor.on_resize)
-	
-	# Connect fig2 events for cursor interaction (no click handling)
+
+	# Connect fig2 events for cursor interaction, plus state-strip clicks.
 	fig2.canvas.mpl_connect('motion_notify_event', cursor.on_mouse_move_fig2)
 	fig2.canvas.mpl_connect('resize_event', cursor.on_resize_fig2)
 	fig2.canvas.mpl_connect('key_press_event', cursor.on_press)
+	fig2.canvas.mpl_connect('button_press_event', on_state_strip_click)
 
 	#Ok so I think that the quotes is the specific event to trigger and the second arg is the function to run when that happens?
 	cID2 = fig1.canvas.mpl_connect('axes_enter_event', cursor.in_axes)
@@ -351,10 +431,15 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 				cursor.magnify_callback(this_epoch_t)
 				fig2.canvas.flush_events()
 
-			SWS_utils.update_raw_trace(fig1, fig2, line1, line2, line3, line4, line5, long_emg, 
-				long_emg_t, long_ThD, long_ThD_t, long_v, long_v_t, markers, this_epoch_t, 
+			SWS_utils.update_raw_trace(fig1, fig2, line1, line2, line3, line4, line5, long_emg,
+				long_emg_t, long_ThD, long_ThD_t, long_v, long_v_t, markers, this_epoch_t,
 				replot_start, replot_end, d['epochlen'])
-			
+
+			# Redraw the per-epoch state strip for the newly-centered window
+			# (update_raw_trace touched ax_state's xlim; this resets it).
+			draw_state_strip(ax_state, State, this_epoch_t, start_trace, end_trace, d['epochlen'])
+			fig2.canvas.draw_idle()
+
 			if d['vid']:
 				if this_epoch_t-d['epochlen'] < 0:
 					print('No video available for this bin')
@@ -406,6 +491,9 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 			SWS_utils.refresh_state_image(state_img, State)
 			fig1.canvas.draw()
 			cursor.background = fig1.canvas.copy_from_bbox(fig1.bbox)
+			# Reflect the edit in the detailed state strip too.
+			draw_state_strip(ax_state, State, this_epoch_t, start_trace, end_trace, d['epochlen'])
+			fig2.canvas.draw_idle()
 			cursor.bins = []
 			cursor.clicked = False
 			cursor.change_bins = False
