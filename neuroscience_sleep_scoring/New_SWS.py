@@ -31,6 +31,35 @@ key_stroke = 0
 # construct/tear down a whole Tk() (and its event loop) on every bin correction.
 _state_popup_root = None
 
+def _ask_yes_no(title, message, default_yes=True):
+	"""Show a yes/no dialog and return True/False. Falls back to a terminal prompt
+	if tkinter isn't usable."""
+	try:
+		import tkinter as tk
+		from tkinter import messagebox
+		root = tk.Tk()
+		root.withdraw()
+		root.attributes('-topmost', True)
+		try:
+			ans = messagebox.askyesno(title, message, parent=root)
+		finally:
+			root.destroy()
+		return bool(ans)
+	except Exception:
+		suffix = ' (Y/n): ' if default_yes else ' (y/N): '
+		resp = input(message + suffix).strip().lower()
+		if resp == '':
+			return default_yes
+		return resp == 'y'
+
+def _recovery_path(d, a, h):
+	"""Path of the autosave/recovery file for one acquisition-hour. Kept in a
+	'recovery/' subdir (not the top-level savedir) so it is NOT picked up by the
+	StatesAcq*.npy scan that marks acquisitions as scored, and so the canonical
+	scoring isn't overwritten until the user confirms saving on close. The name
+	ends in .npy so np.save doesn't append a second extension."""
+	return os.path.join(d['savedir'], 'recovery', 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy')
+
 def choose_state_popup(popup_xy=None):
 	"""Ask which state to assign to the selected bins. Returns 1/2/3 or None.
 
@@ -179,8 +208,27 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 	markers = SWS_utils.make_marker(fig1, this_bin/d['fsd'], d['epochlen'])
 
 
-	plt.ion()	
+	plt.ion()
 	State = deepcopy(State_input)
+
+	# Crash recovery: if an autosave file is left over (e.g. the GUI crashed last
+	# time before the user confirmed saving), offer to load it instead.
+	recovery_path = _recovery_path(d, a, h)
+	os.makedirs(os.path.dirname(recovery_path), exist_ok=True)
+	if os.path.exists(recovery_path):
+		if _ask_yes_no('Recover unsaved scoring',
+				f'Unsaved scoring was found for Acq {a} hr {h} (possible earlier crash).\n'
+				'Recover it? (No keeps the current states.)'):
+			try:
+				State = np.load(recovery_path)
+				print('Recovered unsaved scoring from ' + recovery_path)
+			except Exception as e:
+				print(f'Could not load recovery file: {e}')
+		else:
+			try:
+				os.remove(recovery_path)
+			except OSError:
+				pass
 	#init cursor and it's libraries from SW_Cursor.py
 	# Pass all fig1 axes for full-height crosshair
 	all_fig1_axes = [ax1, ax2, ax3, ax4, ax5]
@@ -342,11 +390,14 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 				if new_state is None:
 					new_state = int(input('What state should these be?: '))
 
-			# --- State persistence: UNCHANGED from prior behavior ---
+			# --- State edit (same array logic as before) ---
 			State[start_bin:end_bin] = new_state
 			if end_bin == len(State)-1:
 				State[end_bin] = new_state
-			np.save(os.path.join(d['savedir'], 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'), State)
+			# Autosave to the recovery file (not the canonical StatesAcq) so a crash
+			# is recoverable but the real scoring isn't overwritten until the user
+			# confirms saving on close.
+			np.save(recovery_path, State)
 
 			# --- Fast display update ---
 			# Update the state image, redraw fig1 once to show the new colors, and
@@ -362,6 +413,24 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 			DONE = True
 
 	print('successfully left GUI')
+
+	# Ask whether to save. 'Yes' writes the canonical StatesAcq file; 'No' leaves
+	# the previously-saved states untouched. Either way the recovery autosave is
+	# cleared, since this is a clean exit (recovery only matters after a crash).
+	states_path = os.path.join(d['savedir'], 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy')
+	save_it = _ask_yes_no('Save scoring',
+		f'Save sleep states for Acq {a} hr {h}?')
+	if save_it:
+		np.save(states_path, State)
+		print('Saved states to ' + states_path)
+	else:
+		print('Not saving; existing StatesAcq file (if any) left unchanged.')
+	try:
+		if os.path.exists(recovery_path):
+			os.remove(recovery_path)
+	except OSError:
+		pass
+
 	# Persist window layout (figure geometry + video window) for the next launch.
 	try:
 		if getattr(cursor, 'preview_window_open', False) and getattr(cursor, '_preview_visible', False):
@@ -382,7 +451,6 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 		pass
 	cv2.destroyAllWindows()
 	plt.close('all')
-	np.save(os.path.join(d['savedir'], 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'), State)
 
 	return State
 
