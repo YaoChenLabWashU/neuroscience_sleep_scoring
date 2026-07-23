@@ -31,20 +31,41 @@ key_stroke = 0
 # construct/tear down a whole Tk() (and its event loop) on every bin correction.
 _state_popup_root = None
 
+def _mpl_root():
+	"""Return matplotlib's existing Tk root (TkAgg) so every dialog shares ONE Tk
+	interpreter. Creating a second tk.Tk() alongside matplotlib's root is the
+	classic multi-root deadlock that froze the GUI."""
+	try:
+		import tkinter as tk
+		r = getattr(tk, '_default_root', None)
+		if r is not None:
+			return r
+	except Exception:
+		pass
+	try:
+		import matplotlib.pyplot as plt
+		mgr = plt._pylab_helpers.Gcf.get_active()
+		if mgr is not None:
+			return mgr.canvas.manager.window
+	except Exception:
+		pass
+	return None
+
 def _ask_yes_no(title, message, default_yes=True):
-	"""Show a yes/no dialog and return True/False. Falls back to a terminal prompt
-	if tkinter isn't usable."""
+	"""Show a yes/no dialog and return True/False. Uses matplotlib's existing Tk
+	root (no competing tk.Tk()); falls back to a terminal prompt if unavailable."""
 	try:
 		import tkinter as tk
 		from tkinter import messagebox
-		root = tk.Tk()
-		root.withdraw()
-		root.attributes('-topmost', True)
+		root = _mpl_root()
+		if root is not None:
+			return bool(messagebox.askyesno(title, message, parent=root))
+		tmp = tk.Tk()
+		tmp.withdraw()
 		try:
-			ans = messagebox.askyesno(title, message, parent=root)
+			return bool(messagebox.askyesno(title, message, parent=tmp))
 		finally:
-			root.destroy()
-		return bool(ans)
+			tmp.destroy()
 	except Exception:
 		suffix = ' (Y/n): ' if default_yes else ' (y/N): '
 		resp = input(message + suffix).strip().lower()
@@ -100,22 +121,24 @@ def choose_state_popup(popup_xy=None):
 	Reuses one persistent hidden root; each call spawns a lightweight Toplevel
 	and blocks on wait_window (same blocking UX as before, far less overhead).
 	"""
-	global _state_popup_root
 	try:
 		import tkinter as tk
 		from tkinter import font as tkfont
 	except Exception:
 		return None
-	try:
-		if _state_popup_root is None or not _state_popup_root.winfo_exists():
-			_state_popup_root = tk.Tk()
-			_state_popup_root.withdraw()
-	except Exception:
-		_state_popup_root = tk.Tk()
-		_state_popup_root.withdraw()
+	# Share matplotlib's Tk root instead of a separate one (avoids the deadlock).
+	root = _mpl_root()
+	_temp_root = None
+	if root is None:
+		try:
+			root = tk.Tk()
+			root.withdraw()
+			_temp_root = root
+		except Exception:
+			return None
 
 	result = {'val': None}
-	win = tk.Toplevel(_state_popup_root)
+	win = tk.Toplevel(root)
 	win.title('Select State')
 	win.resizable(False, False)
 	win.attributes('-topmost', True)
@@ -141,7 +164,9 @@ def choose_state_popup(popup_xy=None):
 		win.geometry(f'+{int(x)+10}+{int(y)+10}')
 	win.grab_set()
 	win.focus_force()
-	_state_popup_root.wait_window(win)
+	root.wait_window(win)
+	if _temp_root is not None:
+		_temp_root.destroy()
 	return result['val']
 
 def on_press(event):

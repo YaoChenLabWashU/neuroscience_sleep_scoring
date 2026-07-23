@@ -129,11 +129,15 @@ class Cursor(object):
         if DEBUG: print('making a cursor')
 
     def _on_draw(self, event):
-        """Cache fig1 (minus animated crosshair) as a bitmap after any full redraw."""
+        """After any full redraw, recapture the clean background AND immediately
+        re-blit the crosshair, so it persists (never blinks out) across
+        corrections, replots and resizes."""
         try:
             self.background = self.ax2.figure.canvas.copy_from_bbox(self.ax2.figure.bbox)
         except Exception:
             self.background = None
+            return
+        self._redraw_crosshair()
 
     def _on_draw_fig2(self, event):
         """Cache fig2 as a bitmap after any full redraw (for the magnify crosshair)."""
@@ -482,55 +486,56 @@ class Cursor(object):
             finally:
                 self._in_magnify_callback = False
 
-    def on_mouse_move(self, event):
-        # Grab a background if we somehow don't have one yet. Do NOT force a full
-        # canvas.draw() here: that costs ~hundreds of ms and made the crosshair
-        # stall/disappear. draw_event (_on_draw) keeps self.background fresh.
+    def _redraw_crosshair(self):
+        """Restore the clean background and blit the crosshair at its last position.
+
+        Called on every mouse move AND after every full redraw (_on_draw), so the
+        crosshair is always visible (never disappears, even while stationary after
+        a correction) and never has to force a slow full draw. The vertical lines
+        stay visible across all panels; only the horizontal line follows the y of
+        whichever panel the cursor is over."""
+        fig = self.ax2.figure
         if self.background is None:
-            self.background = self.ax2.figure.canvas.copy_from_bbox(self.ax2.figure.bbox)
-
-        if not event.inaxes:
-            if self.horizontal_line.get_visible():
-                self.set_cross_hair_visible(False)
-                self.ax2.figure.canvas.restore_region(self.background)
-                self.ax2.figure.canvas.blit(self.ax2.figure.bbox)
-        else:
-            if not self.horizontal_line.get_visible():
-                self.set_cross_hair_visible(True)
-            x_sec = self._event_x_to_seconds(event)
-            self.current_x_sec = x_sec  # Track current position
-            y = event.ydata
-            
-            # Update the line positions - vertical line across all axes
-            self._set_cursor_x(x_sec, y=y)
-            self.text.set_text('x=%1.2f, y=%1.2f' % (x_sec, y))
-
-            self.ax2.figure.canvas.restore_region(self.background)
+            try:
+                self.background = fig.canvas.copy_from_bbox(fig.bbox)
+            except Exception:
+                return
+        fig.canvas.restore_region(self.background)
+        for i, vline in enumerate(self.vertical_lines):
+            self.all_axes[i].draw_artist(vline)
+        self.ax2.draw_artist(self.epoch_marker)
+        if self.horizontal_line.get_visible():
             self.ax2.draw_artist(self.horizontal_line)
-            self.ax2.draw_artist(self.epoch_marker)
-            for i, vline in enumerate(self.vertical_lines):
-                self.all_axes[i].draw_artist(vline)
-            self.ax2.draw_artist(self.text)
-            self.ax2.figure.canvas.blit(self.ax2.figure.bbox)
-            
-            # Sync the fig2 (detail) crosshair only in magnify mode. Blitting the
-            # large fig2 on every fig1 mouse move roughly doubled per-move cost
-            # for little benefit; fig2 still updates on click/replot.
-            if self.magnify_mode and len(self.fig2_axes) > 0:
-                if self.background_fig2 is None:
-                    fig2 = self.fig2_axes[0].figure
-                    self.background_fig2 = fig2.canvas.copy_from_bbox(fig2.bbox)
-                fig2 = self.fig2_axes[0].figure
-                fig2.canvas.restore_region(self.background_fig2)
-                for i, vline in enumerate(self.vertical_lines_fig2):
-                    self.fig2_axes[i].draw_artist(vline)
-                fig2.canvas.blit(fig2.bbox)
-            
-            # Magnify mode: update zoomed view following fast cursor
-            if self.magnify_mode and self.magnify_callback is not None and not self._in_magnify_callback:
+        self.ax2.draw_artist(self.text)
+        fig.canvas.blit(fig.bbox)
+
+    def on_mouse_move(self, event):
+        if event.inaxes:
+            x_sec = self._event_x_to_seconds(event)
+            self.current_x_sec = x_sec
+            self._set_cursor_x(x_sec, y=event.ydata)
+            self.text.set_text('x=%1.2f, y=%1.2f' % (x_sec, event.ydata))
+            self.horizontal_line.set_visible(True)
+        else:
+            # Off-axis: leave the vertical line where it was (persistent) and just
+            # drop the horizontal line (only meaningful over a panel).
+            self.horizontal_line.set_visible(False)
+        self._redraw_crosshair()
+
+        # Sync the fig2 (detail) crosshair + zoom only in magnify mode.
+        if event.inaxes and self.magnify_mode and len(self.fig2_axes) > 0:
+            if self.background_fig2 is None:
+                self.background_fig2 = self.fig2_axes[0].figure.canvas.copy_from_bbox(
+                    self.fig2_axes[0].figure.bbox)
+            fig2 = self.fig2_axes[0].figure
+            fig2.canvas.restore_region(self.background_fig2)
+            for i, vline in enumerate(self.vertical_lines_fig2):
+                self.fig2_axes[i].draw_artist(vline)
+            fig2.canvas.blit(fig2.bbox)
+            if self.magnify_callback is not None and not self._in_magnify_callback:
                 self._in_magnify_callback = True
                 try:
-                    self.magnify_callback(x_sec)
+                    self.magnify_callback(self.current_x_sec)
                 finally:
                     self._in_magnify_callback = False
 
