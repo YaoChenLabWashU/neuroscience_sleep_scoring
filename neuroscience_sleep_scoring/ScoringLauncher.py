@@ -250,8 +250,31 @@ class ScoringLauncher:
             pass
 
     def on_close(self):
+        """Save layout and fully exit the program.
+
+        A plain root.destroy() sometimes left the process alive because scoring
+        leaves stray Tk roots (the state-selection popup) and matplotlib figure
+        windows around. Tear those down and hard-exit so Close reliably quits.
+        """
         self._save_geometry()
-        self.root.destroy()
+        try:
+            import matplotlib.pyplot as plt
+            plt.close('all')
+        except Exception:
+            pass
+        try:
+            from neuroscience_sleep_scoring import New_SWS
+            if getattr(New_SWS, '_state_popup_root', None) is not None:
+                New_SWS._state_popup_root.destroy()
+                New_SWS._state_popup_root = None
+        except Exception:
+            pass
+        try:
+            self.root.quit()
+            self.root.destroy()
+        except Exception:
+            pass
+        os._exit(0)
 
 
 def launch(settings_path=None):
