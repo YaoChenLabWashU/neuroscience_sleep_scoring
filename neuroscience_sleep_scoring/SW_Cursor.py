@@ -164,9 +164,9 @@ class Cursor(object):
             if DEBUG: print('DONE SCORING')
             self.DONE = True
         elif event.key == 'p':
-            # Toggle video window visibility
-            if self.video_cap is not None:
-                self._toggle_preview_window()
+            # Play the current bin's video once (same as 'o').
+            if self.video_cap is not None and self.video_timestamp is not None:
+                self._play_current_bin()
             else:
                 print('No video available')
         elif event.key == 'm':
@@ -197,9 +197,9 @@ class Cursor(object):
             self.current_epoch_t = self.current_x_sec
             if DEBUG: print(f'Moved current bin marker to bin {bin_idx}')
         elif event.key == 'o':
-            # Play 4s video clip at current cursor position
+            # Play the current bin's video once.
             if self.video_cap is not None and self.video_timestamp is not None:
-                self._play_clip_at_current_bin()
+                self._play_current_bin()
             else:
                 print('No video available')
         elif event.key == 'i':
@@ -338,54 +338,57 @@ class Cursor(object):
             if DEBUG: print(f'Help popup error: {e}')
 
 
-    def _screen_size(self):
-        """Best-effort screen resolution (from matplotlib's Tk root) for sizing the
-        video window as large as possible. Falls back to a big default."""
+    def _video_frame_size(self):
+        """Native (width, height) of the behavior video, so the preview window can
+        match the frame size. Returns (None, None) if it can't be determined."""
         try:
-            import tkinter as tk
-            r = getattr(tk, '_default_root', None)
-            if r is not None:
-                return int(r.winfo_screenwidth()), int(r.winfo_screenheight())
+            if self.video_cap:
+                for c in self.video_cap.values():
+                    if c is not None and c.isOpened():
+                        w = int(c.get(cv2.CAP_PROP_FRAME_WIDTH))
+                        h = int(c.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                        if w > 0 and h > 0:
+                            return w, h
         except Exception:
             pass
-        return 1280, 960
+        return None, None
 
     def _draw_banner(self, frame, time_sec, frame_idx):
-        """Draw the always-on time / bin / frame banner across the top of a frame."""
+        """Draw the time / bin / frame banner with a transparent background.
+
+        Uses outlined text (thick black stroke under a thin yellow stroke) so it's
+        legible over any frame content without a filled box occluding the video."""
         bin_idx = int(time_sec // self.epochlen)
         label = f"t={time_sec:.2f}s   bin={bin_idx}   frame={frame_idx}"
-        w = frame.shape[1]
-        cv2.rectangle(frame, (0, 0), (w, 46), (0, 0, 0), -1)
-        cv2.putText(frame, label, (12, 33), cv2.FONT_HERSHEY_SIMPLEX, 1.0,
-            (0, 255, 255), 2, cv2.LINE_AA)
+        cv2.putText(frame, label, (12, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8,
+            (0, 0, 0), 4, cv2.LINE_AA)
+        cv2.putText(frame, label, (12, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8,
+            (0, 255, 255), 1, cv2.LINE_AA)
         return frame
 
-    def _play_clip_at_current_bin(self):
-        """Loop the current bin's 4 s video clip until a key is pressed.
+    def _play_current_bin(self):
+        """Play the video of the bin under the cursor exactly once (no loop).
 
-        Uses the bin under the cursor (current_x_sec). Looping (rather than a
-        single pass) makes the short clip actually watchable; press q/ESC/o/v to
-        stop. Errors are printed (not swallowed) so failures are visible."""
+        Opens the preview window (at the video's native frame size) if needed,
+        plays the frames spanning this bin's epoch a single time, and leaves the
+        last frame on screen. Bound to both 'o' and 'p'. Errors are printed."""
         if self.video_timestamp is None or self.video_cap is None:
             print('No video available')
             return
         try:
             epochlen = self.epochlen
             # Snap to the start of the bin under the cursor.
-            time_sec = math.floor(self.current_x_sec / epochlen) * epochlen
+            time_sec = math.floor(max(self.current_x_sec, 0) / epochlen) * epochlen
             offset_times = self.video_timestamp['Offset_Time'].values
             clip_end = time_sec + epochlen
 
-            start_pos = np.searchsorted(offset_times, time_sec, side='right') - 1
-            end_pos = np.searchsorted(offset_times, clip_end, side='right') - 1
-            if start_pos < 0:
-                start_pos = 0
-            if end_pos >= len(offset_times):
-                end_pos = len(offset_times) - 1
+            start_pos = max(np.searchsorted(offset_times, time_sec, side='right') - 1, 0)
+            end_pos = min(np.searchsorted(offset_times, clip_end, side='right') - 1,
+                len(offset_times) - 1)
 
-            start_frame = self.video_timestamp.index[start_pos]
-            end_frame = self.video_timestamp.index[end_pos]
-            if end_frame <= start_frame:
+            start_frame = int(self.video_timestamp.index[start_pos])
+            end_frame = int(self.video_timestamp.index[end_pos])
+            if end_frame < start_frame:
                 print('No video frames for this bin.')
                 return
 
@@ -402,36 +405,33 @@ class Cursor(object):
             elif not self._preview_visible:
                 self._show_preview_window()
 
-            print(f'Looping clip: bin {int(time_sec//epochlen)}, '
-                f't={time_sec:.1f}-{clip_end:.1f}s. Press q/ESC/o to stop.')
+            print(f'Playing bin {int(time_sec//epochlen)} '
+                f'(t={time_sec:.1f}-{clip_end:.1f}s)')
             index_vals = self.video_timestamp.index.values
-            stop = False
-            while not stop:
-                shown = 0
-                for f_idx in range(start_frame, end_frame + 1):
-                    cap.set(cv2.CAP_PROP_POS_FRAMES, f_idx)
-                    ret, frame = cap.read()
-                    if not ret:
-                        continue
-                    shown += 1
-                    if f_idx in self.video_timestamp.index:
-                        t = float(self.video_timestamp.loc[f_idx, 'Offset_Time'])
-                    else:
-                        pos = min(np.searchsorted(index_vals, f_idx), len(offset_times) - 1)
-                        t = offset_times[pos]
-                    cv2.imshow(self.preview_window_name, self._draw_banner(frame, t, f_idx))
-                    key = cv2.waitKey(30) & 0xFF
-                    if key in (ord('q'), 27, ord('o'), ord('v')):
-                        stop = True
-                        break
-                if shown == 0:
-                    print('Could not read video frames for this bin.')
+            shown = 0
+            last_t = time_sec
+            for f_idx in range(start_frame, end_frame + 1):
+                cap.set(cv2.CAP_PROP_POS_FRAMES, f_idx)
+                ret, frame = cap.read()
+                if not ret:
+                    continue
+                shown += 1
+                if f_idx in self.video_timestamp.index:
+                    last_t = float(self.video_timestamp.loc[f_idx, 'Offset_Time'])
+                else:
+                    pos = min(np.searchsorted(index_vals, f_idx), len(offset_times) - 1)
+                    last_t = float(offset_times[pos])
+                cv2.imshow(self.preview_window_name, self._draw_banner(frame, last_t, f_idx))
+                if (cv2.waitKey(30) & 0xFF) in (ord('q'), 27):
                     break
-            # Leave the current bin's frame on screen.
+            if shown == 0:
+                print('Could not read video frames for this bin.')
+                return
+            # Leave the last frame of the bin on screen.
             self.last_preview_frame_idx = None
-            self._show_preview_frame(time_sec)
+            self._show_preview_frame(last_t)
         except Exception as e:
-            print(f'Clip playback error: {e}')
+            print(f'Video playback error: {e}')
 
     def _x_for_axis(self, ax, x):
         if ax == self.ax2:
@@ -691,10 +691,10 @@ class Cursor(object):
         if self.preview_window_open:
             return
         cv2.namedWindow(self.preview_window_name, cv2.WINDOW_NORMAL)
-        # Open as large as possible (screen size) per request. Honor a saved
-        # position if the user moved it (e.g. to another monitor); default 0,0.
-        sw, sh = self._screen_size()
-        cv2.resizeWindow(self.preview_window_name, sw, sh)
+        # Size the window to the video's native frame size (not fullscreen).
+        fw, fh = self._video_frame_size()
+        if fw and fh:
+            cv2.resizeWindow(self.preview_window_name, fw, fh)
         x = SWS_utils._video_window_props['x']
         y = SWS_utils._video_window_props['y']
         cv2.moveWindow(self.preview_window_name, x if x is not None else 0, y if y is not None else 0)

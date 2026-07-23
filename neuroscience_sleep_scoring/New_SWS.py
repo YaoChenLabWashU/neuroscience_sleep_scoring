@@ -505,10 +505,11 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 	SWS_utils.apply_figure_geometry(fig1, _layout.get('fig1'))
 	SWS_utils.apply_figure_geometry(fig2, _layout.get('fig2'))
 
-	# Auto-open the video at the first frame (previously required a keypress).
+	# Auto-open the video window (native frame size) showing the first frame.
 	if d['vid'] and cursor.video_cap is not None:
 		try:
-			cursor._toggle_preview_window()
+			cursor._ensure_preview_window()
+			cursor._show_preview_frame(0)
 		except Exception as e:
 			print(f'Could not auto-open video: {e}')
 
