@@ -53,6 +53,11 @@ class Cursor(object):
         # selected bin(s) and skips the state-selection popup. Cleared after use.
         self.forced_state = None
 
+        # Microarousal placement mode: press 'm' to arm (and resize 1-4 bins), then
+        # click the scoring plot to drop a Wake block of that width.
+        self.micro_mode = False
+        self.micro_size = 1
+
         # Cached video file reference to reduce lookup overhead
         self._cached_video_filename = None
         self._cached_video_cap_ref = None
@@ -107,15 +112,44 @@ class Cursor(object):
         self.lines = [ml1, ml2]
         self.toggle_line = False
 
+        # Recapture the blit background after every full redraw (draw_event) so the
+        # crosshair never has to force its own slow canvas.draw() on mouse move and
+        # never vanishes after a correction/replot. This is the key to a fast,
+        # stable crosshair; on_mouse_move only restores + blits, never draws.
+        try:
+            self.ax2.figure.canvas.mpl_connect('draw_event', self._on_draw)
+        except Exception:
+            pass
+        if self.fig2_axes:
+            try:
+                self.fig2_axes[0].figure.canvas.mpl_connect('draw_event', self._on_draw_fig2)
+            except Exception:
+                pass
+
         if DEBUG: print('making a cursor')
 
+    def _on_draw(self, event):
+        """Cache fig1 (minus animated crosshair) as a bitmap after any full redraw."""
+        try:
+            self.background = self.ax2.figure.canvas.copy_from_bbox(self.ax2.figure.bbox)
+        except Exception:
+            self.background = None
+
+    def _on_draw_fig2(self, event):
+        """Cache fig2 as a bitmap after any full redraw (for the magnify crosshair)."""
+        if self.fig2_axes:
+            try:
+                self.background_fig2 = self.fig2_axes[0].figure.canvas.copy_from_bbox(
+                    self.fig2_axes[0].figure.bbox)
+            except Exception:
+                self.background_fig2 = None
 
     def on_resize(self, event):
-        """Invalidate blitting background on window resize."""
+        """Invalidate blitting background on window resize (draw_event refreshes it)."""
         self.background = None
 
     def on_resize_fig2(self, event):
-        """Invalidate blitting background on fig2 resize."""
+        """Invalidate blitting background on fig2 resize (draw_event refreshes it)."""
         self.background_fig2 = None
 
     def on_move(self, event):
@@ -131,19 +165,17 @@ class Cursor(object):
                 self._toggle_preview_window()
             else:
                 print('No video available')
-            self.background = None  # Invalidate to recapture
         elif event.key == 'm':
-            # Microarousal: drop a single Wake (state 1) bin at the cursor
-            # position. forced_state tells the main loop to apply it directly
-            # and skip the state-selection popup.
-            bin_idx = int(self.current_x_sec // self.epochlen)
-            if bin_idx < 0:
-                bin_idx = 0
-            self.bins = [bin_idx, bin_idx + 1]
-            self.forced_state = 1
-            self.change_bins = True
-            self.clicked = False
-            print(f'Microarousal: Wake bin {bin_idx} (t={bin_idx*self.epochlen}s)')
+            # Microarousal placement: press 'm' to arm placement mode; press again
+            # to grow the block width 1->2->3->4->1. Then CLICK on the scoring plot
+            # (ax2) to drop that many Wake bins starting there (handled in on_click).
+            if not self.micro_mode:
+                self.micro_mode = True
+                self.micro_size = 1
+            else:
+                self.micro_size = self.micro_size % 4 + 1
+            print(f'Microarousal armed: {self.micro_size} bin(s) of Wake. '
+                'Press m to resize, click the scoring plot to place, r/esc to cancel.')
         elif event.key == 'g':
             # Toggle magnify mode (live zoomed view that follows the cursor)
             self.magnify_mode = not self.magnify_mode
@@ -151,7 +183,6 @@ class Cursor(object):
                 print(f'Magnify mode ON - drag cursor to see \u00b1{self.magnify_half_window}s zoomed view')
             else:
                 print('Magnify mode OFF')
-            self.background = None
         elif event.key == 'v':
             # Show magnify settings popup
             self._show_magnify_settings()
@@ -160,8 +191,6 @@ class Cursor(object):
             bin_idx = int(self.current_x_sec // self.epochlen)
             self.epoch_marker.set_xdata([bin_idx, bin_idx])
             self.current_epoch_t = self.current_x_sec
-            # Invalidate background so next blit recaptures with new marker position
-            self.background = None
             if DEBUG: print(f'Moved current bin marker to bin {bin_idx}')
         elif event.key == 'o':
             # Play 4s video clip at current cursor position
@@ -172,8 +201,11 @@ class Cursor(object):
         elif event.key == 'i':
             # Show quick reference GUI (persistent, non-modal)
             self._show_help_popup()
-        elif event.key == 'r':
-            # Cancel current bin selection
+        elif event.key in ('r', 'escape'):
+            # Cancel a pending click selection or armed microarousal placement.
+            if self.micro_mode:
+                self.micro_mode = False
+                print('Microarousal placement cancelled')
             if self.clicked:
                 self.clicked = False
                 self.bins = []
@@ -268,7 +300,7 @@ class Cursor(object):
 
             shortcuts = [
                 ('click x2', 'Select start/end bins, then pick state'),
-                ('m', 'Microarousal: drop a single Wake bin at cursor'),
+                ('m', 'Arm microarousal (press again: 1->4 bins), then click to place Wake'),
                 ('d', 'Done scoring (save and close)'),
                 ('o', 'Play 4s video clip at cursor'),
                 ('p', 'Toggle video window visibility'),
@@ -451,9 +483,10 @@ class Cursor(object):
                 self._in_magnify_callback = False
 
     def on_mouse_move(self, event):
-        # Initialize background for blitting on first call
+        # Grab a background if we somehow don't have one yet. Do NOT force a full
+        # canvas.draw() here: that costs ~hundreds of ms and made the crosshair
+        # stall/disappear. draw_event (_on_draw) keeps self.background fresh.
         if self.background is None:
-            self.ax2.figure.canvas.draw()
             self.background = self.ax2.figure.canvas.copy_from_bbox(self.ax2.figure.bbox)
 
         if not event.inaxes:
@@ -486,7 +519,6 @@ class Cursor(object):
             if self.magnify_mode and len(self.fig2_axes) > 0:
                 if self.background_fig2 is None:
                     fig2 = self.fig2_axes[0].figure
-                    fig2.canvas.draw()
                     self.background_fig2 = fig2.canvas.copy_from_bbox(fig2.bbox)
                 fig2 = self.fig2_axes[0].figure
                 fig2.canvas.restore_region(self.background_fig2)
@@ -727,6 +759,23 @@ class Cursor(object):
 
         # Ignore clicks in fig2 axes
         if event.inaxes in self.fig2_axes:
+            return
+
+        # Microarousal placement: if armed via 'm', a click on the scoring plot
+        # drops micro_size Wake bins starting at the clicked epoch, then disarms.
+        if self.micro_mode:
+            if event.inaxes == self.ax2 and event.xdata is not None:
+                start = int(math.floor(event.xdata))
+                if start < 0:
+                    start = 0
+                self.bins = [start, start + self.micro_size]
+                self.forced_state = 1
+                self.change_bins = True
+                self.clicked = False
+                self.micro_mode = False
+                print(f'Microarousal placed: {self.micro_size} Wake bin(s) at {start}.')
+            else:
+                print('Click on the scoring plot (states panel) to place the microarousal.')
             return
 
         if self.movie_mode:
