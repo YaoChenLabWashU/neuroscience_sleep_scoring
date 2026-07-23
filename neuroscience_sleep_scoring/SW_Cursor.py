@@ -480,8 +480,10 @@ class Cursor(object):
             self.ax2.draw_artist(self.text)
             self.ax2.figure.canvas.blit(self.ax2.figure.bbox)
             
-            # Update fig2 lines if available
-            if len(self.fig2_axes) > 0:
+            # Sync the fig2 (detail) crosshair only in magnify mode. Blitting the
+            # large fig2 on every fig1 mouse move roughly doubled per-move cost
+            # for little benefit; fig2 still updates on click/replot.
+            if self.magnify_mode and len(self.fig2_axes) > 0:
                 if self.background_fig2 is None:
                     fig2 = self.fig2_axes[0].figure
                     fig2.canvas.draw()

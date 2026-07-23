@@ -348,11 +348,13 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 				State[end_bin] = new_state
 			np.save(os.path.join(d['savedir'], 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'), State)
 
-			# --- Fast display update: one set_data + one cheap redraw ---
+			# --- Fast display update ---
+			# Update the state image, redraw fig1 once to show the new colors, and
+			# recapture the blit background from that same draw so the next mouse
+			# move doesn't trigger a second full redraw.
 			SWS_utils.refresh_state_image(state_img, State)
-			cursor.background = None  # force blit background recapture on next move
-			fig1.canvas.draw_idle()
-			fig1.canvas.flush_events()
+			fig1.canvas.draw()
+			cursor.background = fig1.canvas.copy_from_bbox(fig1.bbox)
 			cursor.bins = []
 			cursor.clicked = False
 			cursor.change_bins = False

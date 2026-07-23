@@ -99,6 +99,47 @@ def restore_video_window_props(layout=None):
 # near-instant. The cache is purely derived/additive: deleting it just forces a
 # recompute, and nothing in the analysis pipeline reads it.
 # ---------------------------------------------------------------------------
+# Max time-columns to actually render for a spectrogram image. The underlying
+# data can have tens of thousands of columns; the on-screen axis is ~1k px wide,
+# so anything past a few thousand is invisible but very expensive to draw.
+MAX_DISPLAY_COLS = 2500
+
+def _downsample_cols(Z, max_cols):
+    """Block-average a 2-D array along axis=1 down to at most max_cols columns.
+    Used only for display; leaves the source data untouched."""
+    ncols = Z.shape[1]
+    if ncols <= max_cols:
+        return Z
+    edges = np.linspace(0, ncols, max_cols + 1).astype(int)
+    sums = np.add.reduceat(Z, edges[:-1], axis=1)
+    counts = np.diff(edges)
+    return sums / counts[np.newaxis, :]
+
+def downsample_line_envelope(t, y, max_pts=8000):
+    """Downsample a dense signal for display as a min/max envelope.
+
+    Plotting a full-hour trace (~720k points) is very slow to draw and invisible
+    past the ~1k on-screen pixels. This returns ~max_pts points that preserve the
+    visual envelope (per-block min then max) so bursts still show. Display-only.
+    """
+    t = np.asarray(t)
+    y = np.asarray(y)
+    n = y.shape[0]
+    if n <= max_pts:
+        return t, y
+    n_blocks = max(1, max_pts // 2)
+    block = n // n_blocks
+    usable = n_blocks * block
+    yb = y[:usable].reshape(n_blocks, block)
+    tc = t[:usable].reshape(n_blocks, block).mean(axis=1)
+    ymin = yb.min(axis=1)
+    ymax = yb.max(axis=1)
+    t_ds = np.repeat(tc, 2)
+    y_ds = np.empty(n_blocks * 2, dtype=float)
+    y_ds[0::2] = ymin
+    y_ds[1::2] = ymax
+    return t_ds, y_ds
+
 SPECT_CACHE_DIRNAME = 'spectrogram_cache'
 
 def spect_cache_dir(savedir):
@@ -352,13 +393,19 @@ def my_specgram(x, ax = None, NFFT=400, Fs=200, Fc=0, detrend=mlab.detrend_none,
         vmin = np.percentile(np.concatenate(Z), 2)
         vmax = np.percentile(np.concatenate(Z), 98)
     if ax:
-        im = ax.imshow(Z, cmap, extent=extent, **kwargs, vmin = vmin, vmax = vmax)
+        # A 1-hour spectrogram has ~36k time columns (0.1s hop). Rendering that
+        # many columns makes every full canvas draw take seconds, which is what
+        # made the crosshair/redraws crawl. The display axis is only ~1k px wide,
+        # so block-average the columns down to MAX_DISPLAY_COLS for imshow. This
+        # is display-only; the returned/cached Pxx stays full resolution.
+        Z_disp = _downsample_cols(Z, MAX_DISPLAY_COLS)
+        im = ax.imshow(Z_disp, cmap, extent=extent, **kwargs, vmin = vmin, vmax = vmax)
         print('vmin: '+str(vmin)+'; vmax: '+str(vmax))
         ax.axis('auto')
         xticks = np.arange(100,900,100)*4
         ax.set_xticks(xticks)
         if additional_ax:
-            im = additional_ax.imshow(Z, cmap, extent=extent, **kwargs, vmin = vmin, vmax = vmax)
+            im = additional_ax.imshow(Z_disp, cmap, extent=extent, **kwargs, vmin = vmin, vmax = vmax)
             additional_ax.axis('auto')
             additional_ax.set_xticks(xticks)
         return Pxx, freqs, bins, im
@@ -456,7 +503,10 @@ def create_prediction_figure(d, Predict_y, is_predicted, clf, Features, fs, eeg_
 
     state_img = plot_predicted(ax2, Predict_y, is_predicted, clf, Features)
 
-    ax5.plot(EEG_t, this_emg, color= 'r')
+    # Envelope-downsample the full-hour EMG overview for a fast draw (the
+    # detailed EMG is on fig2). np.asarray handles the pandas Series case.
+    emg_t_disp, emg_disp = downsample_line_envelope(EEG_t, np.asarray(this_emg))
+    ax5.plot(emg_t_disp, emg_disp, color= 'r')
     ax5.set_xlim([EEG_t[0],EEG_t[-1]])
     ax5.set_ylabel('EMG Amplitude')
     fig1.tight_layout()
