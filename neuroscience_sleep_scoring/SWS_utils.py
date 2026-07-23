@@ -899,53 +899,18 @@ def make_marker(fig, x, epochlen):
         markers.append(marker)
     return markers
 
-class LazyVideoCaptures:
-    """Dict-like container of cv2.VideoCapture keyed by video path, opened on
-    first access. Opening every VideoCapture up front was a big chunk of startup
-    time; most scoring sessions only ever touch one or two video files.
-
-    Membership (`v in caps`) is True for any known file (from the timestamps)
-    without opening it, so the existing `if v not in cap ...` guards still work.
-    """
-    def __init__(self, d, known_paths):
-        self.d = d
-        self._known = set(known_paths)
-        self._caps = {}
-
-    def __contains__(self, v):
-        return v in self._caps or v in self._known
-
-    def __getitem__(self, v):
-        cap = self._caps.get(v)
-        if cap is None:
-            print('Opening video ' + str(v) + '...')
-            cap = cv2.VideoCapture(v)
-            self._caps[v] = cap
-            self._known.add(v)
-        return cap
-
-    def get(self, v, default=None):
-        try:
-            return self[v]
-        except Exception:
-            return default
-
-    def values(self):
-        return self._caps.values()
-
-    def release_all(self):
-        for c in self._caps.values():
-            try:
-                c.release()
-            except Exception:
-                pass
-
 def load_video(d, this_timestamp):
-    # Build the set of expected video paths without opening any of them; each
-    # VideoCapture is opened lazily on first use (see LazyVideoCaptures).
-    known = [get_videofn_from_csv(d, ts) for ts in np.unique(this_timestamp['Filename'])]
-    cap = LazyVideoCaptures(d, known)
-    fps = {}  # kept for call-site compatibility; populated lazily if needed
+    # Eagerly open a cv2.VideoCapture for every video file this acquisition uses.
+    # (Lazy opening was tried but broke click/'o' playback, so it's reverted.)
+    print('Loading video now, this might take a second....')
+    cap = {}
+    fps = {}
+    these_ts_files = np.unique(this_timestamp['Filename'])
+    for ts in these_ts_files:
+        v = get_videofn_from_csv(d, ts)
+        print('Loading '+v+'...')
+        cap[v] = cv2.VideoCapture(v)
+        fps[v] = cap[v].get(cv2.CAP_PROP_FPS)
     return cap, fps
 
 def timestamp_extracting(timestamp_file, adjust = True):

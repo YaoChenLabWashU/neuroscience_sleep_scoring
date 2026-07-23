@@ -92,12 +92,12 @@ def choosing_acquisition(filename_sw):
 			try:
 				idx1 = ii.find('_')
 				idx2 = ii.find('.mat')
-				acq = int(ii[idx1 + 1:idx2])
+				this_acq = int(ii[idx1 + 1:idx2])
 			except ValueError:
 				continue
-			print(f'Current acquisition: {acq}')
-			if acq >= start_acq and acq <= end_acq:
-				acq.append(int(ii[idx1 + 1:idx2]))
+			print(f'Current acquisition: {this_acq}')
+			if this_acq >= start_acq and this_acq <= end_acq:
+				acq.append(this_acq)
 				print('\tAdding this acquisition.')
 			else:
 				print('Not adding this acquisition.')
@@ -155,6 +155,8 @@ def downsample_filter(filename_sw, EEG_channels = ['0','2']):
 
 		EMG_files = [glob.glob('AD'+EMG_chan+'_'+str(i)+'.mat') for i in acq]
 		EMG_files = np.asarray(np.concatenate(EMG_files))
+		print(f'EEG files: {EEG_files}')
+		print(f'EMG files: {EMG_files}')
 
 		
 
@@ -230,6 +232,7 @@ def combine_bonsai_data(filename_sw, d):
 	all_ts_df  = pd.DataFrame(columns = ['Timestamps', 'Filename'])
 	print('timestamp_files:',timestamp_files)
 	if d['movement']:
+		print('analyzing movement data')
 		if d['DLC']:
 			all_move_df = pd.DataFrame(columns = ['Timestamps', 'X','Y','Likelihood','Filename'])
 		else:
@@ -238,8 +241,8 @@ def combine_bonsai_data(filename_sw, d):
 		movement_files = SWS_utils.sort_files(movement_files, d['basename'], d['csv_dir'])
 		if len(timestamp_files) != len(movement_files):
 			print('There is a different number of timestamp files and movement files. This will cause misalignment. Please Check this.')
-			print(timestamp_files, sep="\n")
-			print(movement_files, sep="\n")
+			print(len(timestamp_files),timestamp_files, sep="\n")
+			print(len(movement_files),movement_files, sep="\n")
 			sys.exit()
 	for i in range(len(timestamp_files)):
 		if not d['rpi']:
@@ -250,6 +253,8 @@ def combine_bonsai_data(filename_sw, d):
 			timestamp_df['Filename'] = timestamp_files[i]
 			if timestamp_df['Timestamps'].dtype != datetime64:
 				timestamp_df['Timestamps'] = pd.to_datetime(timestamp_df['Timestamps'],format = '%Y-%m-%dT%H:%M:%S.%f',exact=False)
+			if timestamp_df['Timestamps'].dtype == datetime64:
+				timestamp_df['Timestamps'] = timestamp_df['Timestamps'].astype('datetime64[ns]')
    
 		all_ts_df  = pd.concat([all_ts_df, timestamp_df])
 		if d['movement']:

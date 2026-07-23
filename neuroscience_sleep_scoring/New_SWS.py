@@ -162,7 +162,16 @@ def choose_state_popup(popup_xy=None):
 	if popup_xy is not None:
 		x, y = popup_xy
 		win.geometry(f'+{int(x)+10}+{int(y)+10}')
-	win.grab_set()
+	# The Toplevel must be viewable before grab_set(), or Tk raises
+	# "grab failed: window not viewable" (which previously crashed the whole
+	# scoring loop). Make it visible first, and never let grab failure propagate.
+	try:
+		win.deiconify()
+		win.update_idletasks()
+		win.wait_visibility()
+		win.grab_set()
+	except Exception:
+		pass
 	win.focus_force()
 	root.wait_window(win)
 	if _temp_root is not None:
@@ -393,20 +402,99 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 		fig2.canvas.draw()
 		print(f'Epoch {abs_idx} set to state {new_state}.')
 
-	# Connect fig1 events
-	cID = fig1.canvas.mpl_connect('button_press_event', cursor.on_click)
-	cID4 = fig1.canvas.mpl_connect('motion_notify_event', cursor.on_mouse_move)
-	fig1.canvas.mpl_connect('resize_event', cursor.on_resize)
+	# --- Event-driven handlers. Clicks/keys do their work in these callbacks and
+	# the native event loop services mouse motion continuously, so the crosshair
+	# stays smooth (the old `while: plt.waitforbuttonpress(0.15)` loop restarted a
+	# nested Tk mainloop ~7x/s, which is what made the crosshair stutter). ---
+	def do_replot():
+		nonlocal this_epoch_t
+		print("Replot of fig 1. called!")
+		this_epoch_t = math.floor(cursor.replotx/d['epochlen'])*d['epochlen']
+		replot_start = start_trace + this_epoch_t
+		replot_end = end_trace + this_epoch_t
+		cursor.current_epoch_t = this_epoch_t
+		bin_idx = int(this_epoch_t // d['epochlen'])
+		cursor.epoch_marker.set_xdata([bin_idx, bin_idx])
+		# update_raw_trace owns the detailed-view x-limits (keeps them consistent
+		# across panels); we no longer also call magnify_callback here.
+		SWS_utils.update_raw_trace(fig1, fig2, line1, line2, line3, line4, line5, long_emg,
+			long_emg_t, long_ThD, long_ThD_t, long_v, long_v_t, markers, this_epoch_t,
+			replot_start, replot_end, d['epochlen'])
+		draw_state_strip(ax_state, State, this_epoch_t, start_trace, end_trace, d['epochlen'])
+		fig2.canvas.draw_idle()
+		if d['vid']:
+			if this_epoch_t-d['epochlen'] < 0:
+				print('No video available for this bin')
+			else:
+				try:
+					vid_start = int(this_timestamp.index[this_timestamp['Offset_Time']>(this_epoch_t-d['epochlen'])][0])
+					vid_end = int(this_timestamp.index[this_timestamp['Offset_Time']<((this_epoch_t)+(d['epochlen']*2))][-1])
+					SWS_utils.pull_up_movie(d, cap, vid_start, vid_end, this_video, d['epochlen'], this_timestamp)
+				except Exception as e:
+					print(f'Video playback error: {e}')
+		cursor.replot = False
 
-	# Connect fig2 events for cursor interaction, plus state-strip clicks.
+	def do_change_bins():
+		bins = np.sort(cursor.bins)
+		start_bin = int(bins[0])
+		end_bin = int(bins[1])
+		print(f'changing bins: {start_bin} to {end_bin}')
+		forced = getattr(cursor, 'forced_state', None)
+		if forced is not None:
+			new_state = forced
+			cursor.forced_state = None
+		else:
+			new_state = choose_state_popup(cursor.popup_xy)
+		if new_state is None:
+			cursor.bins = []
+			cursor.clicked = False
+			cursor.change_bins = False
+			return
+		# --- State edit (same array logic as before) ---
+		State[start_bin:end_bin] = new_state
+		if end_bin == len(State)-1:
+			State[end_bin] = new_state
+		# Autosave to the recovery file (not the canonical StatesAcq).
+		np.save(recovery_path, State)
+		SWS_utils.refresh_state_image(state_img, State)
+		fig1.canvas.draw()  # draw_event re-blits the crosshair from the fresh bg
+		draw_state_strip(ax_state, State, this_epoch_t, start_trace, end_trace, d['epochlen'])
+		fig2.canvas.draw_idle()
+		cursor.bins = []
+		cursor.clicked = False
+		cursor.change_bins = False
+
+	def on_click_dispatch(event):
+		# Runs right after cursor.on_click; act on whatever flags it set.
+		if cursor.replot:
+			do_replot()
+		if cursor.change_bins:
+			do_change_bins()
+
+	def on_key_dispatch(event):
+		# cursor.on_press sets DONE on 'd'; stop the loop so we can return State.
+		if cursor.DONE:
+			try:
+				fig1.canvas.stop_event_loop()
+			except Exception:
+				pass
+
+	# Connect fig1 events (cursor handler first, then our dispatcher).
+	fig1.canvas.mpl_connect('button_press_event', cursor.on_click)
+	fig1.canvas.mpl_connect('button_press_event', on_click_dispatch)
+	fig1.canvas.mpl_connect('motion_notify_event', cursor.on_mouse_move)
+	fig1.canvas.mpl_connect('resize_event', cursor.on_resize)
+	fig1.canvas.mpl_connect('axes_enter_event', cursor.in_axes)
+	fig1.canvas.mpl_connect('key_press_event', cursor.on_press)
+	fig1.canvas.mpl_connect('key_press_event', on_key_dispatch)
+
+	# Connect fig2 (detail view): cursor motion for magnify, strip clicks, and the
+	# same key handlers so 'd'/keys work with either window focused.
 	fig2.canvas.mpl_connect('motion_notify_event', cursor.on_mouse_move_fig2)
 	fig2.canvas.mpl_connect('resize_event', cursor.on_resize_fig2)
-	fig2.canvas.mpl_connect('key_press_event', cursor.on_press)
 	fig2.canvas.mpl_connect('button_press_event', on_state_strip_click)
-
-	#Ok so I think that the quotes is the specific event to trigger and the second arg is the function to run when that happens?
-	cID2 = fig1.canvas.mpl_connect('axes_enter_event', cursor.in_axes)
-	cID3 = fig1.canvas.mpl_connect('key_press_event', cursor.on_press)
+	fig2.canvas.mpl_connect('key_press_event', cursor.on_press)
+	fig2.canvas.mpl_connect('key_press_event', on_key_dispatch)
 
 
 
@@ -424,106 +512,22 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 		except Exception as e:
 			print(f'Could not auto-open video: {e}')
 
-	DONE = False
-	while not DONE:
-		# Use short timeout so key events on either figure are processed
-		try:
-			plt.waitforbuttonpress(timeout=0.15)
-		except Exception:
-			plt.pause(0.05)
-		# Skip iteration if no flags are set (timeout expired with no action)
-		if not cursor.replot and not cursor.change_bins and not cursor.DONE:
-			continue
-
-		if cursor.replot:
-			print("Replot of fig 1. called!")
-			this_epoch_t = math.floor(cursor.replotx/d['epochlen'])*d['epochlen']
-			replot_start = start_trace + this_epoch_t
-			replot_end = end_trace + this_epoch_t
-			print('Epoch Start Time = ' + str(this_epoch_t) + ' seconds')
-			print('Start Trace = '+str(replot_start) + ' seconds')
-			print('End Trace = ' + str(replot_end) + ' seconds')
-
-			# Update current epoch marker FIRST
-			cursor.current_epoch_t = this_epoch_t
-			bin_idx = int(this_epoch_t // d['epochlen'])
-			cursor.epoch_marker.set_xdata([bin_idx, bin_idx])
-			fig1.canvas.draw_idle()
-			fig1.canvas.flush_events()
-
-			# Update fig2 to show this epoch (when not in magnify mode) BEFORE video
-			if not cursor.magnify_mode and cursor.magnify_callback is not None:
-				cursor.magnify_callback(this_epoch_t)
-				fig2.canvas.flush_events()
-
-			SWS_utils.update_raw_trace(fig1, fig2, line1, line2, line3, line4, line5, long_emg,
-				long_emg_t, long_ThD, long_ThD_t, long_v, long_v_t, markers, this_epoch_t,
-				replot_start, replot_end, d['epochlen'])
-
-			# Redraw the per-epoch state strip for the newly-centered window
-			# (update_raw_trace touched ax_state's xlim; this resets it).
-			draw_state_strip(ax_state, State, this_epoch_t, start_trace, end_trace, d['epochlen'])
-			fig2.canvas.draw_idle()
-
-			if d['vid']:
-				if this_epoch_t-d['epochlen'] < 0:
-					print('No video available for this bin')
-				else:
-					# Play video snippet at this epoch (same as before)
-					vid_start = int(this_timestamp.index[this_timestamp['Offset_Time']>(this_epoch_t-d['epochlen'])][0])
-					vid_end = int(this_timestamp.index[this_timestamp['Offset_Time']<((this_epoch_t)+(d['epochlen']*2))][-1])
-					SWS_utils.pull_up_movie(d, cap, vid_start, vid_end, 
-						this_video, d['epochlen'], this_timestamp)
-
-
-			plt.show()
-			# Invalidate blitting background so new marker positions are captured
-			cursor.background = None
-			cursor.replot = False
-
-
-			# Flip back the params
-
-		if cursor.change_bins:
-			bins = np.sort(cursor.bins)
-			start_bin = int(bins[0])
-			end_bin = int(bins[1])
-			print(f'changing bins: {start_bin} to {end_bin}')
-
-			# 'm' (microarousal) forces a single Wake bin and skips the popup.
-			forced = getattr(cursor, 'forced_state', None)
-			if forced is not None:
-				new_state = forced
-				cursor.forced_state = None
-			else:
-				new_state = choose_state_popup(cursor.popup_xy)
-				if new_state is None:
-					new_state = int(input('What state should these be?: '))
-
-			# --- State edit (same array logic as before) ---
-			State[start_bin:end_bin] = new_state
-			if end_bin == len(State)-1:
-				State[end_bin] = new_state
-			# Autosave to the recovery file (not the canonical StatesAcq) so a crash
-			# is recoverable but the real scoring isn't overwritten until the user
-			# confirms saving on close.
-			np.save(recovery_path, State)
-
-			# --- Fast display update ---
-			# Update the state image, redraw fig1 once to show the new colors, and
-			# recapture the blit background from that same draw so the next mouse
-			# move doesn't trigger a second full redraw.
-			SWS_utils.refresh_state_image(state_img, State)
-			fig1.canvas.draw()
-			cursor.background = fig1.canvas.copy_from_bbox(fig1.bbox)
-			# Reflect the edit in the detailed state strip too.
-			draw_state_strip(ax_state, State, this_epoch_t, start_trace, end_trace, d['epochlen'])
-			fig2.canvas.draw_idle()
-			cursor.bins = []
-			cursor.clicked = False
-			cursor.change_bins = False
-		if cursor.DONE:
-			DONE = True
+	# Run the native event loop until 'd' stops it (see on_key_dispatch). This is
+	# a single continuous Tk mainloop -> smooth crosshair. Falls back to polling
+	# only if start_event_loop is somehow unavailable.
+	try:
+		fig1.canvas.start_event_loop(timeout=0)
+	except Exception as e:
+		print(f'start_event_loop unavailable ({e}); using polling fallback')
+		while not cursor.DONE:
+			try:
+				plt.waitforbuttonpress(timeout=0.15)
+			except Exception:
+				plt.pause(0.05)
+			if cursor.replot:
+				do_replot()
+			if cursor.change_bins:
+				do_change_bins()
 
 	print('successfully left GUI')
 
@@ -555,11 +559,15 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 		fig2=SWS_utils.get_figure_geometry(fig2),
 		video=dict(SWS_utils._video_window_props),
 	)
-	# Release any lazily-opened video captures so re-launching another
-	# acquisition in the same process (via the launcher) doesn't leak handles.
+	# Release the opened video captures so re-launching another acquisition in
+	# the same process (via the launcher) doesn't leak file handles.
 	try:
-		if d['vid'] and 'cap' in locals() and hasattr(cap, 'release_all'):
-			cap.release_all()
+		if d['vid'] and 'cap' in locals():
+			for _c in cap.values():
+				try:
+					_c.release()
+				except Exception:
+					pass
 	except Exception:
 		pass
 	cv2.destroyAllWindows()
