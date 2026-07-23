@@ -997,13 +997,15 @@ def initialize_vid_and_move(d, a, acq_start, acq_len):
                 print('No timestamp files found! Please check directory')
                 sys.exit()
             timestamp_list = sort_files(timestamp_list, d['basename'], d['csv_dir'])
-            try: 
+            # Only the FIRST row of each timestamp CSV is needed; nrows=1 avoids
+            # reading the entire file (this loop was ~12s over all CSVs otherwise).
+            try:
                 first_ts = [datetime.strptime(pd.read_csv(
-                    t, header = None).iloc[0][0], '%Y-%m-%dT%H:%M:%S.%f') for t in timestamp_list]
+                    t, header = None, nrows = 1).iloc[0][0], '%Y-%m-%dT%H:%M:%S.%f') for t in timestamp_list]
             except Exception as e:
                 print(f"Error occurred while parsing timestamps: {e}")
                 first_ts = [datetime.strptime(pd.read_csv(
-                    t, header = None).iloc[0][0][:-7], '%Y-%m-%dT%H:%M:%S.%f') for t in timestamp_list]
+                    t, header = None, nrows = 1).iloc[0][0][:-7], '%Y-%m-%dT%H:%M:%S.%f') for t in timestamp_list]
             for i,t in enumerate(first_ts):
                 print(f"Timestamp {i}: {t}")
             acq_idx, = np.where([(acq_start > first_ts[ii]) & 
