@@ -151,6 +151,31 @@ def spect_cache_path(savedir, a, h, chan):
 def thd_cache_path(savedir, a, h, chan):
     return os.path.join(spect_cache_dir(savedir), f'thd_Acq{a}_hr{h}_AD{chan}.npz')
 
+def features_cache_path(savedir, a, h):
+    return os.path.join(spect_cache_dir(savedir), f'features_Acq{a}_hr{h}.joblib')
+
+def build_feature_dict_cached(d, a, h, eeg_df, normVal):
+    """build_feature_dict is the single biggest cost of opening an acquisition
+    (~15s: it re-derives per-epoch band powers etc. from the EEG). The result is
+    deterministic given the EEG/EMG rows, so cache it to disk keyed by acq/hr and
+    validated by row count. Additive/derived (safe to delete)."""
+    cache = features_cache_path(d['savedir'], a, h)
+    nrows = len(eeg_df)
+    if os.path.exists(cache):
+        try:
+            obj = joblib.load(cache)
+            if int(obj.get('_nrows', -1)) == nrows:
+                return obj['features']
+        except Exception as e:
+            print(f'Feature cache read failed ({cache}): {e}; recomputing.')
+    features = build_feature_dict(eeg_df, d['fsd'], d['epochlen'], normVal=normVal)
+    try:
+        os.makedirs(spect_cache_dir(d['savedir']), exist_ok=True)
+        joblib.dump({'_nrows': nrows, 'features': features}, cache)
+    except Exception as e:
+        print(f'Feature cache write failed ({cache}): {e}')
+    return features
+
 def spectrogram_cached(d, a):
     """Quick check: is the spectrogram cache present for acquisition a?
     Uses the hr0 file for each EEG channel as the indicator."""
@@ -190,6 +215,47 @@ def precompute_acq_spectrograms(d, a, EEG_channels=None):
             if int(chan) == 2:
                 get_ThD(eeg, fsd, cache_file=thd_cache_path(savedir, a, h, 2))
             n += 1
+    # Also warm the per-epoch feature cache (the largest single open cost).
+    try:
+        precompute_acq_features(d, a)
+    except Exception as e:
+        print(f'Feature precompute failed for Acq {a}: {e}')
+    return n
+
+def precompute_acq_features(d, a):
+    """Build and cache the per-epoch FeatureDict for every hour of acquisition a,
+    reproducing score_acquisition's exact eeg_df construction so the GUI gets a
+    cache hit. Returns the number of hours cached."""
+    savedir = d['savedir']
+    fsd = int(d['fsd'])
+    chan0 = d['EEG channel'][0]
+    hr_files = glob.glob(os.path.join(savedir, 'AD'+str(chan0)+'_downsampled',
+        'downsampEEG_Acq'+str(a)+'_hr*.npy'))
+    n = 0
+    for hf in hr_files:
+        base = os.path.split(hf)[1]
+        try:
+            h = int(base[base.rfind('_hr')+3:base.rfind('.npy')])
+        except ValueError:
+            continue
+        if os.path.exists(features_cache_path(savedir, a, h)):
+            n += 1
+            continue
+        eeg_df = pd.DataFrame()
+        normVal = []
+        # NOTE: matches score_acquisition, which reads the EEG channels from hr0.
+        for e in d['EEG channel']:
+            eeg_dir = os.path.join(savedir, 'AD'+str(e)+'_downsampled')
+            eeg_df['EEGChannel'+str(e)] = np.load(os.path.join(eeg_dir,
+                'downsampEEG_Acq'+str(a)+'_hr0.npy'))
+            normVal.append(np.load(os.path.join(eeg_dir, d['basename']+'_normVal.npy')))
+        if int(d.get('emg', 0)):
+            eeg_df['EMG'] = np.load(os.path.join(savedir,
+                'downsampEMG_Acq'+str(a)+'_hr'+str(h)+'.npy'))
+        new_length = int(math.floor((len(eeg_df)/fsd)/d['epochlen'])*d['epochlen']*fsd)
+        eeg_df = eeg_df.iloc[:new_length]
+        build_feature_dict_cached(d, a, h, eeg_df, normVal)
+        n += 1
     return n
 
 def _cache_load(cache_file, expected):
