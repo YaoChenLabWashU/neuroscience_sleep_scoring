@@ -973,12 +973,21 @@ def initialize_vid_and_move(d, a, acq_start, acq_len):
                     t, header = None, nrows = 1).iloc[0][0][:-7], '%Y-%m-%dT%H:%M:%S.%f') for t in timestamp_list]
             for i,t in enumerate(first_ts):
                 print(f"Timestamp {i}: {t}")
-            acq_idx, = np.where([(acq_start > first_ts[ii]) & 
-                (acq_start < first_ts[ii+1]) for ii in range(len(first_ts)-1)])
-            print('HERE',len(first_ts)-1,first_ts[acq_idx[0]],first_ts[acq_idx[-1]],acq_start, acq_idx)
-            print(f'HERE: start: {acq_start}, first_ts: {first_ts}, last_ts: {first_ts[acq_idx[-1]]}, acq_idx: {acq_idx}')
-            this_video = video_list[acq_idx[0]] if acq_idx.size > 0 else video_list[0]
-            print('Selected video: '+this_video)
+            # Pick the video whose recording window contains acq_start. For the
+            # LAST acquisition acq_start is >= the last file's start (no interval
+            # match), so map it to the last video instead of crashing on an empty
+            # index. Likewise clamp to the first video if it precedes them all.
+            matches = [ii for ii in range(len(first_ts)-1)
+                if first_ts[ii] <= acq_start < first_ts[ii+1]]
+            if matches:
+                vid_idx = matches[0]
+            elif acq_start >= first_ts[-1]:
+                vid_idx = len(first_ts) - 1
+            else:
+                vid_idx = 0
+            vid_idx = min(vid_idx, len(video_list) - 1)
+            this_video = video_list[vid_idx]
+            print(f'Selected video (idx {vid_idx}): ' + this_video)
     else:
         this_video = None
         print('no video available')

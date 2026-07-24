@@ -420,18 +420,13 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 		SWS_utils.update_raw_trace(fig1, fig2, line1, line2, line3, line4, line5, long_emg,
 			long_emg_t, long_ThD, long_ThD_t, long_v, long_v_t, markers, this_epoch_t,
 			replot_start, replot_end, d['epochlen'])
+		# Apply the configurable overview-spectrogram x-span (View Settings).
+		half = getattr(cursor, 'detail_spect_halfspan', 600)
+		ax6.set_xlim([this_epoch_t - half, this_epoch_t + half])
+		ax7.set_xlim([this_epoch_t - half, this_epoch_t + half])
 		draw_state_strip(ax_state, State, this_epoch_t, start_trace, end_trace, d['epochlen'])
 		fig2.canvas.draw_idle()
-		if d['vid']:
-			if this_epoch_t-d['epochlen'] < 0:
-				print('No video available for this bin')
-			else:
-				try:
-					vid_start = int(this_timestamp.index[this_timestamp['Offset_Time']>(this_epoch_t-d['epochlen'])][0])
-					vid_end = int(this_timestamp.index[this_timestamp['Offset_Time']<((this_epoch_t)+(d['epochlen']*2))][-1])
-					SWS_utils.pull_up_movie(d, cap, vid_start, vid_end, this_video, d['epochlen'], this_timestamp)
-				except Exception as e:
-					print(f'Video playback error: {e}')
+		# NOTE: moving the epoch marker no longer plays the video; press 'o' for that.
 		cursor.replot = False
 
 	def do_change_bins():

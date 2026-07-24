@@ -58,6 +58,11 @@ class Cursor(object):
         self.micro_mode = False
         self.micro_size = 1
 
+        # 'l' reference lines (dashed), and the configurable ±s x-span of the
+        # detailed overview spectrograms (View Settings, 'v').
+        self._ref_lines = []
+        self.detail_spect_halfspan = 600
+
         # Cached video file reference to reduce lookup overhead
         self._cached_video_filename = None
         self._cached_video_cap_ref = None
@@ -188,8 +193,8 @@ class Cursor(object):
             else:
                 print('Magnify mode OFF')
         elif event.key == 'v':
-            # Show magnify settings popup
-            self._show_magnify_settings()
+            # Show view-settings popup
+            self._show_view_settings()
         elif event.key == 'c':
             # Move current bin marker to cursor position
             bin_idx = int(self.current_x_sec // self.epochlen)
@@ -225,43 +230,70 @@ class Cursor(object):
         elif event.key in [1,2,3,4]:
             self.STATE.append(event.key)
         elif event.key == 'l':
-            if DEBUG: print(f'toggling line!! xdata: {event.xdata} ydata: {event.ydata}')
-            for line in self.lines:
-                line.remove()
-            line1 = self.ax1.plot([self.spect_x_axis[int(event.xdata)],self.spect_x_axis[int(event.xdata)]], [self.ylims_ax1[0], self.ylims_ax1[1]], linewidth = 0.5, color = 'k')
-            line2 = self.ax2.plot([int(event.xdata), int(event.xdata)], [self.ylims_ax2[0], self.ylims_ax2[1]], linewidth = 0.5, color = 'k')
-            self.lines[0] = line1.pop(0)
-            self.lines[1] = line2.pop(0)
+            # Toggle a dashed reference line across all fig1 panels at the mouse x.
+            # (Does not play video and never errors when the cursor is off-axis.)
+            if getattr(self, '_ref_lines', None):
+                for ln in self._ref_lines:
+                    try:
+                        ln.remove()
+                    except Exception:
+                        pass
+                self._ref_lines = []
+                self.background = None
+                self.ax2.figure.canvas.draw_idle()
+            elif event.inaxes in self.all_axes and event.xdata is not None:
+                x_sec = self._event_x_to_seconds(event)
+                self._ref_lines = []
+                for ax in self.all_axes:
+                    x = self._x_for_axis(ax, x_sec)
+                    self._ref_lines.append(ax.axvline(x, color='k', lw=1, ls='--'))
+                self.background = None
+                self.ax2.figure.canvas.draw_idle()
+            else:
+                print("Hover over a plot, then press 'l' to place a reference line.")
 
-    def _show_magnify_settings(self):
-        """Show popup to adjust magnify view parameters."""
+    def _show_view_settings(self):
+        """Popup ('v') to adjust view parameters: the detailed overview-spectrogram
+        x-span, the magnify window, and the EMG y-limits. Shares matplotlib's Tk
+        root (a separate tk.Tk() + mainloop() can deadlock the GUI)."""
         try:
-            root = tk.Tk()
-            root.title('Magnify Settings')
-            root.resizable(False, False)
-            root.attributes('-topmost', True)
-            
-            bold_font = tkfont.Font(weight='bold')
-            
-            tk.Label(root, text='Magnify Window Settings', font=bold_font).pack(padx=10, pady=6)
-            
-            # Half window size slider
-            tk.Label(root, text='Time window (±seconds):').pack(padx=10, pady=2)
-            var_window = tk.IntVar(value=self.magnify_half_window)
-            scale = tk.Scale(root, from_=10, to=300, orient='horizontal', 
-                           variable=var_window, length=200)
-            scale.pack(padx=10, pady=2)
+            root = getattr(tk, '_default_root', None)
+            temp = None
+            if root is None:
+                root = tk.Tk()
+                root.withdraw()
+                temp = root
 
-            # EMG y-limits
-            tk.Label(root, text='EMG y-limits (min, max):').pack(padx=10, pady=2)
-            emg_frame = tk.Frame(root)
+            win = tk.Toplevel(root)
+            win.title('View Settings')
+            win.resizable(False, False)
+            win.attributes('-topmost', True)
+            bold_font = tkfont.Font(weight='bold')
+            tk.Label(win, text='View Settings', font=bold_font).pack(padx=10, pady=6)
+
+            # Detailed overview-spectrogram x-span (fig2 ax6/ax7).
+            tk.Label(win, text='Detailed spectrogram x-span (±seconds):').pack(padx=10, pady=(6, 2))
+            var_span = tk.IntVar(value=int(self.detail_spect_halfspan))
+            tk.Scale(win, from_=30, to=1800, resolution=10, orient='horizontal',
+                variable=var_span, length=230).pack(padx=10, pady=2)
+
+            # Magnify window (±seconds).
+            tk.Label(win, text='Magnify window (±seconds):').pack(padx=10, pady=(6, 2))
+            var_window = tk.IntVar(value=self.magnify_half_window)
+            tk.Scale(win, from_=10, to=300, orient='horizontal',
+                variable=var_window, length=230).pack(padx=10, pady=2)
+
+            # EMG y-limits (blank = auto).
+            tk.Label(win, text='EMG y-limits (min, max; blank = auto):').pack(padx=10, pady=(6, 2))
+            emg_frame = tk.Frame(win)
             emg_frame.pack(padx=10, pady=2)
             emg_min_var = tk.StringVar(value='' if self.magnify_emg_ylim is None else str(self.magnify_emg_ylim[0]))
             emg_max_var = tk.StringVar(value='' if self.magnify_emg_ylim is None else str(self.magnify_emg_ylim[1]))
             tk.Entry(emg_frame, textvariable=emg_min_var, width=8).pack(side='left', padx=4)
             tk.Entry(emg_frame, textvariable=emg_max_var, width=8).pack(side='left', padx=4)
-            
+
             def apply_settings():
+                self.detail_spect_halfspan = var_span.get()
                 self.magnify_half_window = var_window.get()
                 emg_min = emg_min_var.get().strip()
                 emg_max = emg_max_var.get().strip()
@@ -272,25 +304,42 @@ class Cursor(object):
                         self.magnify_emg_ylim = None
                 else:
                     self.magnify_emg_ylim = None
-                print(f'Magnify window set to ±{self.magnify_half_window}s')
-                # Apply EMG ylim immediately to both fig1 and fig2 EMG axes
                 if self.magnify_emg_ylim is not None:
-                    # ax4 is the fig1 EMG axis
                     self.ax4.set_ylim(self.magnify_emg_ylim)
-                    # fig2_axes[4] is ax10 (fig2 EMG axis) if it exists
                     if len(self.fig2_axes) > 4:
                         self.fig2_axes[4].set_ylim(self.magnify_emg_ylim)
-                    self.background = None
-                    self.background_fig2 = None
+                # Apply the detailed spectrogram x-span now, centered on the current epoch.
+                if len(self.fig2_axes) >= 2:
+                    c = self.current_epoch_t
+                    self.fig2_axes[0].set_xlim([c - self.detail_spect_halfspan, c + self.detail_spect_halfspan])
+                    self.fig2_axes[1].set_xlim([c - self.detail_spect_halfspan, c + self.detail_spect_halfspan])
+                self.background = None
+                self.background_fig2 = None
+                try:
                     self.ax4.figure.canvas.draw_idle()
-                    if len(self.fig2_axes) > 0:
+                except Exception:
+                    pass
+                if len(self.fig2_axes) > 0:
+                    try:
                         self.fig2_axes[0].figure.canvas.draw_idle()
-                root.destroy()
-            
-            tk.Button(root, text='Apply', command=apply_settings, width=12).pack(padx=10, pady=8)
-            root.mainloop()
+                    except Exception:
+                        pass
+                print(f'View settings: detailed spectrogram ±{self.detail_spect_halfspan}s, '
+                    f'magnify ±{self.magnify_half_window}s')
+                win.destroy()
+
+            tk.Button(win, text='Apply', command=apply_settings, width=12).pack(padx=10, pady=8)
+            try:
+                win.update_idletasks()
+                win.wait_visibility()
+                win.grab_set()
+            except Exception:
+                pass
+            root.wait_window(win)
+            if temp is not None:
+                temp.destroy()
         except Exception as e:
-            if DEBUG: print(f'Settings popup error: {e}')
+            print(f'View settings popup error: {e}')
 
     def _show_help_popup(self):
         """Show keyboard shortcuts reference as a blocking, closeable window."""
@@ -309,11 +358,11 @@ class Cursor(object):
                 ('o', 'Play 4s video clip at cursor'),
                 ('p', 'Toggle video window visibility'),
                 ('g', 'Toggle magnify mode'),
-                ('v', 'Magnify view settings'),
+                ('v', 'View settings (detail spectrogram x-span, magnify, EMG y-lim)'),
+                ('l', 'Toggle a dashed reference line at the cursor'),
                 ('c', 'Move current bin marker to cursor'),
                 ('←/→', 'Nudge selection start (after 1st click)'),
                 ('r', 'Cancel current selection'),
-                ('l', 'Toggle line marker'),
                 ('1/2/3/4', 'Set state (Wake/NREM/REM/Other)'),
                 ('i', 'Show this help'),
             ]
