@@ -236,6 +236,19 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 	eeg_AD0 = np.load(os.path.join(d['savedir'],'AD0_downsampled', 'downsampEEG_Acq'+a+'_hr'+str(h)+'.npy'))
 	eeg_AD2 = np.load(os.path.join(d['savedir'],'AD2_downsampled', 'downsampEEG_Acq'+a+'_hr'+str(h)+'.npy'))
 
+	# An acquisition can stop early, leaving a dead (flat/constant/zero) tail.
+	# Trim the EEG/EMG to where real data ends so the spectrograms, EMG and
+	# velocity share one x-axis and only real data is plotted/color-scaled. This
+	# is display-only; the saved State array keeps its full nominal length.
+	real_end = max(SWS_utils.real_data_end(eeg_AD0, d['fsd']),
+		SWS_utils.real_data_end(eeg_AD2, d['fsd']))
+	if real_end < np.size(eeg_AD0):
+		print(f'Acq {a} hr {h}: EEG goes dead at {real_end/d["fsd"]:.0f}s '
+			f'(of {np.size(eeg_AD0)/d["fsd"]:.0f}s); trimming the display to real data.')
+	eeg_AD0 = eeg_AD0[:real_end]
+	eeg_AD2 = eeg_AD2[:real_end]
+	this_emg = np.asarray(this_emg)[:real_end]
+
 	EEG_t = np.arange(np.size(eeg_AD0))/d['fsd'] #time array for EEG data
 	start_trace = int(i-(4*d['epochlen'])) #timepoint in seconds that the plotted trace will start
 	end_trace = int(i + (5*d['epochlen'])) #timepoint in seconds that the plotted trace will end

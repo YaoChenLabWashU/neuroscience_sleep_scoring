@@ -581,6 +581,26 @@ def plot_predicted(ax, Predict_y, is_predicted, clf, Features):
     ax.plot(confidence, color = 'k', zorder=1)
     return state_img
 
+def real_data_end(eeg, fsd, win_s=10, frac=0.1):
+    """Sample index where real EEG ends. An acquisition can stop early and leave a
+    DEAD tail (exact zeros OR a flat/constant value with ~0 variance), which
+    wrecks the spectrogram and desynchronizes the panels. Detect it as the last
+    window whose std exceeds frac*median(std). Returns len(eeg) if it's all live."""
+    eeg = np.asarray(eeg)
+    n = eeg.shape[0]
+    w = int(max(1, win_s * fsd))
+    nwin = n // w
+    if nwin < 2:
+        return n
+    stds = np.array([eeg[i*w:(i+1)*w].std() for i in range(nwin)])
+    med = np.median(stds)
+    if med <= 0:
+        return n
+    live = np.where(stds > frac * med)[0]
+    if live.size == 0:
+        return n
+    return int(min(n, (live[-1] + 1) * w))
+
 # This is the plotting collection function for the coarse prediction figure
 def create_prediction_figure(d, Predict_y, is_predicted, clf, Features, fs, eeg_AD0, eeg_AD2,
     this_emg, EEG_t, epochlen, start, end, maxfreq, minfreq, additional_axes, v = None, a = None, h = None):
@@ -623,11 +643,23 @@ def create_prediction_figure(d, Predict_y, is_predicted, clf, Features, fs, eeg_
     # detailed EMG is on fig2). np.asarray handles the pandas Series case.
     emg_t_disp, emg_disp = downsample_line_envelope(EEG_t, np.asarray(this_emg))
     ax5.plot(emg_t_disp, emg_disp, color= 'r')
-    ax5.set_xlim([EEG_t[0],EEG_t[-1]])
     ax5.set_ylabel('EMG Amplitude')
+
+    # eeg_AD0/eeg_AD2/this_emg arrive already trimmed to the real data (see
+    # display_and_fix_scoring), so their length defines the acquisition bounds.
+    # Bind every panel to [0, L] so the spectrograms, states, velocity and EMG
+    # share one x-axis (the movement then lines up exactly under the EEG).
+    L = eeg_AD0.shape[0] / fs
+    ax1.set_xlim([0, L])
+    ax3.set_xlim([0, L])
+    ax5.set_xlim([0, L])
+    if v is not None:
+        ax4.set_xlim([0, L])
+    ax2.set_xlim([0, L / epochlen])   # states axis is in epoch units
+
     fig1.tight_layout()
     fig1.subplots_adjust(wspace=0, hspace=0)
-    
+
     return fig1, ax1, ax2, ax3, ax4, ax5, state_img
 
 def update_sleep_df(model_dir, mod_name, df_additions):
