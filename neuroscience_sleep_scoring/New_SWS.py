@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.patches as patch
 import matplotlib.pyplot as plt
+from matplotlib.ticker import FuncFormatter
 import matplotlib.image as mpimg
 import scipy.signal as signal
 import glob
@@ -105,7 +106,11 @@ def draw_state_strip(ax_state, State, this_epoch_t, start_trace, end_trace, epoc
 	ax_state.set_ylim([0, 1])
 	ax_state.set_yticks([])
 	ax_state.set_ylabel('Sleep\nState')
-	ax_state.set_xlabel('Time (s) relative to current epoch (click an epoch to relabel)')
+	# Label relative to the current-epoch CENTER (0 = center) so this strip lines
+	# up with the detailed spectrograms/traces above. Re-applied here because
+	# ax_state.clear() (above) drops the formatter each redraw.
+	ax_state.xaxis.set_major_formatter(FuncFormatter(lambda x, pos: f'{x - epochlen/2.0:.0f}'))
+	ax_state.set_xlabel('Time (s) relative to current epoch (0 = center; click an epoch to relabel)')
 
 def _recovery_path(d, a, h):
 	"""Path of the autosave/recovery file for one acquisition-hour. Kept in a
@@ -406,6 +411,27 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 	# the native event loop services mouse motion continuously, so the crosshair
 	# stays smooth (the old `while: plt.waitforbuttonpress(0.15)` loop restarted a
 	# nested Tk mainloop ~7x/s, which is what made the crosshair stutter). ---
+	def align_detail_xaxes():
+		"""Center every detailed (fig2) panel on the CURRENT-EPOCH CENTER and label
+		its x-axis relative to that center (0 = center), so the overview
+		spectrograms, the zoomed velocity/EMG traces and the state strip all line
+		up vertically and can be compared straight down. The overview spectrograms
+		use the configurable ± x-span (View Settings); the zoomed traces already
+		span a symmetric window around the current epoch center."""
+		center_t = this_epoch_t + d['epochlen'] / 2.0
+		half = getattr(cursor, 'detail_spect_halfspan', 600)
+		ax6.set_xlim([center_t - half, center_t + half])
+		ax7.set_xlim([center_t - half, center_t + half])
+		try:
+			line4.set_xdata([center_t, center_t])
+			line5.set_xdata([center_t, center_t])
+		except Exception:
+			pass
+		rel_fmt = FuncFormatter(lambda x, pos, c=center_t: f'{x - c:.0f}')
+		for _ax in (ax6, ax7, ax9, ax10):
+			_ax.xaxis.set_major_formatter(rel_fmt)
+		ax7.set_xlabel('Time (s) relative to current epoch (0 = center)')
+
 	def do_replot():
 		nonlocal this_epoch_t
 		print("Replot of fig 1. called!")
@@ -415,15 +441,12 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 		cursor.current_epoch_t = this_epoch_t
 		bin_idx = int(this_epoch_t // d['epochlen'])
 		cursor.epoch_marker.set_xdata([bin_idx, bin_idx])
-		# update_raw_trace owns the detailed-view x-limits (keeps them consistent
-		# across panels); we no longer also call magnify_callback here.
 		SWS_utils.update_raw_trace(fig1, fig2, line1, line2, line3, line4, line5, long_emg,
 			long_emg_t, long_ThD, long_ThD_t, long_v, long_v_t, markers, this_epoch_t,
 			replot_start, replot_end, d['epochlen'])
-		# Apply the configurable overview-spectrogram x-span (View Settings).
-		half = getattr(cursor, 'detail_spect_halfspan', 600)
-		ax6.set_xlim([this_epoch_t - half, this_epoch_t + half])
-		ax7.set_xlim([this_epoch_t - half, this_epoch_t + half])
+		# Center + relatively-label all detail panels (also applies the View
+		# Settings x-span). update_raw_trace set absolute limits/labels first.
+		align_detail_xaxes()
 		draw_state_strip(ax_state, State, this_epoch_t, start_trace, end_trace, d['epochlen'])
 		fig2.canvas.draw_idle()
 		# NOTE: moving the epoch marker no longer plays the video; press 'o' for that.
@@ -492,6 +515,9 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 	fig2.canvas.mpl_connect('key_press_event', on_key_dispatch)
 
 
+
+	# Align + relatively-label the detailed panels for the initial (epoch 0) view.
+	align_detail_xaxes()
 
 	#This is the loop that manages the interface
 	plt.show()

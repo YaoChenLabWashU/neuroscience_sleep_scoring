@@ -497,8 +497,16 @@ def my_specgram(x, ax = None, NFFT=400, Fs=200, Fc=0, detrend=mlab.detrend_none,
     freqs += Fc
     extent = xmin, xmax, freqs[0], freqs[-1]
     if not vmin and not vmax:
-        vmin = np.percentile(np.concatenate(Z), 2)
-        vmax = np.percentile(np.concatenate(Z), 98)
+        # Auto color scaling from the 2nd/98th percentiles, but only over FINITE
+        # values: a zero-padded tail (e.g. an acquisition that stopped early)
+        # gives 10*log10(0) = -inf, which otherwise dragged vmin to -inf and
+        # washed out the whole spectrogram.
+        Zf = Z[np.isfinite(Z)]
+        if Zf.size:
+            vmin = np.percentile(Zf, 2)
+            vmax = np.percentile(Zf, 98)
+        else:
+            vmin, vmax = -50, -10
     if ax:
         # A 1-hour spectrogram has ~36k time columns (0.1s hop). Rendering that
         # many columns makes every full canvas draw take seconds, which is what

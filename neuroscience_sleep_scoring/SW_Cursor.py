@@ -308,9 +308,10 @@ class Cursor(object):
                     self.ax4.set_ylim(self.magnify_emg_ylim)
                     if len(self.fig2_axes) > 4:
                         self.fig2_axes[4].set_ylim(self.magnify_emg_ylim)
-                # Apply the detailed spectrogram x-span now, centered on the current epoch.
+                # Apply the detailed spectrogram x-span now, centered on the current
+                # epoch CENTER (matches New_SWS.align_detail_xaxes so labels stay put).
                 if len(self.fig2_axes) >= 2:
-                    c = self.current_epoch_t
+                    c = self.current_epoch_t + self.epochlen / 2.0
                     self.fig2_axes[0].set_xlim([c - self.detail_spect_halfspan, c + self.detail_spect_halfspan])
                     self.fig2_axes[1].set_xlim([c - self.detail_spect_halfspan, c + self.detail_spect_halfspan])
                 self.background = None
