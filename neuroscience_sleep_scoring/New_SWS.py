@@ -108,8 +108,14 @@ def draw_state_strip(ax_state, State, this_epoch_t, start_trace, end_trace, epoc
 	ax_state.set_ylabel('Sleep\nState')
 	# Label relative to the current-epoch CENTER (0 = center) so this strip lines
 	# up with the detailed spectrograms/traces above. Re-applied here because
-	# ax_state.clear() (above) drops the formatter each redraw.
-	ax_state.xaxis.set_major_formatter(FuncFormatter(lambda x, pos: f'{x - epochlen/2.0:.0f}'))
+	# ax_state.clear() (above) drops these each redraw. Ticks in steps of 10s
+	# (strip coords are epoch-start-relative, so center is at epochlen/2), incl 0.
+	c0 = epochlen / 2.0
+	nt = int(max(abs(start_trace - c0), abs(end_trace - c0)) // 10)
+	sticks = [c0 + k * 10 for k in range(-nt, nt + 1) if start_trace <= c0 + k * 10 <= end_trace]
+	ax_state.set_xticks(sticks)
+	ax_state.xaxis.set_major_formatter(FuncFormatter(lambda x, pos: f'{x - c0:.0f}'))
+	ax_state.axvline(c0, color='k', lw=1, ls=':')  # x=0 (current-epoch center)
 	ax_state.set_xlabel('Time (s) relative to current epoch (0 = center; click an epoch to relabel)')
 
 def _recovery_path(d, a, h):
@@ -284,6 +290,10 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 	ax7.set_xlim([-600, 600])
 	line4 = ax6.axvline(0, linewidth = 2, color = 'k')
 	line5 = ax7.axvline(0, linewidth = 2, color = 'k')
+	# Dotted x=0 (current-epoch center) reference on the zoomed velocity/EMG panels
+	# (the spectrograms already have line4/line5); updated by align_detail_xaxes.
+	zero_lines = [ax9.axvline(0, color='0.35', lw=1, ls=':'),
+		ax10.axvline(0, color='0.35', lw=1, ls=':')]
 
 	fig2.tight_layout()
 	markers = SWS_utils.make_marker(fig1, this_bin/d['fsd'], d['epochlen'])
@@ -425,10 +435,29 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 		try:
 			line4.set_xdata([center_t, center_t])
 			line5.set_xdata([center_t, center_t])
+			zero_lines[0].set_xdata([center_t, center_t])
+			zero_lines[1].set_xdata([center_t, center_t])
 		except Exception:
 			pass
+		# Labels are relative to the current-epoch center (0 = center).
 		rel_fmt = FuncFormatter(lambda x, pos, c=center_t: f'{x - c:.0f}')
-		for _ax in (ax6, ax7, ax9, ax10):
+		# Spectrogram x-ticks in steps of 10s (coarsened to a larger multiple of 10
+		# for wide spans so they stay readable), and always including 0.
+		step = 10
+		for s in (10, 20, 50, 100, 200, 500, 1000, 2000, 5000):
+			if (2 * half) / s <= 24:
+				step = s
+				break
+		n = int(half // step)
+		spec_ticks = center_t + np.arange(-n, n + 1) * step
+		for _ax in (ax6, ax7):
+			_ax.set_xticks(spec_ticks)
+			_ax.xaxis.set_major_formatter(rel_fmt)
+		# Zoomed velocity/EMG span ~±18s: ticks every 10s (…-10, 0, 10…), incl 0.
+		nt = int(max(abs(start_trace), abs(end_trace)) // 10)
+		trace_ticks = center_t + np.arange(-nt, nt + 1) * 10
+		for _ax in (ax9, ax10):
+			_ax.set_xticks(trace_ticks)
 			_ax.xaxis.set_major_formatter(rel_fmt)
 		ax7.set_xlabel('Time (s) relative to current epoch (0 = center)')
 

@@ -496,17 +496,6 @@ def my_specgram(x, ax = None, NFFT=400, Fs=200, Fc=0, detrend=mlab.detrend_none,
     xmin, xmax = xextent
     freqs += Fc
     extent = xmin, xmax, freqs[0], freqs[-1]
-    if not vmin and not vmax:
-        # Auto color scaling from the 2nd/98th percentiles, but only over FINITE
-        # values: a zero-padded tail (e.g. an acquisition that stopped early)
-        # gives 10*log10(0) = -inf, which otherwise dragged vmin to -inf and
-        # washed out the whole spectrogram.
-        Zf = Z[np.isfinite(Z)]
-        if Zf.size:
-            vmin = np.percentile(Zf, 2)
-            vmax = np.percentile(Zf, 98)
-        else:
-            vmin, vmax = -50, -10
     if ax:
         # A 1-hour spectrogram has ~36k time columns (0.1s hop). Rendering that
         # many columns makes every full canvas draw take seconds, which is what
@@ -514,6 +503,18 @@ def my_specgram(x, ax = None, NFFT=400, Fs=200, Fc=0, detrend=mlab.detrend_none,
         # so block-average the columns down to MAX_DISPLAY_COLS for imshow. This
         # is display-only; the returned/cached Pxx stays full resolution.
         Z_disp = _downsample_cols(Z, MAX_DISPLAY_COLS)
+        if not vmin and not vmax:
+            # Auto color scaling from the 2nd/98th percentiles of the *displayed*
+            # (downsampled) array, over FINITE values only. Using the full-res Z
+            # here washed the image out (block-averaging compresses the range, so
+            # full-res limits were too wide); ignoring -inf handles a zero-padded
+            # tail (10*log10(0) = -inf) from an acquisition that stopped early.
+            Zf = Z_disp[np.isfinite(Z_disp)]
+            if Zf.size:
+                vmin = np.percentile(Zf, 2)
+                vmax = np.percentile(Zf, 98)
+            else:
+                vmin, vmax = -50, -10
         im = ax.imshow(Z_disp, cmap, extent=extent, **kwargs, vmin = vmin, vmax = vmax)
         print('vmin: '+str(vmin)+'; vmax: '+str(vmax))
         ax.axis('auto')
