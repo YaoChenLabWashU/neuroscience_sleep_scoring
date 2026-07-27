@@ -169,20 +169,20 @@ class Cursor(object):
             if DEBUG: print('DONE SCORING')
             self.DONE = True
         elif event.key == 'p':
-            # Play the current bin's video once (same as 'o').
+            # Play the bin before + current + after (longer than 'o').
             if self.video_cap is not None and self.video_timestamp is not None:
-                self._play_current_bin()
+                self._play_current_bin(n_before=1, n_after=1)
             else:
                 print('No video available')
         elif event.key == 'm':
             # Microarousal placement: press 'm' to arm placement mode; press again
-            # to grow the block width 1->2->3->4->1. Then CLICK on the scoring plot
-            # (ax2) to drop that many Wake bins starting there (handled in on_click).
+            # to grow the block width by 1 bin each time (unbounded). Then CLICK on
+            # the scoring plot (ax2) to drop that many Wake bins (handled in on_click).
             if not self.micro_mode:
                 self.micro_mode = True
                 self.micro_size = 1
             else:
-                self.micro_size = self.micro_size % 4 + 1
+                self.micro_size += 1
             print(f'Microarousal armed: {self.micro_size} bin(s) of Wake. '
                 'Press m to resize, click the scoring plot to place, r/esc to cancel.')
         elif event.key == 'g':
@@ -271,17 +271,23 @@ class Cursor(object):
             bold_font = tkfont.Font(weight='bold')
             tk.Label(win, text='View Settings', font=bold_font).pack(padx=10, pady=6)
 
+            def slider_with_entry(label, var, lo, hi, res=1):
+                # A slider plus an editable box that share the same variable, so you
+                # can either drag or type an exact value.
+                tk.Label(win, text=label).pack(padx=10, pady=(6, 2))
+                row = tk.Frame(win)
+                row.pack(padx=10, pady=2)
+                tk.Scale(row, from_=lo, to=hi, resolution=res, orient='horizontal',
+                    variable=var, length=200, showvalue=False).pack(side='left')
+                tk.Entry(row, textvariable=var, width=6).pack(side='left', padx=6)
+
             # Detailed overview-spectrogram x-span (fig2 ax6/ax7).
-            tk.Label(win, text='Detailed spectrogram x-span (±seconds):').pack(padx=10, pady=(6, 2))
             var_span = tk.IntVar(value=int(self.detail_spect_halfspan))
-            tk.Scale(win, from_=30, to=1800, resolution=10, orient='horizontal',
-                variable=var_span, length=230).pack(padx=10, pady=2)
+            slider_with_entry('Detailed spectrogram x-span (±seconds):', var_span, 10, 3600, res=10)
 
             # Magnify window (±seconds).
-            tk.Label(win, text='Magnify window (±seconds):').pack(padx=10, pady=(6, 2))
             var_window = tk.IntVar(value=self.magnify_half_window)
-            tk.Scale(win, from_=10, to=300, orient='horizontal',
-                variable=var_window, length=230).pack(padx=10, pady=2)
+            slider_with_entry('Magnify window (±seconds):', var_window, 10, 600, res=5)
 
             # EMG y-limits (blank = auto).
             tk.Label(win, text='EMG y-limits (min, max; blank = auto):').pack(padx=10, pady=(6, 2))
@@ -293,8 +299,14 @@ class Cursor(object):
             tk.Entry(emg_frame, textvariable=emg_max_var, width=8).pack(side='left', padx=4)
 
             def apply_settings():
-                self.detail_spect_halfspan = var_span.get()
-                self.magnify_half_window = var_window.get()
+                try:
+                    self.detail_spect_halfspan = max(1, int(var_span.get()))
+                except Exception:
+                    pass
+                try:
+                    self.magnify_half_window = max(1, int(var_window.get()))
+                except Exception:
+                    pass
                 emg_min = emg_min_var.get().strip()
                 emg_max = emg_max_var.get().strip()
                 if emg_min and emg_max:
@@ -354,10 +366,10 @@ class Cursor(object):
 
             shortcuts = [
                 ('click x2', 'Select start/end bins, then pick state'),
-                ('m', 'Arm microarousal (press again: 1->4 bins), then click to place Wake'),
+                ('m', 'Arm microarousal (press again to grow the block), then click to place Wake'),
                 ('d', 'Done scoring (save and close)'),
-                ('o', 'Play 4s video clip at cursor'),
-                ('p', 'Toggle video window visibility'),
+                ('o', 'Play the current bin video (once)'),
+                ('p', 'Play prev + current + next bin video (once)'),
                 ('g', 'Toggle magnify mode'),
                 ('v', 'View settings (detail spectrogram x-span, magnify, EMG y-lim)'),
                 ('l', 'Toggle a dashed reference line at the cursor'),
@@ -416,21 +428,23 @@ class Cursor(object):
             (0, 255, 255), 1, cv2.LINE_AA)
         return frame
 
-    def _play_current_bin(self):
-        """Play the video of the bin under the cursor exactly once (no loop).
+    def _play_current_bin(self, n_before=0, n_after=0):
+        """Play the video around the bin under the cursor exactly once (no loop).
 
-        Opens the preview window (at the video's native frame size) if needed,
-        plays the frames spanning this bin's epoch a single time, and leaves the
-        last frame on screen. Bound to both 'o' and 'p'. Errors are printed."""
+        n_before / n_after add that many extra bins before/after the current bin
+        ('o' plays just the current bin; 'p' plays the bin before + current +
+        after). Opens the preview window at native frame size if needed and leaves
+        the last frame on screen. Errors are printed."""
         if self.video_timestamp is None or self.video_cap is None:
             print('No video available')
             return
         try:
             epochlen = self.epochlen
-            # Snap to the start of the bin under the cursor.
-            time_sec = math.floor(max(self.current_x_sec, 0) / epochlen) * epochlen
+            # Snap to the start of the bin under the cursor, then widen by n_before/after.
+            bin_start = math.floor(max(self.current_x_sec, 0) / epochlen) * epochlen
+            time_sec = max(0.0, bin_start - n_before * epochlen)
+            clip_end = bin_start + epochlen + n_after * epochlen
             offset_times = self.video_timestamp['Offset_Time'].values
-            clip_end = time_sec + epochlen
 
             start_pos = max(np.searchsorted(offset_times, time_sec, side='right') - 1, 0)
             end_pos = min(np.searchsorted(offset_times, clip_end, side='right') - 1,
@@ -455,7 +469,7 @@ class Cursor(object):
             elif not self._preview_visible:
                 self._show_preview_window()
 
-            print(f'Playing bin {int(time_sec//epochlen)} '
+            print(f'Playing bins {int(time_sec//epochlen)}-{int((clip_end-epochlen)//epochlen)} '
                 f'(t={time_sec:.1f}-{clip_end:.1f}s)')
             index_vals = self.video_timestamp.index.values
             shown = 0

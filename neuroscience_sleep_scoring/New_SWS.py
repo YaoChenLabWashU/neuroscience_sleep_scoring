@@ -466,10 +466,15 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 		for _ax in (ax6, ax7):
 			_ax.set_xticks(spec_ticks)
 			_ax.xaxis.set_major_formatter(rel_fmt)
-		# Zoomed velocity/EMG span ~±18s: ticks every 10s (…-10, 0, 10…), incl 0.
-		nt = int(max(abs(start_trace), abs(end_trace)) // 10)
+		# Zoomed velocity + EMG: give them the SAME tight window (the trace window,
+		# symmetric around the current-epoch center) so they align exactly with each
+		# other and no white space is left between the data and the axes.
+		tw0 = this_epoch_t + start_trace
+		tw1 = this_epoch_t + end_trace
+		nt = int(((end_trace - start_trace) / 2) // 10)
 		trace_ticks = center_t + np.arange(-nt, nt + 1) * 10
 		for _ax in (ax9, ax10):
+			_ax.set_xlim([tw0, tw1])
 			_ax.set_xticks(trace_ticks)
 			_ax.xaxis.set_major_formatter(rel_fmt)
 		ax7.set_xlabel('Time (s) relative to current epoch (0 = center)')
