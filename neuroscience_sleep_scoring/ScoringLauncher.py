@@ -76,7 +76,7 @@ class ScoringLauncher:
         self.update_model = tk.BooleanVar(value=False)
         tk.Checkbutton(opt, text='Update model after scoring',
             variable=self.update_model).grid(row=2, column=0, sticky='w', columnspan=2)
-        self.update_log = tk.BooleanVar(value=False)
+        self.update_log = tk.BooleanVar(value=True)
         tk.Checkbutton(opt, text='Update personal log after scoring',
             variable=self.update_log).grid(row=3, column=0, sticky='w', columnspan=2)
 
