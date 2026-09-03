@@ -138,68 +138,183 @@ def _recovery_path(d, a, h):
 	ends in .npy so np.save doesn't append a second extension."""
 	return os.path.join(d['savedir'], 'recovery', 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy')
 
+# The state-selection popup is built ONCE and reused (see choose_state_popup).
+# Rebuilding a Toplevel per correction is slow everywhere and painfully slow on
+# macOS, where each one costs a window-server round trip plus the OS window
+# appearance animation.
+_state_popup = None
+
+# Popup swatch colors, taken from the same table as the hypnogram so the popup
+# and the plots always agree. Converted to hex because Tk needs a color literal.
+def _state_hex(code, default):
+	try:
+		import matplotlib.colors as mcolors
+		return mcolors.to_hex(SWS_utils.STATE_COLORS[code])
+	except Exception:
+		return default
+
+def _build_state_popup(root):
+	"""Construct the reusable state-selection window (hidden until needed).
+
+	The choices are tk.Label widgets, NOT tk.Button: on macOS a Button is a
+	native Aqua control that ignores -background, so colored buttons render as
+	plain grey. Labels are drawn by Tk itself and honor the color on every
+	platform, which is what keeps Wake/NREM/REM visually keyed to the hypnogram.
+	"""
+	import tkinter as tk
+	from tkinter import font as tkfont
+
+	win = tk.Toplevel(root)
+	win.title('Select State')
+	win.resizable(False, False)
+	try:
+		win.attributes('-topmost', True)
+	except Exception:
+		pass
+	# Take the window manager out of the loop. Showing a WM-managed window costs a
+	# full map/unmap round trip -- 45 ms here, and worse on macOS, which also plays
+	# its window-appearance animation. Override-redirect makes it a borderless
+	# floating panel that maps instantly (measured 1.3 ms). It has no title bar, so
+	# the header below and Esc stand in for the close button.
+	try:
+		win.overrideredirect(True)
+	except Exception:
+		pass
+	# One font object, created once. Building a tkfont.Font per call forces a
+	# font lookup each time, which is a measurable cost on Aqua.
+	bold = tkfont.Font(weight='bold')
+	var = tk.IntVar(master=root, value=0)
+
+	# A visible border, since there is no title bar to frame the popup.
+	body = tk.Frame(win, relief='raised', bd=2)
+	body.pack(fill='both', expand=True)
+	tk.Label(body, text='Choose state', font=bold).pack(padx=8, pady=(8, 6))
+
+	swatches = [(1, 'Wake', _state_hex(1, '#008000')),
+		(2, 'NREM', _state_hex(2, '#0000ff')),
+		(3, 'REM', _state_hex(3, '#ff0000'))]
+	for code, name, color in swatches:
+		lbl = tk.Label(body, text=f'{code}: {name}', width=16, font=bold,
+			bg=color, fg='white', relief='raised', bd=2, padx=6, pady=6,
+			cursor='hand2')
+		lbl.pack(padx=8, pady=4, fill='x')
+		# Labels have no -command, so bind the click and give some hover feedback.
+		lbl.bind('<Button-1>', lambda e, c=code: var.set(c))
+		lbl.bind('<Enter>', lambda e, w=lbl: w.configure(relief='solid'))
+		lbl.bind('<Leave>', lambda e, w=lbl: w.configure(relief='raised'))
+
+	tk.Label(body, text='press 1 / 2 / 3   ·   Esc to cancel',
+		fg='#555555').pack(padx=8, pady=(2, 8))
+
+	# Closing the window means "cancel", and must not destroy the cached widgets.
+	win.protocol('WM_DELETE_WINDOW', lambda: var.set(0))
+	win.withdraw()
+	return {'win': win, 'var': var}
+
+def destroy_state_popup():
+	"""Drop the cached popup (called on shutdown, or if its root went away)."""
+	global _state_popup
+	if _state_popup is not None:
+		try:
+			_state_popup['win'].destroy()
+		except Exception:
+			pass
+	_state_popup = None
+
 def choose_state_popup(popup_xy=None):
 	"""Ask which state to assign to the selected bins. Returns 1/2/3 or None.
 
-	Reuses one persistent hidden root; each call spawns a lightweight Toplevel
-	and blocks on wait_window (same blocking UX as before, far less overhead).
+	The window is built once and then shown/hidden, so a correction costs a
+	deiconify instead of constructing and destroying a window. Blocking is done
+	with wait_variable rather than wait_window, because wait_window only returns
+	when the window is destroyed -- which is what forced the rebuild-every-time
+	behavior in the first place.
 	"""
+	global _state_popup
 	try:
 		import tkinter as tk
-		from tkinter import font as tkfont
 	except Exception:
 		return None
 	# Share matplotlib's Tk root instead of a separate one (avoids the deadlock).
 	root = _mpl_root()
-	_temp_root = None
 	if root is None:
+		return None
+
+	# Rebuild if we have no popup, or if the cached one (or its root) was
+	# destroyed between acquisitions.
+	if _state_popup is not None:
 		try:
-			root = tk.Tk()
-			root.withdraw()
-			_temp_root = root
+			if not _state_popup['win'].winfo_exists():
+				_state_popup = None
 		except Exception:
+			_state_popup = None
+	if _state_popup is None:
+		try:
+			_state_popup = _build_state_popup(root)
+		except Exception as e:
+			print(f'Could not build the state popup: {e}')
 			return None
 
-	result = {'val': None}
-	win = tk.Toplevel(root)
-	win.title('Select State')
-	win.resizable(False, False)
-	win.attributes('-topmost', True)
-	bold_font = tkfont.Font(weight='bold')
-	tk.Label(win, text='Choose state', font=bold_font).pack(padx=8, pady=6)
+	win = _state_popup['win']
+	var = _state_popup['var']
+	var.set(0)
 
-	def set_val(v):
-		result['val'] = v
-		win.destroy()
-
-	tk.Button(win, text='1: Wake', width=16, bg='green', fg='white', font=bold_font,
-		command=lambda: set_val(1)).pack(padx=8, pady=4)
-	tk.Button(win, text='2: NREM', width=16, bg='blue', fg='white', font=bold_font,
-		command=lambda: set_val(2)).pack(padx=8, pady=4)
-	tk.Button(win, text='3: REM', width=16, bg='red', fg='white', font=bold_font,
-		command=lambda: set_val(3)).pack(padx=8, pady=6)
-	# Keyboard shortcuts so the popup can be answered without the mouse.
-	win.bind('1', lambda e: set_val(1))
-	win.bind('2', lambda e: set_val(2))
-	win.bind('3', lambda e: set_val(3))
 	if popup_xy is not None:
 		x, y = popup_xy
-		win.geometry(f'+{int(x)+10}+{int(y)+10}')
-	# The Toplevel must be viewable before grab_set(), or Tk raises
-	# "grab failed: window not viewable" (which previously crashed the whole
-	# scoring loop). Make it visible first, and never let grab failure propagate.
+		try:
+			win.geometry(f'+{int(x)+10}+{int(y)+10}')
+		except Exception:
+			pass
 	try:
 		win.deiconify()
+		win.lift()
 		win.update_idletasks()
-		win.wait_visibility()
+		# The window must be viewable before grab_set(), or Tk raises
+		# "grab failed: window not viewable" (which once crashed the whole
+		# scoring loop). Only wait when it isn't already mapped.
+		if not win.winfo_viewable():
+			win.wait_visibility()
 		win.grab_set()
 	except Exception:
 		pass
-	win.focus_force()
-	root.wait_window(win)
-	if _temp_root is not None:
-		_temp_root.destroy()
-	return result['val']
+	try:
+		win.focus_force()
+	except Exception:
+		pass
+
+	# Keyboard shortcuts. These are bound on the ROOT rather than on the popup:
+	# an override-redirect window is not given focus by the window manager, so
+	# per-window key bindings never fire. The popup is modal (grab_set) while
+	# these are active, so capturing 1/2/3/Esc globally is exactly the intent.
+	bound = []
+	try:
+		for code in (1, 2, 3):
+			root.bind_all(str(code), lambda e, c=code: var.set(c))
+			bound.append(str(code))
+		root.bind_all('<Escape>', lambda e: var.set(0))
+		bound.append('<Escape>')
+	except Exception:
+		pass
+
+	# Block until a choice is made, then HIDE (don't destroy) so the next call
+	# is just another deiconify.
+	try:
+		root.wait_variable(var)
+	finally:
+		for seq in bound:
+			try:
+				root.unbind_all(seq)
+			except Exception:
+				pass
+		try:
+			win.grab_release()
+			win.withdraw()
+			win.update_idletasks()
+		except Exception:
+			pass
+
+	val = var.get()
+	return val if val in (1, 2, 3) else None
 
 def on_press(event):
 	global key_stroke

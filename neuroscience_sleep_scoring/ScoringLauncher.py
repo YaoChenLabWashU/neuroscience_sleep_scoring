@@ -264,6 +264,8 @@ class ScoringLauncher:
             pass
         try:
             from neuroscience_sleep_scoring import New_SWS
+            # The reusable state-selection popup is cached between corrections.
+            New_SWS.destroy_state_popup()
             if getattr(New_SWS, '_state_popup_root', None) is not None:
                 New_SWS._state_popup_root.destroy()
                 New_SWS._state_popup_root = None
