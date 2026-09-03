@@ -1,4 +1,5 @@
 import math
+import time
 import matplotlib.pyplot as plt
 import numpy as np
 import cv2
@@ -6,6 +7,44 @@ import tkinter as tk
 from tkinter import font as tkfont
 
 DEBUG = False
+
+# The video preview is drawn into a Tk window, NOT with cv2.imshow/waitKey.
+# On macOS OpenCV's HighGUI is Cocoa: cv2.waitKey releases the GIL and pumps the
+# process-wide NSApplication run loop, which then dispatches events for the Tk
+# windows living on that same NSApp. Those Tk callbacks re-enter Python with no
+# thread state attached, which aborts the interpreter:
+#   Fatal Python error: PyEval_RestoreThread: ... the GIL is released
+# cv2.VideoCapture (decoding) is untouched -- it never talks to a window server.
+try:
+    from PIL import Image, ImageTk
+    _HAVE_PIL = True
+except Exception:  # pragma: no cover - Pillow ships with matplotlib, but cope
+    _HAVE_PIL = False
+
+
+def _tk_root():
+    """The one shared Tk interpreter (matplotlib's, or the launcher's).
+
+    Never create a second tk.Tk(): multiple roots deadlock, and on macOS they
+    fight over the single Cocoa run loop.
+    """
+    return getattr(tk, '_default_root', None)
+
+
+def _frame_to_photo(frame_bgr, master):
+    """Convert a BGR OpenCV frame to a Tk image.
+
+    Pillow is ~2x faster (7.2 vs 15.7 ms/frame at 640x480), so prefer it; the
+    PPM path is a dependency-free fallback. Both sit well inside the ~40 ms
+    budget of real-time 25 fps playback.
+    """
+    if _HAVE_PIL:
+        rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+        return ImageTk.PhotoImage(Image.fromarray(rgb), master=master)
+    ok, buf = cv2.imencode('.ppm', frame_bgr)
+    if not ok:
+        return None
+    return tk.PhotoImage(master=master, data=buf.tobytes(), format='PPM')
 
 class Cursor(object):
     def __init__(self, ax1, ax2, ax4, all_axes=None, epochlen=4, fig2_axes=None):
@@ -32,7 +71,7 @@ class Cursor(object):
         # Current position in seconds for crosshair sync
         self.current_x_sec = 0
 
-        # Video window with slider (p key opens)
+        # Video window with slider (o/p keys play it)
         self.video_cap = None
         self.video_timestamp = None
         self.video_d = None
@@ -42,6 +81,14 @@ class Cursor(object):
         self.last_preview_frame_idx = None
         self._video_slider_max = 1000
         self._video_max_time = 0
+        # Tk video-window widgets (see _ensure_preview_window). _video_photo keeps
+        # a reference to the current frame image: Tk does not own it, so dropping
+        # the reference makes the label go blank.
+        self._video_win = None
+        self._video_label = None
+        self._video_scale = None
+        self._video_photo = None
+        self._stop_playback = False
         
         # Magnify mode ('g' key) - show zoomed view around cursor
         self.magnify_mode = False
@@ -355,9 +402,18 @@ class Cursor(object):
             print(f'View settings popup error: {e}')
 
     def _show_help_popup(self):
-        """Show keyboard shortcuts reference as a blocking, closeable window."""
+        """Show keyboard shortcuts reference as a closeable window.
+
+        Uses a Toplevel on the shared Tk root. It used to build a SECOND tk.Tk()
+        and run a nested mainloop() -- two Tk interpreters deadlock, and on macOS
+        a nested mainloop on a second root aborts the process.
+        """
         try:
-            root = tk.Tk()
+            parent = _tk_root()
+            if parent is None:
+                print('No Tk root available; cannot show the help window.')
+                return
+            root = tk.Toplevel(parent)
             root.title('Keyboard Shortcuts')
             root.resizable(False, False)
             root.attributes('-topmost', True)
@@ -395,7 +451,7 @@ class Cursor(object):
 
             root.protocol('WM_DELETE_WINDOW', on_close)
             tk.Button(root, text='Close', command=on_close, width=10).pack(pady=8)
-            root.mainloop()
+            # Non-modal: no mainloop() and no grab, so scoring continues behind it.
         except Exception as e:
             if DEBUG: print(f'Help popup error: {e}')
 
@@ -470,12 +526,19 @@ class Cursor(object):
                 self._show_preview_window()
 
             print(f'Playing bins {int(time_sec//epochlen)}-{int((clip_end-epochlen)//epochlen)} '
-                f'(t={time_sec:.1f}-{clip_end:.1f}s)')
+                f'(t={time_sec:.1f}-{clip_end:.1f}s)  [q/Esc to stop]')
             index_vals = self.video_timestamp.index.values
             shown = 0
             last_t = time_sec
+            # Seek ONCE, then read sequentially. Seeking per frame forces a
+            # keyframe re-seek and re-decode every iteration: measured 24.7 ms/frame
+            # versus 0.28 ms sequential (88x) on a 640x480 25 fps recording.
+            cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+            src_fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+            frame_interval = 1.0 / src_fps if src_fps > 0 else 0.04
+            self._stop_playback = False
+            next_due = time.perf_counter()
             for f_idx in range(start_frame, end_frame + 1):
-                cap.set(cv2.CAP_PROP_POS_FRAMES, f_idx)
                 ret, frame = cap.read()
                 if not ret:
                     continue
@@ -485,8 +548,19 @@ class Cursor(object):
                 else:
                     pos = min(np.searchsorted(index_vals, f_idx), len(offset_times) - 1)
                     last_t = float(offset_times[pos])
-                cv2.imshow(self.preview_window_name, self._draw_banner(frame, last_t, f_idx))
-                if (cv2.waitKey(30) & 0xFF) in (ord('q'), 27):
+                self._paint_frame(self._draw_banner(frame, last_t, f_idx))
+                # Pace to real time (decoding + painting is far faster than the
+                # frame interval now), pumping Tk so the window stays responsive
+                # and q/Esc can interrupt.
+                next_due += frame_interval
+                while True:
+                    remaining = next_due - time.perf_counter()
+                    if remaining <= 0 or self._stop_playback:
+                        break
+                    time.sleep(min(remaining, 0.005))
+                    self._pump_video_window()
+                if self._stop_playback:
+                    print('Playback stopped.')
                     break
             if shown == 0:
                 print('Could not read video frames for this bin.')
@@ -667,30 +741,68 @@ class Cursor(object):
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
             ret, frame = cap.read()
             if ret:
-                cv2.imshow(self.preview_window_name, self._draw_banner(frame, time_sec, frame_idx))
+                self._paint_frame(self._draw_banner(frame, time_sec, frame_idx))
                 # Update slider position (use _in_slider_callback guard to prevent recursion)
-                if self._video_max_time > 0 and self._video_slider_max > 0 and not self._in_slider_callback:
+                if (self._video_max_time > 0 and self._video_slider_max > 0
+                        and not self._in_slider_callback and self._video_scale is not None):
                     self._in_slider_callback = True
                     try:
                         slider_val = int((time_sec / self._video_max_time) * self._video_slider_max)
                         slider_val = max(0, min(slider_val, self._video_slider_max))
-                        cv2.setTrackbarPos('Time', self.preview_window_name, slider_val)
+                        self._video_scale.set(slider_val)
                     finally:
                         self._in_slider_callback = False
-                cv2.waitKey(1)
         except Exception as e:
             if DEBUG: print(f'Preview error: {e}')
 
+    def _paint_frame(self, frame_bgr):
+        """Draw one BGR frame into the Tk preview window."""
+        if self._video_label is None or self._video_win is None:
+            return
+        photo = _frame_to_photo(frame_bgr, self._video_win)
+        if photo is None:
+            return
+        self._video_photo = photo  # keep a reference or Tk blanks the label
+        self._video_label.configure(image=photo)
+        self._pump_video_window()
+
+    def _pump_video_window(self):
+        """Service the video window's own events without a nested mainloop.
+
+        update_idletasks() redraws; update() also delivers the key presses that
+        set _stop_playback. Both are plain Tk calls on the main thread -- unlike
+        cv2.waitKey, neither releases the GIL or pumps a foreign run loop.
+        """
+        win = self._video_win
+        if win is None:
+            return
+        try:
+            win.update_idletasks()
+            win.update()
+        except tk.TclError:
+            # Window was closed out from under us.
+            self.preview_window_open = False
+            self._preview_visible = False
+            self._video_win = None
+            self._video_label = None
+            self._video_scale = None
+
     def _on_video_slider(self, val):
-        """Callback for video slider trackbar."""
+        """Callback for the video scrub slider.
+
+        This is a tk.Scale command, so it arrives on the Tk main thread. It used
+        to be a cv2 trackbar callback, which on macOS is dispatched from OpenCV's
+        Cocoa run loop -- and this body drives matplotlib blitting, i.e. it drew
+        into one toolkit from another toolkit's thread.
+        """
         if self._video_max_time <= 0:
             return
-        # Guard against recursion: _show_preview_frame calls setTrackbarPos which calls this
+        # Guard against recursion: _show_preview_frame moves the slider, which calls this
         if self._in_slider_callback:
             return
         self._in_slider_callback = True
         try:
-            time_sec = (val / self._video_slider_max) * self._video_max_time
+            time_sec = (float(val) / self._video_slider_max) * self._video_max_time
             self.current_x_sec = time_sec
             self._set_cursor_x(time_sec)
             self._show_preview_frame(time_sec)
@@ -726,7 +838,7 @@ class Cursor(object):
             # Hide the window - save geometry first
             self._update_preview_window_props()
             try:
-                cv2.setWindowProperty(self.preview_window_name, cv2.WND_PROP_VISIBLE, 0)
+                self._video_win.withdraw()
             except Exception:
                 pass
             self._preview_visible = False
@@ -740,51 +852,116 @@ class Cursor(object):
 
     def _show_preview_window(self):
         """Make the existing preview window visible again without changing its size/position."""
-        try:
-            cv2.setWindowProperty(self.preview_window_name, cv2.WND_PROP_VISIBLE, 1)
-        except Exception:
-            # If setWindowProperty doesn't work, recreate the window
+        if self._video_win is None:
             self.preview_window_open = False
+            self._ensure_preview_window()
+            return
+        try:
+            self._video_win.deiconify()
+        except Exception:
+            # Window was destroyed; rebuild it.
+            self.preview_window_open = False
+            self._video_win = None
             self._ensure_preview_window()
             return
         # Don't resize or move - let the window keep its current user-set geometry
         self._preview_visible = True
 
     def _ensure_preview_window(self):
+        """Create the Tk video window (Toplevel + frame label + scrub slider).
+
+        Deliberately NOT a cv2 window: see the module-level note. The Toplevel is
+        parented to the shared Tk root so there is still exactly one interpreter.
+        """
         from neuroscience_sleep_scoring import SWS_utils
         if self.preview_window_open:
             return
-        cv2.namedWindow(self.preview_window_name, cv2.WINDOW_NORMAL)
-        # Size the window to the video's native frame size (not fullscreen).
-        fw, fh = self._video_frame_size()
-        if fw and fh:
-            cv2.resizeWindow(self.preview_window_name, fw, fh)
-        x = SWS_utils._video_window_props['x']
-        y = SWS_utils._video_window_props['y']
-        cv2.moveWindow(self.preview_window_name, x if x is not None else 0, y if y is not None else 0)
-        try:
-            cv2.setWindowProperty(self.preview_window_name, cv2.WND_PROP_TOPMOST, 1)
-        except Exception:
-            pass
-        # Add slider for video navigation
+        root = _tk_root()
+        if root is None:
+            print('No Tk root available; cannot open the video window.')
+            return
+        win = tk.Toplevel(root)
+        win.title(self.preview_window_name)
+        # Closing the window should hide it, not destroy the widgets we hold.
+        win.protocol('WM_DELETE_WINDOW', self._hide_preview_window)
+        # q/Esc interrupt playback (replaces the old cv2.waitKey key polling).
+        for seq in ('<Escape>', 'q', 'Q'):
+            win.bind(seq, lambda e: setattr(self, '_stop_playback', True))
+
+        self._video_label = tk.Label(win, borderwidth=0, highlightthickness=0)
+        self._video_label.pack(fill='both', expand=True)
+
+        # Slider for video navigation. showvalue=0 keeps it compact; the banner
+        # already prints the exact time/bin/frame over the image.
         self._video_slider_max = 1000
         self._video_max_time = 0
         if self.video_timestamp is not None and len(self.video_timestamp) > 0:
             self._video_max_time = self.video_timestamp['Offset_Time'].max()
-        cv2.createTrackbar('Time', self.preview_window_name, 0, self._video_slider_max, self._on_video_slider)
+        self._video_scale = tk.Scale(win, from_=0, to=self._video_slider_max,
+            orient='horizontal', showvalue=0, command=self._on_video_slider)
+        self._video_scale.pack(fill='x')
+
+        # Size to the video's native frame size (not fullscreen) and restore the
+        # saved position.
+        fw, fh = self._video_frame_size()
+        x = SWS_utils._video_window_props['x']
+        y = SWS_utils._video_window_props['y']
+        geo = ''
+        if fw and fh:
+            geo = f'{fw}x{fh + 40}'  # +40 leaves room for the slider
+        if x is not None and y is not None:
+            geo += f'+{int(x)}+{int(y)}'
+        if geo:
+            try:
+                win.geometry(geo)
+            except Exception:
+                pass
+        try:
+            win.attributes('-topmost', True)
+        except Exception:
+            pass
+
+        self._video_win = win
         self.preview_window_open = True
         self._preview_visible = True
+        self._pump_video_window()
+
+    def _hide_preview_window(self):
+        """WM close button: remember geometry and hide rather than destroy."""
+        self._update_preview_window_props()
+        try:
+            self._video_win.withdraw()
+        except Exception:
+            pass
+        self._preview_visible = False
 
     def _update_preview_window_props(self):
         from neuroscience_sleep_scoring import SWS_utils
+        win = self._video_win
+        if win is None:
+            return
         try:
-            rect = cv2.getWindowImageRect(self.preview_window_name)
-            SWS_utils._video_window_props['x'] = rect[0]
-            SWS_utils._video_window_props['y'] = rect[1]
-            SWS_utils._video_window_props['width'] = rect[2]
-            SWS_utils._video_window_props['height'] = rect[3]
+            SWS_utils._video_window_props['x'] = win.winfo_x()
+            SWS_utils._video_window_props['y'] = win.winfo_y()
+            SWS_utils._video_window_props['width'] = win.winfo_width()
+            SWS_utils._video_window_props['height'] = win.winfo_height()
         except Exception:
             pass
+
+    def close_preview_window(self):
+        """Tear the video window down at the end of a scoring session."""
+        if self._video_win is not None:
+            self._update_preview_window_props()
+            try:
+                self._video_win.destroy()
+            except Exception:
+                pass
+        self._video_win = None
+        self._video_label = None
+        self._video_scale = None
+        self._video_photo = None
+        self.preview_window_open = False
+        self._preview_visible = False
 
 
 

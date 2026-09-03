@@ -1,0 +1,39 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug New_SWS (current settings)",
+            "type": "debugpy",
+            "request": "launch",
+            "python": "/home/chenlab/anaconda3/envs/vsenv/bin/python",
+            "program": "${workspaceFolder}/neuroscience_sleep_scoring/New_SWS.py",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [
+                "/home/chenlab/ris/zach/flip/zbrDFCMbP002_20260501/Score_Settings_zbr_linux_zbrDFCMbP002_20260501.json"
+            ]
+        },
+        {
+            "name": "Debug New_SWS (prompt settings path)",
+            "type": "debugpy",
+            "request": "launch",
+            "python": "/home/chenlab/anaconda3/envs/vsenv/bin/python",
+            "program": "${workspaceFolder}/neuroscience_sleep_scoring/New_SWS.py",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [
+                "${input:scoreSettingsPath}"
+            ]
+        }
+    ],
+    "inputs": [
+        {
+            "id": "scoreSettingsPath",
+            "type": "promptString",
+            "description": "Path to Score_Settings.json",
+            "default": "/home/chenlab/ris/zach/flip/zbrDFCMbP002_20260501/Score_Settings_zbr_linux_zbrDFCMbP002_20260501.json"
+        }
+    ]
+}

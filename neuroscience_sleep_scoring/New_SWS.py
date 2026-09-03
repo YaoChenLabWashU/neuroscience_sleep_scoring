@@ -1,3 +1,15 @@
+import sys as _sys
+# Pin the GUI backend BEFORE pyplot is imported. This file is also run directly
+# as a script (`python New_SWS.py settings.json`), in which case the package
+# __init__ (which does the same thing) has not run yet. See
+# neuroscience_sleep_scoring/__init__.py::_pin_gui_backend for why macOS needs it.
+if _sys.platform == 'darwin':
+	try:
+		import matplotlib as _mpl
+		_mpl.use('TkAgg', force=True)
+	except Exception as _e:
+		print(f'Could not pin the TkAgg backend ({_e}); the GUI may be unstable on macOS.')
+
 import numpy as np
 import matplotlib.patches as patch
 import matplotlib.pyplot as plt
@@ -639,7 +651,13 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 					pass
 	except Exception:
 		pass
-	cv2.destroyAllWindows()
+	# Tear down the Tk video window. (This used to be cv2.destroyAllWindows();
+	# the preview is no longer an OpenCV window, and calling into HighGUI on the
+	# exit path is exactly the macOS hazard we removed -- see SW_Cursor.)
+	try:
+		cursor.close_preview_window()
+	except Exception:
+		pass
 	plt.close('all')
 
 	return State

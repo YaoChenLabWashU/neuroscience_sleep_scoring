@@ -541,7 +541,31 @@ pip install -e /path/to/PKA_Sleep
 
 (If `PKA_Sleep` has no `setup.py`, add its parent directory to `PYTHONPATH` instead.)
 
-### 8.3 Point it at data
+### 8.3 macOS notes
+
+The GUI runs on macOS, but Apple's window system is stricter than X11 and two
+things are handled specially:
+
+- **The matplotlib backend is pinned to TkAgg on macOS automatically** (see
+  `__init__.py`). Left alone, matplotlib picks its Cocoa `macosx` backend, which
+  fights the launcher's Tk event loop over the single macOS application run loop
+  and aborts the interpreter. Don't override it with `MPLBACKEND` on a Mac.
+- **The video window is a Tk window, not an OpenCV window.** `cv2.imshow` /
+  `cv2.waitKey` are never called. OpenCV is still used to *decode* frames, which
+  is safe.
+
+Check that Tk is the version Python expects — you want **8.6**:
+
+```bash
+python -c "import tkinter; print('Tk', tkinter.TkVersion)"
+```
+
+Homebrew Python linked against Tcl/Tk 9 is a known tkinter crasher; prefer the
+python.org installer or conda-forge. `pillow` should also be installed (it ships
+with matplotlib); without it the video window still works but renders about
+twice as slowly.
+
+### 8.4 Point it at data
 
 The scoring code needs a real display (it opens Tk and OpenCV windows) — it will not
 run over a plain SSH session without X forwarding.
@@ -571,6 +595,7 @@ run extraction (Part 3) first.
 | Acquisition opens slowly | Cold cache. Use **Precompute spectrograms…** in the launcher. |
 | GUI freezes and won't close | Historically caused by multiple Tk roots. All dialogs now share matplotlib's root — if you're editing the code, **never create a second `tk.Tk()`**. |
 | Scored acquisitions aren't showing green | The scan looks for `StatesAcq*.npy` directly in `savedir`. Files in `recovery/` deliberately don't count. Click **Refresh**. |
+| **macOS:** `Fatal Python error: PyEval_RestoreThread ... the GIL is released` then `Abort trap: 6`, right as an acquisition opens | Something called into OpenCV's HighGUI (`cv2.imshow`/`waitKey`) or created a second `tk.Tk()`. On macOS those pump the shared Cocoa run loop and re-enter Python with no thread state. Fixed in the code; if you hit it again, look for a newly added `cv2` window call. Emergency workaround: set `"vid": 0` to score without video. |
 
 ### For anyone editing the code
 
