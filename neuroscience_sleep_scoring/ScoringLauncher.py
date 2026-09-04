@@ -146,10 +146,18 @@ class ScoringLauncher:
             w.destroy()
         self._acq_order = list(self.d.get('Acquisition', []))
         for i, a in enumerate(self._acq_order):
-            b = tk.Button(self.grid_frame, text=str(a), width=5,
-                bg=self._acq_color(a, scored, cached), activebackground='#ffe08a',
-                command=lambda a=a: self.launch_acq(a))
+            # tk.Label, NOT tk.Button: on macOS a Button is a native Aqua control
+            # that ignores -background, so the scored/cached color coding rendered
+            # as uniform grey there (the legend chips above are Labels, which is
+            # why they stayed correct). Labels are drawn by Tk and honor the color
+            # everywhere, so they get click and hover bindings instead of -command.
+            color = self._acq_color(a, scored, cached)
+            b = tk.Label(self.grid_frame, text=str(a), width=5, bg=color,
+                relief='raised', bd=2, padx=2, pady=3, cursor='hand2')
             b.grid(row=i // GRID_COLS, column=i % GRID_COLS, padx=2, pady=2, sticky='nsew')
+            b.bind('<Button-1>', lambda e, a=a: self.launch_acq(a))
+            b.bind('<Enter>', lambda e, w=b: w.configure(bg='#ffe08a', relief='solid'))
+            b.bind('<Leave>', lambda e, w=b, c=color: w.configure(bg=c, relief='raised'))
         n_scored = len(scored & set(self._acq_order))
         n_cached = len(cached & set(self._acq_order))
         self.status.set(f'{len(self._acq_order)} acquisitions · {n_scored} scored · {n_cached} cached.')
@@ -197,9 +205,14 @@ class ScoringLauncher:
         for i, a in enumerate(acqs):
             v = tk.BooleanVar(value=(a not in cached))
             vars_by_acq[a] = v
-            cb = tk.Checkbutton(grid, text=str(a), variable=v, width=4,
-                bg=(COL_CACHED if a in cached else COL_PLAIN))
-            cb.grid(row=i // GRID_COLS, column=i % GRID_COLS, padx=1, pady=1, sticky='w')
+            # Same Aqua limitation as the grid above: a Checkbutton ignores
+            # -background on macOS. Wrap it in a Frame, which Tk draws itself, so
+            # the cached/uncached color still reads on every platform.
+            cell_bg = COL_CACHED if a in cached else COL_PLAIN
+            cell = tk.Frame(grid, bg=cell_bg, padx=1, pady=1)
+            cell.grid(row=i // GRID_COLS, column=i % GRID_COLS, padx=1, pady=1, sticky='w')
+            cb = tk.Checkbutton(cell, text=str(a), variable=v, width=4, bg=cell_bg)
+            cb.pack()
 
         def set_all(val):
             for v in vars_by_acq.values():

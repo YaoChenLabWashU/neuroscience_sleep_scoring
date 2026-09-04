@@ -221,6 +221,25 @@ def destroy_state_popup():
 			pass
 	_state_popup = None
 
+def _restore_focus(widget):
+	"""Give keyboard focus back to `widget` (and its window) after a modal popup.
+
+	macOS does not re-focus anything on its own when a grabbed window hides, which
+	reads to the user as the GUI freezing until they click somewhere. Focusing the
+	toplevel AND the widget covers both the window-level and within-window cases.
+	"""
+	if widget is None:
+		return
+	try:
+		top = widget.winfo_toplevel()
+		if top.winfo_exists():
+			top.focus_force()
+		if widget.winfo_exists():
+			widget.focus_set()
+		top.update_idletasks()
+	except Exception:
+		pass
+
 def choose_state_popup(popup_xy=None):
 	"""Ask which state to assign to the selected bins. Returns 1/2/3 or None.
 
@@ -258,6 +277,16 @@ def choose_state_popup(popup_xy=None):
 	win = _state_popup['win']
 	var = _state_popup['var']
 	var.set(0)
+
+	# Remember who had keyboard focus so it can be handed back. Without this the
+	# GUI appears to freeze on macOS after a correction: the popup takes focus,
+	# hides itself, and Aqua leaves NO window focused, so the figure canvas stops
+	# receiving key/mouse events until the user clicks it to re-focus.
+	prev_focus = None
+	try:
+		prev_focus = root.focus_get() or root.focus_displayof()
+	except Exception:
+		prev_focus = None
 
 	if popup_xy is not None:
 		x, y = popup_xy
@@ -312,6 +341,7 @@ def choose_state_popup(popup_xy=None):
 			win.update_idletasks()
 		except Exception:
 			pass
+		_restore_focus(prev_focus)
 
 	val = var.get()
 	return val if val in (1, 2, 3) else None
