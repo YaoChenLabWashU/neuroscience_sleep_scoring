@@ -354,6 +354,11 @@ Opening an acquisition gives you an **overview** figure and a **detail** figure
 
 Every detail panel is centered on the **center of the current epoch** and labeled
 *relative* to it: `0` is the middle of the epoch you're on, negative is earlier.
+The `0` and `±10 s` ticks also print the **bin number** on a second line, so you
+can match a point in the detail pane to a bin in the hypnogram or an index in the
+saved `State` array. Because 10 s is not a whole number of 4 s epochs, `-10` and
+`+10` land 2 bins back and 3 bins forward — each label names the bin that tick
+actually falls inside.
 
 ### 5.3 Reading the plots
 

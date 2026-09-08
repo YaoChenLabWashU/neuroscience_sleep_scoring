@@ -96,6 +96,37 @@ def _state_strip_color(state_value):
 		pass
 	return SWS_utils.STATE_COLORS.get(int(state_value), 'white')
 
+# Detail-pane tick offsets (seconds from the current-epoch center) that also get
+# the absolute bin number printed under them.
+BIN_LABEL_OFFSETS = (-10, 0, 10)
+
+def rel_bin_formatter(center_t, bin_at, annotate_rel=BIN_LABEL_OFFSETS):
+	"""Tick formatter for the detailed (fig2) panels.
+
+	Labels are seconds relative to the current-epoch center, as before, but at the
+	offsets in annotate_rel the absolute BIN NUMBER is added on a second line, so a
+	point in the detail pane can be matched straight to a bin in the hypnogram and
+	to an index in the saved State array.
+
+	bin_at(x) maps that axis's x coordinate to an absolute bin index; it differs
+	between the absolute-time panels and the epoch-relative state strip.
+
+	Note the bin steps are not symmetric: 10 s is not a whole number of 4 s epochs,
+	so -10/+10 s land 2 bins back and 3 bins forward of the current one. The label
+	names the bin each tick actually falls inside.
+	"""
+	def _fmt(x, pos):
+		rel = x - center_t
+		label = f'{rel:.0f}'
+		for a in annotate_rel:
+			if abs(rel - a) < 0.5:
+				try:
+					return f'{label}\nbin {bin_at(x)}'
+				except Exception:
+					return label
+		return label
+	return FuncFormatter(_fmt)
+
 def draw_state_strip(ax_state, State, this_epoch_t, start_trace, end_trace, epochlen):
 	"""Draw the sleep state of every epoch visible in the detailed (fig2) window.
 
@@ -126,7 +157,8 @@ def draw_state_strip(ax_state, State, this_epoch_t, start_trace, end_trace, epoc
 	nt = int(max(abs(start_trace - c0), abs(end_trace - c0)) // 10)
 	sticks = [c0 + k * 10 for k in range(-nt, nt + 1) if start_trace <= c0 + k * 10 <= end_trace]
 	ax_state.set_xticks(sticks)
-	ax_state.xaxis.set_major_formatter(FuncFormatter(lambda x, pos: f'{x - c0:.0f}'))
+	ax_state.xaxis.set_major_formatter(
+		rel_bin_formatter(c0, lambda x: cur_idx + int(math.floor(x / epochlen))))
 	ax_state.axvline(c0, color='k', lw=1, ls=':')  # x=0 (current-epoch center)
 	ax_state.set_xlabel('Time (s) relative to current epoch (0 = center; click an epoch to relabel)')
 
@@ -610,7 +642,8 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 		except Exception:
 			pass
 		# Labels are relative to the current-epoch center (0 = center).
-		rel_fmt = FuncFormatter(lambda x, pos, c=center_t: f'{x - c:.0f}')
+		rel_fmt = rel_bin_formatter(
+			center_t, lambda x: int(math.floor(x / d['epochlen'])))
 		# Spectrogram x-ticks in steps of 10s (coarsened to a larger multiple of 10
 		# for wide spans so they stay readable), and always including 0.
 		step = 10
@@ -634,7 +667,7 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 			_ax.set_xlim([tw0, tw1])
 			_ax.set_xticks(trace_ticks)
 			_ax.xaxis.set_major_formatter(rel_fmt)
-		ax7.set_xlabel('Time (s) relative to current epoch (0 = center)')
+		ax7.set_xlabel('Time (s) relative to current epoch (0 = center); bin number at 0 and \u00b110')
 
 	def do_replot():
 		nonlocal this_epoch_t
