@@ -64,27 +64,115 @@ def _mpl_root():
 		pass
 	return None
 
-def _ask_yes_no(title, message, default_yes=True):
-	"""Show a yes/no dialog and return True/False. Uses matplotlib's existing Tk
-	root (no competing tk.Tk()); falls back to a terminal prompt if unavailable."""
+def _restore_focus(widget):
+	"""Give keyboard focus back to `widget` (and its window) after a modal popup.
+
+	macOS does not re-focus anything on its own when a grabbed window hides, which
+	reads to the user as the GUI freezing until they click somewhere. Focusing the
+	toplevel AND the widget covers both the window-level and within-window cases.
+	"""
+	if widget is None:
+		return
+	try:
+		top = widget.winfo_toplevel()
+		if top.winfo_exists():
+			top.focus_force()
+		if widget.winfo_exists():
+			widget.focus_set()
+		top.update_idletasks()
+	except Exception:
+		pass
+
+def _ask_yes_no(title, message, default_yes=True, yes_text='Yes', no_text='No'):
+	"""Modal two-choice dialog. Returns True for the yes_text option.
+
+	Deliberately NOT tkinter.messagebox.askyesno. That maps to a native Aqua
+	alert on macOS whose button ORDER is the reverse of Linux/Windows, so the
+	habitual left-hand click answers "No" -- which silently skipped the save and
+	cost a user an hour of scoring. The options here are drawn as explicitly
+	labeled colored Labels (Aqua also refuses to color native controls), so what
+	each button does is unmistakable on every platform.
+
+	Falls back to a terminal prompt if Tk is unavailable.
+	"""
 	try:
 		import tkinter as tk
-		from tkinter import messagebox
+		from tkinter import font as tkfont
 		root = _mpl_root()
-		if root is not None:
-			return bool(messagebox.askyesno(title, message, parent=root))
-		tmp = tk.Tk()
-		tmp.withdraw()
-		try:
-			return bool(messagebox.askyesno(title, message, parent=tmp))
-		finally:
-			tmp.destroy()
 	except Exception:
-		suffix = ' (Y/n): ' if default_yes else ' (y/N): '
-		resp = input(message + suffix).strip().lower()
+		root = None
+	if root is None:
+		suffix = f' ({yes_text}/{no_text}): '
+		try:
+			resp = input(message + suffix).strip().lower()
+		except Exception:
+			return default_yes
 		if resp == '':
 			return default_yes
-		return resp == 'y'
+		return resp.startswith(yes_text[0].lower()) or resp in ('y', 'yes')
+
+	prev_focus = None
+	try:
+		prev_focus = root.focus_get() or root.focus_displayof()
+	except Exception:
+		prev_focus = None
+
+	win = tk.Toplevel(root)
+	win.title(title)
+	win.resizable(False, False)
+	try:
+		win.attributes('-topmost', True)
+	except Exception:
+		pass
+	bold = tkfont.Font(weight='bold')
+	var = tk.IntVar(master=root, value=-1)
+
+	body = tk.Frame(win, relief='raised', bd=2)
+	body.pack(fill='both', expand=True)
+	tk.Label(body, text=title, font=bold).pack(padx=16, pady=(12, 4))
+	tk.Label(body, text=message, justify='left').pack(padx=16, pady=(0, 10))
+
+	row = tk.Frame(body)
+	row.pack(padx=16, pady=(0, 12))
+	for text, val, color in ((yes_text, 1, '#2e8b4f'), (no_text, 0, '#8a929e')):
+		lbl = tk.Label(row, text=text, width=14, font=bold, bg=color, fg='white',
+			relief='raised', bd=2, padx=8, pady=7, cursor='hand2')
+		lbl.pack(side='left', padx=6)
+		lbl.bind('<Button-1>', lambda e, v=val: var.set(v))
+		lbl.bind('<Enter>', lambda e, w=lbl: w.configure(relief='solid'))
+		lbl.bind('<Leave>', lambda e, w=lbl: w.configure(relief='raised'))
+
+	# Closing the window is the SAFE answer, not the destructive one: callers keep
+	# the recovery autosave whenever this returns False.
+	win.protocol('WM_DELETE_WINDOW', lambda: var.set(0))
+	bound = []
+	try:
+		root.bind_all('<Return>', lambda e: var.set(1)); bound.append('<Return>')
+		root.bind_all('<Escape>', lambda e: var.set(0)); bound.append('<Escape>')
+	except Exception:
+		pass
+	try:
+		win.deiconify(); win.lift(); win.update_idletasks()
+		if not win.winfo_viewable():
+			win.wait_visibility()
+		win.grab_set()
+		win.focus_force()
+	except Exception:
+		pass
+	try:
+		root.wait_variable(var)
+	finally:
+		for seq in bound:
+			try:
+				root.unbind_all(seq)
+			except Exception:
+				pass
+		try:
+			win.grab_release(); win.destroy()
+		except Exception:
+			pass
+		_restore_focus(prev_focus)
+	return var.get() == 1
 
 def _state_strip_color(state_value):
 	"""Plot color for one epoch's state in the detailed scoring strip. Matches the
@@ -252,25 +340,6 @@ def destroy_state_popup():
 		except Exception:
 			pass
 	_state_popup = None
-
-def _restore_focus(widget):
-	"""Give keyboard focus back to `widget` (and its window) after a modal popup.
-
-	macOS does not re-focus anything on its own when a grabbed window hides, which
-	reads to the user as the GUI freezing until they click somewhere. Focusing the
-	toplevel AND the widget covers both the window-level and within-window cases.
-	"""
-	if widget is None:
-		return
-	try:
-		top = widget.winfo_toplevel()
-		if top.winfo_exists():
-			top.focus_force()
-		if widget.winfo_exists():
-			widget.focus_set()
-		top.update_idletasks()
-	except Exception:
-		pass
 
 def choose_state_popup(popup_xy=None):
 	"""Ask which state to assign to the selected bins. Returns 1/2/3 or None.
@@ -511,17 +580,18 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 	if os.path.exists(recovery_path):
 		if _ask_yes_no('Recover unsaved scoring',
 				f'Unsaved scoring was found for Acq {a} hr {h} (possible earlier crash).\n'
-				'Recover it? (No keeps the current states.)'):
+				'Recover it, or ignore it and use the current states?',
+				yes_text='Recover', no_text='Ignore'):
 			try:
 				State = np.load(recovery_path)
 				print('Recovered unsaved scoring from ' + recovery_path)
 			except Exception as e:
 				print(f'Could not load recovery file: {e}')
 		else:
-			try:
-				os.remove(recovery_path)
-			except OSError:
-				pass
+			# Deliberately NOT deleted. This used to remove the autosave on the
+			# strength of one click, which on macOS could be the button the user
+			# did not mean to press. It is cleared by the next verified save.
+			print('Ignoring the autosave (left in place): ' + recovery_path)
 
 	# Track which epoch is centered in the detailed window (0 = first epoch) so the
 	# state strip and the strip-click handler always refer to the right epochs.
@@ -794,18 +864,44 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 	# the previously-saved states untouched. Either way the recovery autosave is
 	# cleared, since this is a clean exit (recovery only matters after a crash).
 	states_path = os.path.join(d['savedir'], 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy')
+	try:
+		n_changed = int(np.sum(np.asarray(State) != np.asarray(State_input)))
+	except Exception:
+		n_changed = -1
 	save_it = _ask_yes_no('Save scoring',
-		f'Save sleep states for Acq {a} hr {h}?')
+		f'Save sleep states for Acq {a} hr {h}?\n'
+		f'{n_changed} bin(s) changed during this session.',
+		yes_text='Save', no_text="Don't save")
+
+	# Only clear the recovery autosave once the canonical file is on disk AND
+	# verified to match. Previously it was deleted unconditionally, so a session
+	# that did not save (e.g. the macOS dialog answering No by accident) lost the
+	# scoring from BOTH places. The autosave is the last line of defense; it is
+	# never dropped on the strength of a dialog alone.
+	saved_ok = False
 	if save_it:
-		np.save(states_path, State)
-		print('Saved states to ' + states_path)
+		try:
+			np.save(states_path, State)
+			written = np.load(states_path)
+			saved_ok = bool(np.array_equal(np.asarray(written), np.asarray(State)))
+			if saved_ok:
+				print(f'Saved states to {states_path} ({n_changed} bin(s) changed).')
+			else:
+				print('!! WARNING: ' + states_path + ' does not match what was scored.')
+		except Exception as e:
+			print(f'!! ERROR saving states to {states_path}: {e}')
 	else:
 		print('Not saving; existing StatesAcq file (if any) left unchanged.')
-	try:
-		if os.path.exists(recovery_path):
-			os.remove(recovery_path)
-	except OSError:
-		pass
+
+	if saved_ok:
+		try:
+			if os.path.exists(recovery_path):
+				os.remove(recovery_path)
+		except OSError:
+			pass
+	elif os.path.exists(recovery_path):
+		print('Your scoring is preserved in the autosave file:\n  ' + recovery_path
+			+ '\nRe-open this acquisition and choose Recover to get it back.')
 
 	# Persist window layout (figure geometry + video window) for the next launch.
 	try:
