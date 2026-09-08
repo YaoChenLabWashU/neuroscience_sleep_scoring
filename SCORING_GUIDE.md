@@ -357,8 +357,9 @@ Every detail panel is centered on the **center of the current epoch** and labele
 The **absolute bin number** the pane is centered on — the bin the dark cursor sits
 in, `0`–`899` — is shown in three places: as the bold figure title, once under the
 bottom state row, and in small print beside the dark cursor in each detail
-spectrogram. That is the index into the saved `State` array, so it is how you tie
-what you are looking at back to the hypnogram or to downstream analysis.
+spectrogram. The same label appears beside the dark epoch marker on the overview
+figure. That number is the index into the saved `State` array, so it is how you
+tie what you are looking at back to the hypnogram or to downstream analysis.
 
 ### 5.3 Reading the plots
 

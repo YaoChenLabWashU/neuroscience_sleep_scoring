@@ -552,19 +552,22 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 	# a bold figure title, and small print at the top of the dark cursor line in
 	# each detail spectrogram. Both are refreshed by align_detail_xaxes().
 	fig2_title = fig2.suptitle('', fontweight='bold', fontsize=13)
-	# Placed just INSIDE the top of each panel rather than above it: sitting above
-	# the axes put ax7's label straight on top of ax6's tick labels.
+	# Small bin label beside the dark cursor, on the TOP spectrogram only. Placed
+	# just INSIDE the panel: above the axes it would land on the tick labels (and
+	# on fig1, ax1's ticks sit on top of the axes).
 	_blend = lambda ax: mtransforms.blended_transform_factory(ax.transData, ax.transAxes)
-	cursor_bin_labels = [
-		ax.annotate('', xy=(0, 1.0), xycoords=_blend(ax), xytext=(4, -3),
+	def _cursor_bin_label(ax):
+		return ax.annotate('', xy=(0, 1.0), xycoords=_blend(ax), xytext=(4, -3),
 			textcoords='offset points', ha='left', va='top', fontsize=7.5,
 			color='k', annotation_clip=False,
 			bbox=dict(facecolor='white', alpha=0.75, pad=1.0, edgecolor='none'))
-		for ax in (ax6, ax7)
-	]
+	cursor_bin_labels = [_cursor_bin_label(ax6)]
 
 	fig2.tight_layout()
 	markers = SWS_utils.make_marker(fig1, this_bin/d['fsd'], d['epochlen'])
+	# Matching label on the main acquisition overview, beside its dark epoch
+	# marker in the top spectrogram (ax1's x-axis is in seconds).
+	fig1_bin_label = _cursor_bin_label(ax1)
 
 
 	plt.ion()
@@ -690,6 +693,28 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 	# the native event loop services mouse motion continuously, so the crosshair
 	# stays smooth (the old `while: plt.waitforbuttonpress(0.15)` loop restarted a
 	# nested Tk mainloop ~7x/s, which is what made the crosshair stutter). ---
+	def set_bin_labels():
+		"""Restate the absolute bin the view is centered on.
+
+		Three places in the detail pane (bold title, under the state row, beside
+		the dark cursor on the top spectrogram) plus the matching label on the
+		main overview. Called from align_detail_xaxes, and again early in
+		do_replot so the overview's own redraw picks the new text up rather than
+		needing an extra full draw.
+		"""
+		cur_bin = int(round(this_epoch_t / d['epochlen']))
+		center_t = this_epoch_t + d['epochlen'] / 2.0
+		try:
+			fig2_title.set_text(f'Detailed view \u2014 bin {cur_bin} of {len(State)}')
+			for _t in cursor_bin_labels:
+				_t.xy = (center_t, 1.0)
+				_t.set_text(f'bin {cur_bin}')
+			# fig1's marker sits at the epoch START, matching make_marker.
+			fig1_bin_label.xy = (this_epoch_t, 1.0)
+			fig1_bin_label.set_text(f'bin {cur_bin}')
+		except Exception:
+			pass
+
 	def align_detail_xaxes():
 		"""Center every detailed (fig2) panel on the CURRENT-EPOCH CENTER and label
 		its x-axis relative to that center (0 = center), so the overview
@@ -734,15 +759,7 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 			_ax.set_xticks(trace_ticks)
 			_ax.xaxis.set_major_formatter(rel_fmt)
 		ax7.set_xlabel('Time (s) relative to current epoch (0 = center)')
-		# Restate the absolute bin the pane is centered on.
-		cur_bin = int(round(this_epoch_t / d['epochlen']))
-		try:
-			fig2_title.set_text(f'Detailed view \u2014 bin {cur_bin} of {len(State)}')
-			for _t in cursor_bin_labels:
-				_t.xy = (center_t, 1.0)
-				_t.set_text(f'bin {cur_bin}')
-		except Exception:
-			pass
+		set_bin_labels()
 
 	def do_replot():
 		nonlocal this_epoch_t
@@ -753,6 +770,7 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 		cursor.current_epoch_t = this_epoch_t
 		bin_idx = int(this_epoch_t // d['epochlen'])
 		cursor.epoch_marker.set_xdata([bin_idx, bin_idx])
+		set_bin_labels()  # before the redraw below, so fig1 picks it up for free
 		SWS_utils.update_raw_trace(fig1, fig2, line1, line2, line3, line4, line5, long_emg,
 			long_emg_t, long_ThD, long_ThD_t, long_v, long_v_t, markers, this_epoch_t,
 			replot_start, replot_end, d['epochlen'])
