@@ -12,6 +12,7 @@ if _sys.platform == 'darwin':
 
 import numpy as np
 import matplotlib.patches as patch
+import matplotlib.transforms as mtransforms
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FuncFormatter
 import matplotlib.image as mpimg
@@ -184,36 +185,15 @@ def _state_strip_color(state_value):
 		pass
 	return SWS_utils.STATE_COLORS.get(int(state_value), 'white')
 
-# Detail-pane tick offsets (seconds from the current-epoch center) that also get
-# the absolute bin number printed under them.
-BIN_LABEL_OFFSETS = (-10, 0, 10)
+def rel_formatter(center_t):
+	"""Tick formatter for the detailed (fig2) panels: seconds relative to the
+	current-epoch center, so every panel can be read straight down.
 
-def rel_bin_formatter(center_t, bin_at, annotate_rel=BIN_LABEL_OFFSETS):
-	"""Tick formatter for the detailed (fig2) panels.
-
-	Labels are seconds relative to the current-epoch center, as before, but at the
-	offsets in annotate_rel the absolute BIN NUMBER is added on a second line, so a
-	point in the detail pane can be matched straight to a bin in the hypnogram and
-	to an index in the saved State array.
-
-	bin_at(x) maps that axis's x coordinate to an absolute bin index; it differs
-	between the absolute-time panels and the epoch-relative state strip.
-
-	Note the bin steps are not symmetric: 10 s is not a whole number of 4 s epochs,
-	so -10/+10 s land 2 bins back and 3 bins forward of the current one. The label
-	names the bin each tick actually falls inside.
+	The absolute bin number is deliberately NOT repeated on every tick. It is the
+	same number for the whole pane, so it is shown once per place it is useful:
+	the bold figure title, under the state strip, and beside the dark cursor.
 	"""
-	def _fmt(x, pos):
-		rel = x - center_t
-		label = f'{rel:.0f}'
-		for a in annotate_rel:
-			if abs(rel - a) < 0.5:
-				try:
-					return f'{label}\nbin {bin_at(x)}'
-				except Exception:
-					return label
-		return label
-	return FuncFormatter(_fmt)
+	return FuncFormatter(lambda x, pos, c=center_t: f'{x - c:.0f}')
 
 def draw_state_strip(ax_state, State, this_epoch_t, start_trace, end_trace, epochlen):
 	"""Draw the sleep state of every epoch visible in the detailed (fig2) window.
@@ -245,10 +225,12 @@ def draw_state_strip(ax_state, State, this_epoch_t, start_trace, end_trace, epoc
 	nt = int(max(abs(start_trace - c0), abs(end_trace - c0)) // 10)
 	sticks = [c0 + k * 10 for k in range(-nt, nt + 1) if start_trace <= c0 + k * 10 <= end_trace]
 	ax_state.set_xticks(sticks)
-	ax_state.xaxis.set_major_formatter(
-		rel_bin_formatter(c0, lambda x: cur_idx + int(math.floor(x / epochlen))))
+	ax_state.xaxis.set_major_formatter(rel_formatter(c0))
 	ax_state.axvline(c0, color='k', lw=1, ls=':')  # x=0 (current-epoch center)
-	ax_state.set_xlabel('Time (s) relative to current epoch (0 = center; click an epoch to relabel)')
+	# The absolute bin, stated once under the bottom row of states.
+	ax_state.set_xlabel(
+		f'BIN {cur_idx} of {len(State)}          '
+		'time (s) relative to current epoch (0 = center; click an epoch to relabel)')
 
 def _recovery_path(d, a, h):
 	"""Path of the autosave/recovery file for one acquisition-hour. Kept in a
@@ -566,6 +548,21 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 	zero_lines = [ax9.axvline(0, color='0.35', lw=1, ls=':'),
 		ax10.axvline(0, color='0.35', lw=1, ls=':')]
 
+	# Which bin the detail pane is centered on, shown where it is actually useful:
+	# a bold figure title, and small print at the top of the dark cursor line in
+	# each detail spectrogram. Both are refreshed by align_detail_xaxes().
+	fig2_title = fig2.suptitle('', fontweight='bold', fontsize=13)
+	# Placed just INSIDE the top of each panel rather than above it: sitting above
+	# the axes put ax7's label straight on top of ax6's tick labels.
+	_blend = lambda ax: mtransforms.blended_transform_factory(ax.transData, ax.transAxes)
+	cursor_bin_labels = [
+		ax.annotate('', xy=(0, 1.0), xycoords=_blend(ax), xytext=(4, -3),
+			textcoords='offset points', ha='left', va='top', fontsize=7.5,
+			color='k', annotation_clip=False,
+			bbox=dict(facecolor='white', alpha=0.75, pad=1.0, edgecolor='none'))
+		for ax in (ax6, ax7)
+	]
+
 	fig2.tight_layout()
 	markers = SWS_utils.make_marker(fig1, this_bin/d['fsd'], d['epochlen'])
 
@@ -599,7 +596,7 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 	# Draw the per-epoch state strip for the initial window, and leave room at the
 	# bottom for its x-label (tight_layout already ran before the strip existed).
 	draw_state_strip(ax_state, State, this_epoch_t, start_trace, end_trace, d['epochlen'])
-	fig2.subplots_adjust(bottom=0.1)
+	fig2.subplots_adjust(bottom=0.1, top=0.93)  # room for the xlabel and the title
 	fig2.canvas.draw()
 	#init cursor and it's libraries from SW_Cursor.py
 	# Pass all fig1 axes for full-height crosshair
@@ -712,8 +709,7 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 		except Exception:
 			pass
 		# Labels are relative to the current-epoch center (0 = center).
-		rel_fmt = rel_bin_formatter(
-			center_t, lambda x: int(math.floor(x / d['epochlen'])))
+		rel_fmt = rel_formatter(center_t)
 		# Spectrogram x-ticks in steps of 10s (coarsened to a larger multiple of 10
 		# for wide spans so they stay readable), and always including 0.
 		step = 10
@@ -737,7 +733,16 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 			_ax.set_xlim([tw0, tw1])
 			_ax.set_xticks(trace_ticks)
 			_ax.xaxis.set_major_formatter(rel_fmt)
-		ax7.set_xlabel('Time (s) relative to current epoch (0 = center); bin number at 0 and \u00b110')
+		ax7.set_xlabel('Time (s) relative to current epoch (0 = center)')
+		# Restate the absolute bin the pane is centered on.
+		cur_bin = int(round(this_epoch_t / d['epochlen']))
+		try:
+			fig2_title.set_text(f'Detailed view \u2014 bin {cur_bin} of {len(State)}')
+			for _t in cursor_bin_labels:
+				_t.xy = (center_t, 1.0)
+				_t.set_text(f'bin {cur_bin}')
+		except Exception:
+			pass
 
 	def do_replot():
 		nonlocal this_epoch_t
