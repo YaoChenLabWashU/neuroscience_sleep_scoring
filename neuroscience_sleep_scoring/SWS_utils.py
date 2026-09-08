@@ -733,6 +733,13 @@ def retrain_model(Sleep_Model, x_features, model_dir, jobname):
 
 
 def pull_up_movie(d, cap, start, end, vid_file, epochlen, this_timestamp):
+    """DEPRECATED / UNUSED -- nothing calls this.
+
+    It still drives OpenCV HighGUI (namedWindow/imshow/waitKey). Do NOT wire it
+    back up: on macOS cv2.waitKey pumps the shared Cocoa run loop and aborts the
+    interpreter when Tk windows exist. Play video through
+    SW_Cursor.Cursor._play_current_bin, which renders into a Tk window instead.
+    """
     v = get_videofn_from_csv(d, this_timestamp['Filename'][start])
     print('Pulling up video: '+v)
     print('starting on frame '+str(start))

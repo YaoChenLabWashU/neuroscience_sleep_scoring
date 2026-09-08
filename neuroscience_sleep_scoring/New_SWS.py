@@ -1,3 +1,15 @@
+import sys as _sys
+# Pin the GUI backend BEFORE pyplot is imported. This file is also run directly
+# as a script (`python New_SWS.py settings.json`), in which case the package
+# __init__ (which does the same thing) has not run yet. See
+# neuroscience_sleep_scoring/__init__.py::_pin_gui_backend for why macOS needs it.
+if _sys.platform == 'darwin':
+	try:
+		import matplotlib as _mpl
+		_mpl.use('TkAgg', force=True)
+	except Exception as _e:
+		print(f'Could not pin the TkAgg backend ({_e}); the GUI may be unstable on macOS.')
+
 import numpy as np
 import matplotlib.patches as patch
 import matplotlib.pyplot as plt
@@ -52,27 +64,115 @@ def _mpl_root():
 		pass
 	return None
 
-def _ask_yes_no(title, message, default_yes=True):
-	"""Show a yes/no dialog and return True/False. Uses matplotlib's existing Tk
-	root (no competing tk.Tk()); falls back to a terminal prompt if unavailable."""
+def _restore_focus(widget):
+	"""Give keyboard focus back to `widget` (and its window) after a modal popup.
+
+	macOS does not re-focus anything on its own when a grabbed window hides, which
+	reads to the user as the GUI freezing until they click somewhere. Focusing the
+	toplevel AND the widget covers both the window-level and within-window cases.
+	"""
+	if widget is None:
+		return
+	try:
+		top = widget.winfo_toplevel()
+		if top.winfo_exists():
+			top.focus_force()
+		if widget.winfo_exists():
+			widget.focus_set()
+		top.update_idletasks()
+	except Exception:
+		pass
+
+def _ask_yes_no(title, message, default_yes=True, yes_text='Yes', no_text='No'):
+	"""Modal two-choice dialog. Returns True for the yes_text option.
+
+	Deliberately NOT tkinter.messagebox.askyesno. That maps to a native Aqua
+	alert on macOS whose button ORDER is the reverse of Linux/Windows, so the
+	habitual left-hand click answers "No" -- which silently skipped the save and
+	cost a user an hour of scoring. The options here are drawn as explicitly
+	labeled colored Labels (Aqua also refuses to color native controls), so what
+	each button does is unmistakable on every platform.
+
+	Falls back to a terminal prompt if Tk is unavailable.
+	"""
 	try:
 		import tkinter as tk
-		from tkinter import messagebox
+		from tkinter import font as tkfont
 		root = _mpl_root()
-		if root is not None:
-			return bool(messagebox.askyesno(title, message, parent=root))
-		tmp = tk.Tk()
-		tmp.withdraw()
-		try:
-			return bool(messagebox.askyesno(title, message, parent=tmp))
-		finally:
-			tmp.destroy()
 	except Exception:
-		suffix = ' (Y/n): ' if default_yes else ' (y/N): '
-		resp = input(message + suffix).strip().lower()
+		root = None
+	if root is None:
+		suffix = f' ({yes_text}/{no_text}): '
+		try:
+			resp = input(message + suffix).strip().lower()
+		except Exception:
+			return default_yes
 		if resp == '':
 			return default_yes
-		return resp == 'y'
+		return resp.startswith(yes_text[0].lower()) or resp in ('y', 'yes')
+
+	prev_focus = None
+	try:
+		prev_focus = root.focus_get() or root.focus_displayof()
+	except Exception:
+		prev_focus = None
+
+	win = tk.Toplevel(root)
+	win.title(title)
+	win.resizable(False, False)
+	try:
+		win.attributes('-topmost', True)
+	except Exception:
+		pass
+	bold = tkfont.Font(weight='bold')
+	var = tk.IntVar(master=root, value=-1)
+
+	body = tk.Frame(win, relief='raised', bd=2)
+	body.pack(fill='both', expand=True)
+	tk.Label(body, text=title, font=bold).pack(padx=16, pady=(12, 4))
+	tk.Label(body, text=message, justify='left').pack(padx=16, pady=(0, 10))
+
+	row = tk.Frame(body)
+	row.pack(padx=16, pady=(0, 12))
+	for text, val, color in ((yes_text, 1, '#2e8b4f'), (no_text, 0, '#8a929e')):
+		lbl = tk.Label(row, text=text, width=14, font=bold, bg=color, fg='white',
+			relief='raised', bd=2, padx=8, pady=7, cursor='hand2')
+		lbl.pack(side='left', padx=6)
+		lbl.bind('<Button-1>', lambda e, v=val: var.set(v))
+		lbl.bind('<Enter>', lambda e, w=lbl: w.configure(relief='solid'))
+		lbl.bind('<Leave>', lambda e, w=lbl: w.configure(relief='raised'))
+
+	# Closing the window is the SAFE answer, not the destructive one: callers keep
+	# the recovery autosave whenever this returns False.
+	win.protocol('WM_DELETE_WINDOW', lambda: var.set(0))
+	bound = []
+	try:
+		root.bind_all('<Return>', lambda e: var.set(1)); bound.append('<Return>')
+		root.bind_all('<Escape>', lambda e: var.set(0)); bound.append('<Escape>')
+	except Exception:
+		pass
+	try:
+		win.deiconify(); win.lift(); win.update_idletasks()
+		if not win.winfo_viewable():
+			win.wait_visibility()
+		win.grab_set()
+		win.focus_force()
+	except Exception:
+		pass
+	try:
+		root.wait_variable(var)
+	finally:
+		for seq in bound:
+			try:
+				root.unbind_all(seq)
+			except Exception:
+				pass
+		try:
+			win.grab_release(); win.destroy()
+		except Exception:
+			pass
+		_restore_focus(prev_focus)
+	return var.get() == 1
 
 def _state_strip_color(state_value):
 	"""Plot color for one epoch's state in the detailed scoring strip. Matches the
@@ -83,6 +183,37 @@ def _state_strip_color(state_value):
 	except (TypeError, ValueError):
 		pass
 	return SWS_utils.STATE_COLORS.get(int(state_value), 'white')
+
+# Detail-pane tick offsets (seconds from the current-epoch center) that also get
+# the absolute bin number printed under them.
+BIN_LABEL_OFFSETS = (-10, 0, 10)
+
+def rel_bin_formatter(center_t, bin_at, annotate_rel=BIN_LABEL_OFFSETS):
+	"""Tick formatter for the detailed (fig2) panels.
+
+	Labels are seconds relative to the current-epoch center, as before, but at the
+	offsets in annotate_rel the absolute BIN NUMBER is added on a second line, so a
+	point in the detail pane can be matched straight to a bin in the hypnogram and
+	to an index in the saved State array.
+
+	bin_at(x) maps that axis's x coordinate to an absolute bin index; it differs
+	between the absolute-time panels and the epoch-relative state strip.
+
+	Note the bin steps are not symmetric: 10 s is not a whole number of 4 s epochs,
+	so -10/+10 s land 2 bins back and 3 bins forward of the current one. The label
+	names the bin each tick actually falls inside.
+	"""
+	def _fmt(x, pos):
+		rel = x - center_t
+		label = f'{rel:.0f}'
+		for a in annotate_rel:
+			if abs(rel - a) < 0.5:
+				try:
+					return f'{label}\nbin {bin_at(x)}'
+				except Exception:
+					return label
+		return label
+	return FuncFormatter(_fmt)
 
 def draw_state_strip(ax_state, State, this_epoch_t, start_trace, end_trace, epochlen):
 	"""Draw the sleep state of every epoch visible in the detailed (fig2) window.
@@ -114,7 +245,8 @@ def draw_state_strip(ax_state, State, this_epoch_t, start_trace, end_trace, epoc
 	nt = int(max(abs(start_trace - c0), abs(end_trace - c0)) // 10)
 	sticks = [c0 + k * 10 for k in range(-nt, nt + 1) if start_trace <= c0 + k * 10 <= end_trace]
 	ax_state.set_xticks(sticks)
-	ax_state.xaxis.set_major_formatter(FuncFormatter(lambda x, pos: f'{x - c0:.0f}'))
+	ax_state.xaxis.set_major_formatter(
+		rel_bin_formatter(c0, lambda x: cur_idx + int(math.floor(x / epochlen))))
 	ax_state.axvline(c0, color='k', lw=1, ls=':')  # x=0 (current-epoch center)
 	ax_state.set_xlabel('Time (s) relative to current epoch (0 = center; click an epoch to relabel)')
 
@@ -126,68 +258,194 @@ def _recovery_path(d, a, h):
 	ends in .npy so np.save doesn't append a second extension."""
 	return os.path.join(d['savedir'], 'recovery', 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy')
 
+# The state-selection popup is built ONCE and reused (see choose_state_popup).
+# Rebuilding a Toplevel per correction is slow everywhere and painfully slow on
+# macOS, where each one costs a window-server round trip plus the OS window
+# appearance animation.
+_state_popup = None
+
+# Popup swatch colors, taken from the same table as the hypnogram so the popup
+# and the plots always agree. Converted to hex because Tk needs a color literal.
+def _state_hex(code, default):
+	try:
+		import matplotlib.colors as mcolors
+		return mcolors.to_hex(SWS_utils.STATE_COLORS[code])
+	except Exception:
+		return default
+
+def _build_state_popup(root):
+	"""Construct the reusable state-selection window (hidden until needed).
+
+	The choices are tk.Label widgets, NOT tk.Button: on macOS a Button is a
+	native Aqua control that ignores -background, so colored buttons render as
+	plain grey. Labels are drawn by Tk itself and honor the color on every
+	platform, which is what keeps Wake/NREM/REM visually keyed to the hypnogram.
+	"""
+	import tkinter as tk
+	from tkinter import font as tkfont
+
+	win = tk.Toplevel(root)
+	win.title('Select State')
+	win.resizable(False, False)
+	try:
+		win.attributes('-topmost', True)
+	except Exception:
+		pass
+	# Take the window manager out of the loop. Showing a WM-managed window costs a
+	# full map/unmap round trip -- 45 ms here, and worse on macOS, which also plays
+	# its window-appearance animation. Override-redirect makes it a borderless
+	# floating panel that maps instantly (measured 1.3 ms). It has no title bar, so
+	# the header below and Esc stand in for the close button.
+	try:
+		win.overrideredirect(True)
+	except Exception:
+		pass
+	# One font object, created once. Building a tkfont.Font per call forces a
+	# font lookup each time, which is a measurable cost on Aqua.
+	bold = tkfont.Font(weight='bold')
+	var = tk.IntVar(master=root, value=0)
+
+	# A visible border, since there is no title bar to frame the popup.
+	body = tk.Frame(win, relief='raised', bd=2)
+	body.pack(fill='both', expand=True)
+	tk.Label(body, text='Choose state', font=bold).pack(padx=8, pady=(8, 6))
+
+	swatches = [(1, 'Wake', _state_hex(1, '#008000')),
+		(2, 'NREM', _state_hex(2, '#0000ff')),
+		(3, 'REM', _state_hex(3, '#ff0000'))]
+	for code, name, color in swatches:
+		lbl = tk.Label(body, text=f'{code}: {name}', width=16, font=bold,
+			bg=color, fg='white', relief='raised', bd=2, padx=6, pady=6,
+			cursor='hand2')
+		lbl.pack(padx=8, pady=4, fill='x')
+		# Labels have no -command, so bind the click and give some hover feedback.
+		lbl.bind('<Button-1>', lambda e, c=code: var.set(c))
+		lbl.bind('<Enter>', lambda e, w=lbl: w.configure(relief='solid'))
+		lbl.bind('<Leave>', lambda e, w=lbl: w.configure(relief='raised'))
+
+	tk.Label(body, text='press 1 / 2 / 3   ·   Esc to cancel',
+		fg='#555555').pack(padx=8, pady=(2, 8))
+
+	# Closing the window means "cancel", and must not destroy the cached widgets.
+	win.protocol('WM_DELETE_WINDOW', lambda: var.set(0))
+	win.withdraw()
+	return {'win': win, 'var': var}
+
+def destroy_state_popup():
+	"""Drop the cached popup (called on shutdown, or if its root went away)."""
+	global _state_popup
+	if _state_popup is not None:
+		try:
+			_state_popup['win'].destroy()
+		except Exception:
+			pass
+	_state_popup = None
+
 def choose_state_popup(popup_xy=None):
 	"""Ask which state to assign to the selected bins. Returns 1/2/3 or None.
 
-	Reuses one persistent hidden root; each call spawns a lightweight Toplevel
-	and blocks on wait_window (same blocking UX as before, far less overhead).
+	The window is built once and then shown/hidden, so a correction costs a
+	deiconify instead of constructing and destroying a window. Blocking is done
+	with wait_variable rather than wait_window, because wait_window only returns
+	when the window is destroyed -- which is what forced the rebuild-every-time
+	behavior in the first place.
 	"""
+	global _state_popup
 	try:
 		import tkinter as tk
-		from tkinter import font as tkfont
 	except Exception:
 		return None
 	# Share matplotlib's Tk root instead of a separate one (avoids the deadlock).
 	root = _mpl_root()
-	_temp_root = None
 	if root is None:
+		return None
+
+	# Rebuild if we have no popup, or if the cached one (or its root) was
+	# destroyed between acquisitions.
+	if _state_popup is not None:
 		try:
-			root = tk.Tk()
-			root.withdraw()
-			_temp_root = root
+			if not _state_popup['win'].winfo_exists():
+				_state_popup = None
 		except Exception:
+			_state_popup = None
+	if _state_popup is None:
+		try:
+			_state_popup = _build_state_popup(root)
+		except Exception as e:
+			print(f'Could not build the state popup: {e}')
 			return None
 
-	result = {'val': None}
-	win = tk.Toplevel(root)
-	win.title('Select State')
-	win.resizable(False, False)
-	win.attributes('-topmost', True)
-	bold_font = tkfont.Font(weight='bold')
-	tk.Label(win, text='Choose state', font=bold_font).pack(padx=8, pady=6)
+	win = _state_popup['win']
+	var = _state_popup['var']
+	var.set(0)
 
-	def set_val(v):
-		result['val'] = v
-		win.destroy()
+	# Remember who had keyboard focus so it can be handed back. Without this the
+	# GUI appears to freeze on macOS after a correction: the popup takes focus,
+	# hides itself, and Aqua leaves NO window focused, so the figure canvas stops
+	# receiving key/mouse events until the user clicks it to re-focus.
+	prev_focus = None
+	try:
+		prev_focus = root.focus_get() or root.focus_displayof()
+	except Exception:
+		prev_focus = None
 
-	tk.Button(win, text='1: Wake', width=16, bg='green', fg='white', font=bold_font,
-		command=lambda: set_val(1)).pack(padx=8, pady=4)
-	tk.Button(win, text='2: NREM', width=16, bg='blue', fg='white', font=bold_font,
-		command=lambda: set_val(2)).pack(padx=8, pady=4)
-	tk.Button(win, text='3: REM', width=16, bg='red', fg='white', font=bold_font,
-		command=lambda: set_val(3)).pack(padx=8, pady=6)
-	# Keyboard shortcuts so the popup can be answered without the mouse.
-	win.bind('1', lambda e: set_val(1))
-	win.bind('2', lambda e: set_val(2))
-	win.bind('3', lambda e: set_val(3))
 	if popup_xy is not None:
 		x, y = popup_xy
-		win.geometry(f'+{int(x)+10}+{int(y)+10}')
-	# The Toplevel must be viewable before grab_set(), or Tk raises
-	# "grab failed: window not viewable" (which previously crashed the whole
-	# scoring loop). Make it visible first, and never let grab failure propagate.
+		try:
+			win.geometry(f'+{int(x)+10}+{int(y)+10}')
+		except Exception:
+			pass
 	try:
 		win.deiconify()
+		win.lift()
 		win.update_idletasks()
-		win.wait_visibility()
+		# The window must be viewable before grab_set(), or Tk raises
+		# "grab failed: window not viewable" (which once crashed the whole
+		# scoring loop). Only wait when it isn't already mapped.
+		if not win.winfo_viewable():
+			win.wait_visibility()
 		win.grab_set()
 	except Exception:
 		pass
-	win.focus_force()
-	root.wait_window(win)
-	if _temp_root is not None:
-		_temp_root.destroy()
-	return result['val']
+	try:
+		win.focus_force()
+	except Exception:
+		pass
+
+	# Keyboard shortcuts. These are bound on the ROOT rather than on the popup:
+	# an override-redirect window is not given focus by the window manager, so
+	# per-window key bindings never fire. The popup is modal (grab_set) while
+	# these are active, so capturing 1/2/3/Esc globally is exactly the intent.
+	bound = []
+	try:
+		for code in (1, 2, 3):
+			root.bind_all(str(code), lambda e, c=code: var.set(c))
+			bound.append(str(code))
+		root.bind_all('<Escape>', lambda e: var.set(0))
+		bound.append('<Escape>')
+	except Exception:
+		pass
+
+	# Block until a choice is made, then HIDE (don't destroy) so the next call
+	# is just another deiconify.
+	try:
+		root.wait_variable(var)
+	finally:
+		for seq in bound:
+			try:
+				root.unbind_all(seq)
+			except Exception:
+				pass
+		try:
+			win.grab_release()
+			win.withdraw()
+			win.update_idletasks()
+		except Exception:
+			pass
+		_restore_focus(prev_focus)
+
+	val = var.get()
+	return val if val in (1, 2, 3) else None
 
 def on_press(event):
 	global key_stroke
@@ -322,17 +580,18 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 	if os.path.exists(recovery_path):
 		if _ask_yes_no('Recover unsaved scoring',
 				f'Unsaved scoring was found for Acq {a} hr {h} (possible earlier crash).\n'
-				'Recover it? (No keeps the current states.)'):
+				'Recover it, or ignore it and use the current states?',
+				yes_text='Recover', no_text='Ignore'):
 			try:
 				State = np.load(recovery_path)
 				print('Recovered unsaved scoring from ' + recovery_path)
 			except Exception as e:
 				print(f'Could not load recovery file: {e}')
 		else:
-			try:
-				os.remove(recovery_path)
-			except OSError:
-				pass
+			# Deliberately NOT deleted. This used to remove the autosave on the
+			# strength of one click, which on macOS could be the button the user
+			# did not mean to press. It is cleared by the next verified save.
+			print('Ignoring the autosave (left in place): ' + recovery_path)
 
 	# Track which epoch is centered in the detailed window (0 = first epoch) so the
 	# state strip and the strip-click handler always refer to the right epochs.
@@ -453,7 +712,8 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 		except Exception:
 			pass
 		# Labels are relative to the current-epoch center (0 = center).
-		rel_fmt = FuncFormatter(lambda x, pos, c=center_t: f'{x - c:.0f}')
+		rel_fmt = rel_bin_formatter(
+			center_t, lambda x: int(math.floor(x / d['epochlen'])))
 		# Spectrogram x-ticks in steps of 10s (coarsened to a larger multiple of 10
 		# for wide spans so they stay readable), and always including 0.
 		step = 10
@@ -477,7 +737,7 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 			_ax.set_xlim([tw0, tw1])
 			_ax.set_xticks(trace_ticks)
 			_ax.xaxis.set_major_formatter(rel_fmt)
-		ax7.set_xlabel('Time (s) relative to current epoch (0 = center)')
+		ax7.set_xlabel('Time (s) relative to current epoch (0 = center); bin number at 0 and \u00b110')
 
 	def do_replot():
 		nonlocal this_epoch_t
@@ -604,18 +864,44 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 	# the previously-saved states untouched. Either way the recovery autosave is
 	# cleared, since this is a clean exit (recovery only matters after a crash).
 	states_path = os.path.join(d['savedir'], 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy')
+	try:
+		n_changed = int(np.sum(np.asarray(State) != np.asarray(State_input)))
+	except Exception:
+		n_changed = -1
 	save_it = _ask_yes_no('Save scoring',
-		f'Save sleep states for Acq {a} hr {h}?')
+		f'Save sleep states for Acq {a} hr {h}?\n'
+		f'{n_changed} bin(s) changed during this session.',
+		yes_text='Save', no_text="Don't save")
+
+	# Only clear the recovery autosave once the canonical file is on disk AND
+	# verified to match. Previously it was deleted unconditionally, so a session
+	# that did not save (e.g. the macOS dialog answering No by accident) lost the
+	# scoring from BOTH places. The autosave is the last line of defense; it is
+	# never dropped on the strength of a dialog alone.
+	saved_ok = False
 	if save_it:
-		np.save(states_path, State)
-		print('Saved states to ' + states_path)
+		try:
+			np.save(states_path, State)
+			written = np.load(states_path)
+			saved_ok = bool(np.array_equal(np.asarray(written), np.asarray(State)))
+			if saved_ok:
+				print(f'Saved states to {states_path} ({n_changed} bin(s) changed).')
+			else:
+				print('!! WARNING: ' + states_path + ' does not match what was scored.')
+		except Exception as e:
+			print(f'!! ERROR saving states to {states_path}: {e}')
 	else:
 		print('Not saving; existing StatesAcq file (if any) left unchanged.')
-	try:
-		if os.path.exists(recovery_path):
-			os.remove(recovery_path)
-	except OSError:
-		pass
+
+	if saved_ok:
+		try:
+			if os.path.exists(recovery_path):
+				os.remove(recovery_path)
+		except OSError:
+			pass
+	elif os.path.exists(recovery_path):
+		print('Your scoring is preserved in the autosave file:\n  ' + recovery_path
+			+ '\nRe-open this acquisition and choose Recover to get it back.')
 
 	# Persist window layout (figure geometry + video window) for the next launch.
 	try:
@@ -639,7 +925,13 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 					pass
 	except Exception:
 		pass
-	cv2.destroyAllWindows()
+	# Tear down the Tk video window. (This used to be cv2.destroyAllWindows();
+	# the preview is no longer an OpenCV window, and calling into HighGUI on the
+	# exit path is exactly the macOS hazard we removed -- see SW_Cursor.)
+	try:
+		cursor.close_preview_window()
+	except Exception:
+		pass
 	plt.close('all')
 
 	return State

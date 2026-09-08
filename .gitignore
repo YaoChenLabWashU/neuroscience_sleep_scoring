@@ -5,3 +5,4 @@ neuroscience_sleep_scoring.egg-info/
 neuroscience_sleep_scoring/venv/
 .ipynb_checkpoints/
 .DS_Store
+.vscode/
