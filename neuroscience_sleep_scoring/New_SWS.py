@@ -1004,7 +1004,32 @@ def score_acquisition(d, a, use_model=True, mode='s',
 		os.chdir(d['savedir'])
 		this_emg = eeg_df['EMG']
 		State = None
-		if mode == 'c':
+
+		# Never silently discard scoring that is already on disk.
+		#
+		# Mode 's' used to ignore StatesAcq entirely and open the model prediction
+		# (or zeros) instead, so reopening an acquisition looked like the save had
+		# failed -- and saving again then overwrote good scoring with a fresh
+		# prediction. The file was always intact; it was simply never read. The
+		# launcher defaults to mode 's', so this was the normal path.
+		#
+		# Per hour segment (hmode, not mode, so one answer cannot leak into the
+		# next segment).
+		hmode = mode
+		states_file = os.path.join(d['savedir'],
+			'StatesAcq' + str(a) + '_hr' + str(h) + '.npy')
+		if hmode != 'c' and os.path.exists(states_file):
+			print(f'Acq {a} hr {h} already has saved scoring: {states_file}')
+			if _ask_yes_no('Existing scoring found',
+					f'Acq {a} hr {h} already has saved scoring.\n\n'
+					'Open what you saved, or start over from the model prediction?',
+					yes_text='Open saved', no_text='Start over'):
+				hmode = 'c'
+			else:
+				print('Starting over. Your saved scoring is only replaced if you '
+					'choose Save at the end of this session.')
+
+		if hmode == 'c':
 			try:
 				# if some portion of the file has been previously scored
 				State = np.load(os.path.join(d['savedir'], 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'))
@@ -1016,7 +1041,12 @@ def score_acquisition(d, a, use_model=True, mode='s',
 										None, this_video, acq_start, v = v, movement_df = this_motion)
 				if np.any(State == 0):
 					print('The following bins are not scored: \n' + str(np.where(State == 0)[0])  )
-					zero_check = input('Do you want to go back and fix this right now? (y/n)' ) == 'y'
+					# A terminal input() here is invisible when launched from the
+					# GUI and reads as a freeze; ask in the same dialog style.
+					zero_check = _ask_yes_no('Unscored bins remain',
+						f'{int(np.sum(State == 0))} bin(s) in Acq {a} hr {h} are still '
+						'unscored.\n\nGo back and fix them now?',
+						yes_text='Go back', no_text='Leave them')
 					if zero_check:
 						State = display_and_fix_scoring(d, a, h, this_emg, State, False, None,
 										None, this_video, acq_start, v = v, movement_df = this_motion)
@@ -1026,7 +1056,7 @@ def score_acquisition(d, a, use_model=True, mode='s',
 				# if the file is a brand new one for scoring
 				print("There is no existing scoring.")
 
-		else:  # mode == 's'
+		else:  # hmode == 's'
 			if use_model:
 				jobname = SWS_utils.build_joblib_name(d)
 				try:
