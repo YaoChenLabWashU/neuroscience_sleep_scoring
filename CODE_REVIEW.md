@@ -134,6 +134,17 @@ Note that notebooks import from **both** `extract_data` and `extract_data_zbr`.
 
 ---
 
+## 5a. Addendum — found while adding scorer mode and view settings
+
+| Finding | Status |
+|---|---|
+| **Spectrograms are drawn up to 5 s out of place at acquisition edges.** Columns are 10 s windows centred on 5 … T−5 s but the image is stretched across 0 … T, so content near the start is drawn ~5 s early and near the end ~5 s late (correct mid-acquisition). | **Fixed in the GUI** via an opt-in `true_time_extent=True`. **Not changed for analysis:** `plot_spectrogram`/`my_specgram` are used by `PKA_Sleep/cloop.py` and ~30 notebooks, whose figures carry the same edge offset. Your call whether to switch them. |
+| **Trimmed acquisitions thrash the spectrogram cache.** The cache is keyed on signal length and the display trims dead EEG tails, so acquisitions with a dead tail (e.g. 20260706 acq 6) recompute and overwrite their cache on every open. | Open — performance only |
+| The View Settings slider and its box shared one `IntVar`, so Tk rejected the box ever being empty ("can't assign non-numeric value to scale variable"): clearing it to type a number fought the user. | Fixed |
+| `ScoringLauncher.launch_acq` overwrote an error message with "Done with Acq N", so a failed launch reported success. | Fixed |
+| `add_buffer(..., fs=200)` is hard-coded for the EMG instead of using `d['fsd']`. | Open — latent (fsd is 200 everywhere today) |
+| `plot_zoomed_data` draws the yellow current-epoch highlight once at t = 0, so it is only visible while viewing epoch 0. | Open — cosmetic |
+
 ## 6. Suggested order
 
 1. **Correctness, no visible behavior change:** #1 + #2 together, #3, #4, #5, #9.

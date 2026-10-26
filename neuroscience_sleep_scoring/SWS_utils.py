@@ -27,6 +27,7 @@ import seaborn as sns
 import shutil
 import matplotlib.colors as mcolors
 import PKA_Sleep as PKA
+import re
 
 # Global dictionary to store video window properties
 _video_window_props = {'x': None, 'y': None, 'width': None, 'height': None}
@@ -63,6 +64,114 @@ def update_layout(**kwargs):
         if v is not None:
             layout[k] = v
     save_layout(layout)
+
+# ---------------------------------------------------------------------------
+# Detail-pane view settings, remembered between sessions
+#
+# Stored in the same per-user layout file as the window positions, under
+# 'view', so they are set once and survive restarts.
+# ---------------------------------------------------------------------------
+VIEW_DEFAULTS = {
+    'detail_spect_halfspan': 20.0,   # detail spectrograms: +/- s around the current epoch centre
+    'trace_halfwindow': 20.0,        # velocity / EMG / state strip: +/- s around the centre
+    'magnify_half_window': 90.0,     # magnify mode ('g'): +/- s
+    'emg_ylim': [-1.0, 1.0],         # detail EMG y-axis; None = auto
+}
+
+def load_view_settings():
+    """Saved detail-pane settings merged over VIEW_DEFAULTS. Bad values fall
+    back to the default instead of breaking the GUI."""
+    saved = load_layout().get('view') or {}
+    v = {k: (list(d) if isinstance(d, list) else d) for k, d in VIEW_DEFAULTS.items()}
+    for k in ('detail_spect_halfspan', 'trace_halfwindow', 'magnify_half_window'):
+        try:
+            x = float(saved[k])
+            if x > 0:
+                v[k] = x
+        except (KeyError, TypeError, ValueError):
+            pass
+    if 'emg_ylim' in saved:
+        e = saved['emg_ylim']
+        if e is None:
+            v['emg_ylim'] = None
+        else:
+            try:
+                lo, hi = float(e[0]), float(e[1])
+                if lo < hi:
+                    v['emg_ylim'] = [lo, hi]
+            except (TypeError, ValueError, IndexError):
+                pass
+    return v
+
+def save_view_settings(view):
+    update_layout(view={k: view.get(k, VIEW_DEFAULTS[k]) for k in VIEW_DEFAULTS})
+
+# ---------------------------------------------------------------------------
+# Scorers: sequestered scoring by a second person
+#
+# The main scoring lives in savedir/StatesAcq*_hr*.npy and is what every
+# analysis reads (PKA_Sleep and the notebooks all glob the TOP level of
+# *_extracted_data/, never recursively). A named scorer's files go to
+# savedir/scorers/<name>/, with their own recovery/ folder, so they can never
+# be mistaken for, or overwrite, the main scoring.
+#
+# Scorer mode is carried on the settings dict as d['_scorer'] -- a runtime key
+# set by the launcher on a COPY of the settings, never written to the JSON.
+# ---------------------------------------------------------------------------
+SCORERS_DIRNAME = 'scorers'
+
+def clean_scorer_name(name):
+    """Folder-safe scorer name ('' if unusable). Letters, digits, '-', '_', '.'."""
+    name = re.sub(r'[^A-Za-z0-9._-]', '', str(name or '').strip().replace(' ', '_'))
+    return '' if name.lower() in ('', 'main', '.', '..') else name
+
+def active_scorer(d):
+    return clean_scorer_name(d.get('_scorer', ''))
+
+def states_dir(d, scorer=None):
+    """Folder holding StatesAcq files. scorer=None -> the active scorer on d;
+    '' -> the main scoring; a name -> that scorer's folder."""
+    scorer = active_scorer(d) if scorer is None else clean_scorer_name(scorer)
+    if not scorer:
+        return d['savedir']
+    return os.path.join(d['savedir'], SCORERS_DIRNAME, scorer)
+
+def states_path(d, a, h, scorer=None):
+    return os.path.join(states_dir(d, scorer), 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy')
+
+def list_scorers(d):
+    """Names of scorers that have at least one StatesAcq file."""
+    root = os.path.join(d['savedir'], SCORERS_DIRNAME)
+    if not os.path.isdir(root):
+        return []
+    return sorted(n for n in os.listdir(root)
+        if glob.glob(os.path.join(root, n, 'StatesAcq*.npy')))
+
+def compare_states(A, B, states=(1, 2, 3)):
+    """Epoch-by-epoch agreement between two scorings of the same hour.
+
+    Only epochs both scorers labelled with one of `states` are compared; the
+    rest (unscored 0s, NaN, or past the end of the shorter array) are counted
+    in n_excluded. confusion[i, j] = epochs A called states[i] and B called
+    states[j]. kappa is Cohen's kappa (chance-corrected); NaN when undefined.
+    """
+    A = np.asarray(A, dtype=float); B = np.asarray(B, dtype=float)
+    n_total = max(len(A), len(B))
+    n = min(len(A), len(B))
+    A, B = A[:n], B[:n]
+    both = np.isin(A, states) & np.isin(B, states)
+    a, b = A[both].astype(int), B[both].astype(int)
+    N = int(both.sum())
+    conf = np.array([[int(np.sum((a == i) & (b == j))) for j in states] for i in states])
+    agreement = float(np.trace(conf)) / N if N else float('nan')
+    if N:
+        pe = float(np.sum((conf.sum(1) / N) * (conf.sum(0) / N)))
+        kappa = (agreement - pe) / (1 - pe) if pe < 1 else float('nan')
+    else:
+        kappa = float('nan')
+    return {'n_compared': N, 'n_excluded': int(n_total - N), 'agreement': agreement,
+        'kappa': kappa, 'confusion': conf, 'states': tuple(states),
+        'disagree_idx': np.where(both & (A != B))[0]}
 
 def get_figure_geometry(fig):
     """Return the Tk 'WxH+X+Y' geometry string for a matplotlib figure, or None."""
@@ -369,7 +478,7 @@ def random_forest_classifier(features, target):
     return clf
 
 def plot_spectrogram(ax, eegdat, fsd, minfreq = 1, maxfreq = 16, additional_ax = None, window_length = 10,
-    noverlap = 9.9, vmin = -50, vmax = -10, window_type = None, cache_file = None):
+    noverlap = 9.9, vmin = -50, vmax = -10, window_type = None, cache_file = None, true_time_extent = False):
     dt = 1/fsd
     t_elapsed = eegdat.shape[0]/fsd
     t = np.arange(0.0, t_elapsed, dt)
@@ -390,20 +499,22 @@ def plot_spectrogram(ax, eegdat, fsd, minfreq = 1, maxfreq = 16, additional_ax =
         Pxx, freqs, bins, im = my_specgram(eegdat, ax = ax, NFFT=int(NFFT), Fs=fsd, noverlap=int(noverlap),
                                     cmap=cm.get_cmap('plasma'), minfreq = minfreq, maxfreq = maxfreq,
                                     xextent = (0,int(t_elapsed)), additional_ax = additional_ax, vmin = vmin,
-                                    vmax = vmax, window = window_array, cache_file = cache_file)
+                                    vmax = vmax, window = window_array, cache_file = cache_file,
+                                    true_time_extent = true_time_extent)
         return Pxx, freqs, bins, im
     else:
         Pxx, freqs, bins = my_specgram(eegdat, ax = ax, NFFT=int(NFFT), Fs=fsd, noverlap=int(noverlap),
                                     cmap=cm.get_cmap('plasma'), minfreq = minfreq, maxfreq = maxfreq,
                                     xextent = (0,int(t_elapsed)), additional_ax = additional_ax, vmin = vmin,
-                                    vmax = vmax, window = window_array, cache_file = cache_file)
+                                    vmax = vmax, window = window_array, cache_file = cache_file,
+                                    true_time_extent = true_time_extent)
         return Pxx, freqs, bins
 
 def my_specgram(x, ax = None, NFFT=400, Fs=200, Fc=0, detrend=mlab.detrend_none,
              window=None, noverlap=200,
              cmap=None, xextent=None, pad_to=None, sides='default',
              scale_by_freq=None, minfreq = None, maxfreq = None, additional_ax = None, vmin = -50, vmax = -10,
-             cache_file = None, **kwargs):
+             cache_file = None, true_time_extent = False, **kwargs):
     """
     call signature::
 
@@ -496,6 +607,14 @@ def my_specgram(x, ax = None, NFFT=400, Fs=200, Fc=0, detrend=mlab.detrend_none,
     xmin, xmax = xextent
     freqs += Fc
     extent = xmin, xmax, freqs[0], freqs[-1]
+    # Each column is a window CENTRED on bins[k] (5 ... T-5 s for a 10 s window),
+    # but the default extent stretches them across 0 ... T, drawing content up to
+    # 5 s early near the start and 5 s late near the end. true_time_extent places
+    # columns at their real centres. Opt-in: plot_spectrogram/my_specgram are used
+    # throughout PKA_Sleep and the analysis notebooks, whose figures must not move.
+    if true_time_extent and len(bins) > 1:
+        hop = bins[1] - bins[0]
+        extent = bins[0] - hop / 2, bins[-1] + hop / 2, freqs[0], freqs[-1]
     if ax:
         # A 1-hour spectrogram has ~36k time columns (0.1s hop). Rendering that
         # many columns makes every full canvas draw take seconds, which is what
@@ -527,6 +646,35 @@ def my_specgram(x, ax = None, NFFT=400, Fs=200, Fc=0, detrend=mlab.detrend_none,
         return Pxx, freqs, bins, im
     else:
         return Pxx, freqs, bins
+
+class DetailSpectrogram:
+    """Draw just the visible window of a spectrogram at full time resolution.
+
+    The overview image is block-averaged to MAX_DISPLAY_COLS (1.44 s per column
+    for an hour), which is fine at +/-600 s but leaves a +/-20 s detail window
+    with ~28 smeared columns. The cache already holds 0.1 s columns, so each time
+    the detail view moves, its image is re-pointed at the full-resolution slice
+    it actually shows (wide spans are block-averaged down to MAX_COLS). Columns
+    are placed at their true window centres, matching true_time_extent=True.
+    """
+    MAX_COLS = 2000
+
+    def __init__(self, im, Pxx, freqs, bins):
+        self.im = im
+        # Same orientation and scale as my_specgram: flipud(10*log10(Pxx)).
+        self.Z = np.flipud(10. * np.log10(np.asarray(Pxx, dtype=np.float32)))
+        self.freqs = np.asarray(freqs)
+        self.bins = np.asarray(bins)
+        self.hop = float(np.median(np.diff(self.bins))) if len(self.bins) > 1 else 0.1
+
+    def show(self, t0, t1):
+        k0 = max(int(np.searchsorted(self.bins, t0)) - 1, 0)
+        k1 = min(int(np.searchsorted(self.bins, t1)) + 1, len(self.bins))
+        if k1 - k0 < 1:
+            return
+        self.im.set_data(_downsample_cols(self.Z[:, k0:k1], self.MAX_COLS))
+        self.im.set_extent((self.bins[k0] - self.hop / 2, self.bins[k1 - 1] + self.hop / 2,
+            self.freqs[0], self.freqs[-1]))
 
 # Color used to draw each scored state in the "Predicted States" row.
 # 0 is an unscored/unknown bin (was 'grey' when drawn as patches).
@@ -629,10 +777,19 @@ def create_prediction_figure(d, Predict_y, is_predicted, clf, Features, fs, eeg_
     # the identity (a, h). eeg_AD0/eeg_AD2 correspond to channels 0 and 2.
     cache0 = spect_cache_path(d['savedir'], a, h, 0) if a is not None and h is not None else None
     cache2 = spect_cache_path(d['savedir'], a, h, 2) if a is not None and h is not None else None
-    Pxx, freqs, bins, im = plot_spectrogram(ax1, eeg_AD0, fs, maxfreq = maxfreq, minfreq = minfreq,
-        additional_ax = additional_axes[0], vmin = vmin, vmax = vmax, cache_file = cache0)
-    Pxx, freqs, bins, im = plot_spectrogram(ax3, eeg_AD2, fs, maxfreq = maxfreq, minfreq = minfreq,
-        additional_ax = additional_axes[1], vmin = vmin, vmax = vmax, cache_file = cache2)
+    # true_time_extent: columns at their real window centres, so the spectrograms
+    # line up with the EMG/movement panels to the 0.1 s hop (see my_specgram).
+    Pxx0, f0, b0, im0 = plot_spectrogram(ax1, eeg_AD0, fs, maxfreq = maxfreq, minfreq = minfreq,
+        additional_ax = additional_axes[0], vmin = vmin, vmax = vmax, cache_file = cache0,
+        true_time_extent = True)
+    Pxx2, f2, b2, im2 = plot_spectrogram(ax3, eeg_AD2, fs, maxfreq = maxfreq, minfreq = minfreq,
+        additional_ax = additional_axes[1], vmin = vmin, vmax = vmax, cache_file = cache2,
+        true_time_extent = True)
+    # The detail axes (fig2) draw their visible window at full resolution; the
+    # caller re-points them on every move via fig1.detail_spectrograms[i].show().
+    # Kept on the figure so create_prediction_figure's return value is unchanged.
+    fig1.detail_spectrograms = [DetailSpectrogram(im0, Pxx0, f0, b0),
+        DetailSpectrogram(im2, Pxx2, f2, b2)]
 
     ax1.xaxis.set_ticks_position('top')
     ax3.set_xticklabels([])

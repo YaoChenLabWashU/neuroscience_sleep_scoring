@@ -1,4 +1,5 @@
 import math
+import types
 import time
 import matplotlib.pyplot as plt
 import numpy as np
@@ -108,7 +109,14 @@ class Cursor(object):
         # 'l' reference lines (dashed), and the configurable ±s x-span of the
         # detailed overview spectrograms (View Settings, 'v').
         self._ref_lines = []
-        self.detail_spect_halfspan = 600
+        # Detail-pane view settings. New_SWS overwrites these with the values saved
+        # from the last session (SWS_utils.load_view_settings) right after creating
+        # the cursor; these are only the fallbacks.
+        self.detail_spect_halfspan = 20
+        self.trace_halfwindow = 20
+        # Set by New_SWS: re-derives the trace window and redraws the detail pane
+        # when View Settings are applied.
+        self.view_callback = None
 
         # Cached video file reference to reduce lookup overhead
         self._cached_video_filename = None
@@ -334,26 +342,58 @@ class Cursor(object):
             bold_font = tkfont.Font(weight='bold')
             tk.Label(win, text='View Settings', font=bold_font).pack(padx=10, pady=6)
 
-            def slider_with_entry(label, var, lo, hi, res=1):
-                # A slider plus an editable box that share the same variable, so you
-                # can either drag or type an exact value.
+            def slider_with_entry(label, value, lo, hi, res=1):
+                """A slider plus a box to type an exact value; returns an object
+                whose .get() gives the chosen integer.
+
+                The two keep SEPARATE variables. Sharing one IntVar made Tk reject
+                the box ever being empty ("can't assign non-numeric value to scale
+                variable"), so clearing it to type a number fought the user. Now
+                dragging writes the box, and typed text wins whenever it parses
+                (Return / leaving the box push it to the slider too)."""
                 tk.Label(win, text=label).pack(padx=10, pady=(6, 2))
                 row = tk.Frame(win)
                 row.pack(padx=10, pady=2)
-                tk.Scale(row, from_=lo, to=hi, resolution=res, orient='horizontal',
-                    variable=var, length=200, showvalue=False).pack(side='left')
-                tk.Entry(row, textvariable=var, width=6).pack(side='left', padx=6)
+                txt = tk.StringVar(value=str(int(value)))
+                scale = tk.Scale(row, from_=lo, to=hi, resolution=res, orient='horizontal',
+                    length=200, showvalue=False, command=lambda v: txt.set(str(int(float(v)))))
+                scale.set(value)
+                scale.pack(side='left')
+                ent = tk.Entry(row, textvariable=txt, width=6)
+                ent.pack(side='left', padx=6)
+
+                def parsed():
+                    try:
+                        return float(txt.get())
+                    except ValueError:
+                        return None     # empty or mid-typing: not a number yet
+
+                def to_scale(_event=None):
+                    x = parsed()
+                    if x is not None:
+                        scale.set(x)
+                ent.bind('<Return>', to_scale)
+                ent.bind('<FocusOut>', to_scale)
+
+                def get():
+                    x = parsed()
+                    return int(x) if x is not None else int(float(scale.get()))
+                return types.SimpleNamespace(get=get)
 
             # Detailed overview-spectrogram x-span (fig2 ax6/ax7).
-            var_span = tk.IntVar(value=int(self.detail_spect_halfspan))
-            slider_with_entry('Detailed spectrogram x-span (±seconds):', var_span, 10, 3600, res=10)
+            var_span = slider_with_entry('Detail spectrograms (±seconds):',
+                self.detail_spect_halfspan, 4, 3600)
+
+            # Trace window: zoomed velocity / EMG / state strip (fig2 rows 3-5).
+            var_trace = slider_with_entry('Detail traces — velocity, EMG, states (±seconds):',
+                self.trace_halfwindow, 4, 120)
 
             # Magnify window (±seconds).
-            var_window = tk.IntVar(value=self.magnify_half_window)
-            slider_with_entry('Magnify window (±seconds):', var_window, 10, 600, res=5)
+            var_window = slider_with_entry('Magnify window (±seconds):',
+                self.magnify_half_window, 10, 600)
 
             # EMG y-limits (blank = auto).
-            tk.Label(win, text='EMG y-limits (min, max; blank = auto):').pack(padx=10, pady=(6, 2))
+            tk.Label(win, text='Detail EMG y-limits (min, max; blank = auto):').pack(padx=10, pady=(6, 2))
             emg_frame = tk.Frame(win)
             emg_frame.pack(padx=10, pady=2)
             emg_min_var = tk.StringVar(value='' if self.magnify_emg_ylim is None else str(self.magnify_emg_ylim[0]))
@@ -370,6 +410,10 @@ class Cursor(object):
                     self.magnify_half_window = max(1, int(var_window.get()))
                 except Exception:
                     pass
+                try:
+                    self.trace_halfwindow = min(max(2, int(var_trace.get())), 120)
+                except Exception:
+                    pass
                 emg_min = emg_min_var.get().strip()
                 emg_max = emg_max_var.get().strip()
                 if emg_min and emg_max:
@@ -379,10 +423,28 @@ class Cursor(object):
                         self.magnify_emg_ylim = None
                 else:
                     self.magnify_emg_ylim = None
-                if self.magnify_emg_ylim is not None:
-                    self.ax4.set_ylim(self.magnify_emg_ylim)
-                    if len(self.fig2_axes) > 4:
-                        self.fig2_axes[4].set_ylim(self.magnify_emg_ylim)
+                # Remember for the next session (same per-user file as window layout).
+                try:
+                    from neuroscience_sleep_scoring import SWS_utils
+                    SWS_utils.save_view_settings({
+                        'detail_spect_halfspan': float(self.detail_spect_halfspan),
+                        'trace_halfwindow': float(self.trace_halfwindow),
+                        'magnify_half_window': float(self.magnify_half_window),
+                        'emg_ylim': list(self.magnify_emg_ylim) if self.magnify_emg_ylim else None})
+                except Exception as e:
+                    print(f'Could not save view settings: {e}')
+                # These are DETAIL-pane settings: the EMG limits apply to the detail
+                # EMG only (they used to clip the overview EMG too). New_SWS's
+                # view_callback applies everything and redraws at the current bin.
+                if self.view_callback is not None:
+                    win.destroy()
+                    self.view_callback()
+                    print(f'View settings: spectrograms ±{self.detail_spect_halfspan}s, '
+                        f'traces ±{self.trace_halfwindow}s, EMG {self.magnify_emg_ylim or "auto"}, '
+                        f'magnify ±{self.magnify_half_window}s (saved)')
+                    return
+                if self.magnify_emg_ylim is not None and len(self.fig2_axes) > 4:
+                    self.fig2_axes[4].set_ylim(self.magnify_emg_ylim)
                 # Apply the detailed spectrogram x-span now, centered on the current
                 # epoch CENTER (matches New_SWS.align_detail_xaxes so labels stay put).
                 if len(self.fig2_axes) >= 2:
@@ -443,7 +505,7 @@ class Cursor(object):
                 ('o', 'Play the current bin video (once)'),
                 ('p', 'Play prev + current + next bin video (once)'),
                 ('g', 'Toggle magnify mode'),
-                ('v', 'View settings (detail spectrogram x-span, magnify, EMG y-lim)'),
+                ('v', 'View settings: detail windows, EMG axis, magnify (remembered)'),
                 ('l', 'Toggle a dashed reference line at the cursor'),
                 ('c', 'Move current bin marker to cursor'),
                 ('←/→', 'Move the current bin one bin left/right'),

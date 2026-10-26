@@ -244,7 +244,9 @@ def _recovery_path(d, a, h):
 	StatesAcq*.npy scan that marks acquisitions as scored, and so the canonical
 	scoring isn't overwritten until the user confirms saving on close. The name
 	ends in .npy so np.save doesn't append a second extension."""
-	return os.path.join(d['savedir'], 'recovery', 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy')
+	# Per scorer: a sequestered scorer's crash autosave lives in their own folder,
+	# so it is never offered to (or recovered into) the main scoring.
+	return os.path.join(SWS_utils.states_dir(d), 'recovery', 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy')
 
 # The state-selection popup is built ONCE and reused (see choose_state_popup).
 # Rebuilding a Toplevel per correction is slow everywhere and painfully slow on
@@ -470,6 +472,10 @@ def update_model(d, FeatureDict):
 	SWS_utils.retrain_model(Sleep_Model, x_features, d['model_dir'], jobname)
 
 
+# Largest trace half-window (s) the View Settings slider offers; also sizes the
+# zero padding around the recording so the detail traces never run out of data.
+MAX_TRACE_HALFWINDOW = 120
+
 # Keys this GUI handles itself. matplotlib's default keymap binds most of them
 # too, and those bindings were LIVE: 'o'/'p' (play video) also toggled the
 # toolbar's zoom/pan mode, so the next click zoomed or panned instead of moving
@@ -495,6 +501,8 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 	# Restore saved window layout: seed the video window props before it opens,
 	# and remember the figure geometries to reapply once the figures exist.
 	_layout = SWS_utils.load_layout()
+	# Detail-pane settings remembered from the last session (View Settings, 'v').
+	view = SWS_utils.load_view_settings()
 	SWS_utils.restore_video_window_props(_layout)
 	i = 0
 	this_bin = 1*d['fsd']*d['epochlen'] #number of EEG data points in one epoch
@@ -519,8 +527,11 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 	# real_end, so the zoomed traces have no samples past it; arrow steps must
 	# stop here (clicks already can, since the axes end at real_end).
 	last_epoch_t = max((int((np.size(eeg_AD0) / d['fsd']) // d['epochlen']) - 1) * d['epochlen'], 0)
-	start_trace = int(i-(4*d['epochlen'])) #timepoint in seconds that the plotted trace will start
-	end_trace = int(i + (5*d['epochlen'])) #timepoint in seconds that the plotted trace will end
+	# Trace window (velocity / EMG / state strip), relative to the current epoch's
+	# START: +/- trace_halfwindow around the epoch CENTRE. Was a fixed -16/+20 s.
+	def trace_bounds(halfwindow):
+		return d['epochlen'] / 2.0 - halfwindow, d['epochlen'] / 2.0 + halfwindow
+	start_trace, end_trace = trace_bounds(view['trace_halfwindow'])
 
 	if d['vid']:
 		timestamp_df = pd.read_pickle(os.path.join(d['savedir'], 'All_timestamps.pkl'))
@@ -553,7 +564,10 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 	v_ylims = list(ax4.get_ylim())
 	emg_ylims = list(ax5.get_ylim())
 
-	buffer_seconds = buffer*d['epochlen'] #amount of time in seconds added to beginning and end of trace to accomodate looking at early and late epochs
+	# Zero padding before/after the recording so the trace window has data to
+	# show at the first and last epochs. Sized for the largest trace window the
+	# View Settings slider allows, so widening it mid-session stays safe.
+	buffer_seconds = max(buffer*d['epochlen'], MAX_TRACE_HALFWINDOW + d['epochlen'])
 	long_ThD, long_ThD_t = SWS_utils.add_buffer(ThD, ThD_t, buffer_seconds, fs = 1)
 	long_emg, long_emg_t = SWS_utils.add_buffer(this_emg, EEG_t, buffer_seconds, fs = 200)
 	if d['movement']:
@@ -565,7 +579,7 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 
 	line1, line2, line3 = SWS_utils.create_zoomed_fig(ax8, ax9, ax10, long_emg, long_emg_t, 
 		long_ThD, long_ThD_t, long_v, long_v_t, start_trace, end_trace, 
-		epochlen = d['epochlen'], ThD_ylims = [0,30], emg_ylims = ([-2, 2]), v_ylims = v_ylims)
+		epochlen = d['epochlen'], ThD_ylims = [0,30], emg_ylims = view['emg_ylim'], v_ylims = v_ylims)
 
 
 	ax6.set_xlim([-600, 600])
@@ -587,6 +601,8 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 	except Exception:
 		_zt = None
 	acq_label = f'Acq {a}' + (f' \u00b7 {_zt[2]}' if _zt else '')
+	if SWS_utils.active_scorer(d):
+		acq_label += f' \u00b7 scorer: {SWS_utils.active_scorer(d)}'
 	for _f, _what in ((fig1, 'overview'), (fig2, 'detail')):
 		try:
 			_f.canvas.manager.set_window_title(f'{acq_label} \u2014 {_what}')
@@ -704,6 +720,8 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 		# Update additional spectrograms xlim
 		ax6.set_xlim([time_sec - half_window, time_sec + half_window])
 		ax7.set_xlim([time_sec - half_window, time_sec + half_window])
+		for _ds in getattr(fig1, 'detail_spectrograms', []):
+			_ds.show(time_sec - half_window, time_sec + half_window)
 		line4.set_xdata([time_sec, time_sec])
 		line5.set_xdata([time_sec, time_sec])
 		
@@ -712,6 +730,26 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 		fig2.canvas.draw_idle()
 	
 	cursor.magnify_callback = magnify_update
+
+	# Saved view settings -> cursor (the View Settings dialog edits and saves them).
+	cursor.detail_spect_halfspan = view['detail_spect_halfspan']
+	cursor.trace_halfwindow = view['trace_halfwindow']
+	cursor.magnify_half_window = view['magnify_half_window']
+	cursor.magnify_emg_ylim = tuple(view['emg_ylim']) if view['emg_ylim'] else None
+
+	def on_view_change():
+		"""View Settings applied: re-derive the trace window, apply the detail EMG
+		axis, and redraw the detail pane at the current bin."""
+		nonlocal start_trace, end_trace
+		start_trace, end_trace = trace_bounds(cursor.trace_halfwindow)
+		if cursor.magnify_emg_ylim is not None:
+			ax10.set_ylim(cursor.magnify_emg_ylim)
+		else:
+			ax10.relim(); ax10.autoscale(axis='y')
+		cursor.replotx = this_epoch_t + d['epochlen'] / 2.0
+		do_replot()
+
+	cursor.view_callback = on_view_change
 
 	def on_state_strip_click(event):
 		"""Click an epoch in the detailed state strip to relabel just that epoch.
@@ -775,8 +813,10 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 		use the configurable ± x-span (View Settings); the zoomed traces already
 		span a symmetric window around the current epoch center."""
 		center_t = this_epoch_t + d['epochlen'] / 2.0
-		half = getattr(cursor, 'detail_spect_halfspan', 600)
+		half = getattr(cursor, 'detail_spect_halfspan', SWS_utils.VIEW_DEFAULTS['detail_spect_halfspan'])
 		ax6.set_xlim([center_t - half, center_t + half])
+		for _ds in getattr(fig1, 'detail_spectrograms', []):
+			_ds.show(center_t - half, center_t + half)
 		ax7.set_xlim([center_t - half, center_t + half])
 		try:
 			line4.set_xdata([center_t, center_t])
@@ -945,14 +985,20 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 	# Ask whether to save. 'Yes' writes the canonical StatesAcq file; 'No' leaves
 	# the previously-saved states untouched. Either way the recovery autosave is
 	# cleared, since this is a clean exit (recovery only matters after a crash).
-	states_path = os.path.join(d['savedir'], 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy')
+	states_path = SWS_utils.states_path(d, a, h)
 	try:
 		n_changed = int(np.sum(np.asarray(State) != np.asarray(State_input)))
 	except Exception:
 		n_changed = -1
+	# Say exactly where this goes, so nobody saves into the main scoring by accident.
+	_who = SWS_utils.active_scorer(d)
+	dest = (f"Destination: scorer '{_who}' (sequestered; not read by analysis)" if _who
+		else 'Destination: MAIN scoring (read by analysis)')
+	if os.path.exists(states_path):
+		dest += '\nThis replaces the file already saved there.'
 	save_it = _ask_yes_no('Save scoring',
 		f'Save sleep states for Acq {a} hr {h}?\n'
-		f'{n_changed} bin(s) changed during this session.',
+		f'{n_changed} bin(s) changed during this session.\n\n{dest}',
 		yes_text='Save', no_text="Don't save")
 
 	# Only clear the recovery autosave once the canonical file is on disk AND
@@ -963,6 +1009,7 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 	saved_ok = False
 	if save_it:
 		try:
+			os.makedirs(os.path.dirname(states_path), exist_ok=True)
 			np.save(states_path, State)
 			written = np.load(states_path)
 			saved_ok = bool(np.array_equal(np.asarray(written), np.asarray(State)))
@@ -1021,7 +1068,8 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 
 def scored_acquisitions(d):
 	"""Return the sorted list of acquisition numbers that already have a State file."""
-	state_files = glob.glob(os.path.join(d['savedir'], 'StatesAcq*.npy'))
+	# The active destination: the main scoring, or the active scorer's folder.
+	state_files = glob.glob(os.path.join(SWS_utils.states_dir(d), 'StatesAcq*.npy'))
 	scored = []
 	for sf in state_files:
 		filename = os.path.split(sf)[1]
@@ -1034,7 +1082,7 @@ def scored_acquisitions(d):
 	return sorted(set(scored))
 
 def score_acquisition(d, a, use_model=True, mode='s',
-		update_model_after=None, update_log_after=None):
+		update_model_after=None, update_log_after=None, start_from=None):
 	"""Score (or check) a single acquisition without terminal prompts.
 
 	Parameters that used to be answered via input() are now explicit so the
@@ -1098,9 +1146,12 @@ def score_acquisition(d, a, use_model=True, mode='s',
 		# Per hour segment (hmode, not mode, so one answer cannot leak into the
 		# next segment).
 		hmode = mode
-		states_file = os.path.join(d['savedir'],
-			'StatesAcq' + str(a) + '_hr' + str(h) + '.npy')
-		if hmode != 'c' and os.path.exists(states_file):
+		# Review: open a sequestered scorer's version as the starting point; saving
+		# writes to the active destination (normally the main scoring).
+		if start_from:
+			hmode = 'review'
+		states_file = SWS_utils.states_path(d, a, h)
+		if hmode == 's' and os.path.exists(states_file):
 			print(f'Acq {a} hr {h} already has saved scoring: {states_file}')
 			if _ask_yes_no('Existing scoring found',
 					f'Acq {a} hr {h} already has saved scoring.\n\n'
@@ -1111,10 +1162,20 @@ def score_acquisition(d, a, use_model=True, mode='s',
 				print('Starting over. Your saved scoring is only replaced if you '
 					'choose Save at the end of this session.')
 
-		if hmode == 'c':
+		if hmode == 'review':
+			src = SWS_utils.states_path(d, a, h, scorer=start_from)
+			if os.path.exists(src):
+				State_in = np.load(src).astype(float)
+				State_in[np.isnan(State_in)] = 0
+				print(f"Reviewing scorer '{start_from}' for Acq {a} hr {h}: {src}")
+				State = display_and_fix_scoring(d, a, h, this_emg, State_in, False, None,
+					None, this_video, acq_start, v = v, movement_df = this_motion)
+			else:
+				print(f"Scorer '{start_from}' has no scoring for Acq {a} hr {h}.")
+		elif hmode == 'c':
 			try:
 				# if some portion of the file has been previously scored
-				State = np.load(os.path.join(d['savedir'], 'StatesAcq' + str(a) + '_hr' + str(h) + '.npy'))
+				State = np.load(states_file)
 				wrong, = np.where(np.isnan(State))
 				State[wrong] = 0
 				s, = np.where(State == 0)
@@ -1170,6 +1231,11 @@ def score_acquisition(d, a, use_model=True, mode='s',
 			update = input('Do you want to update the model?: y/n ') == 'y'
 		else:
 			update = bool(update_model_after)
+		if update and SWS_utils.active_scorer(d):
+			# Sequestered scoring must not train the shared model before review.
+			print('Not updating the model from sequestered scoring '
+				f"(scorer '{SWS_utils.active_scorer(d)}').")
+			update = False
 		if update:
 			update_model(d, FeatureDict)
 			model_log(d['modellog_dir'], 0, d['species'], d['mouse_name'], d['mod_name'], a)
@@ -1179,7 +1245,7 @@ def score_acquisition(d, a, use_model=True, mode='s',
 		else:
 			logq = bool(update_log_after)
 		if logq:
-			personal_log(d['personallog_dir'], d['mouse_name'], d['savedir'], a)
+			personal_log(d['personallog_dir'], d['mouse_name'], SWS_utils.states_dir(d), a)
 
 		plt.close('all')
 			# Store the result.

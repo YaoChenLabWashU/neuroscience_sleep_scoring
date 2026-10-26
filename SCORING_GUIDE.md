@@ -328,7 +328,7 @@ Set the options first, then click an acquisition to open it:
 |---|---|
 | **Use random forest model** | Pre-label every epoch with the model, then you correct it. Applies to *Score new dataset* only. |
 | **Score new dataset** / **Check/fix existing** | Start from the model's prediction, or load your existing `StatesAcq` file to review and fix. |
-| **Update model after scoring** | Append this hour to the shared training set and retrain. **Off by default — leave it off** until you're confident (see 5.8). |
+| **Update model after scoring** | Append this hour to the shared training set and retrain. **Off by default — leave it off** until you're confident (see 5.10). Disabled automatically in scorer mode (5.9). |
 | **Update personal log after scoring** | Append a row to your `personal_scoringlog.csv`. On by default. |
 
 **Close** exits the whole program (it also tears down stray figure windows). Window
@@ -357,6 +357,8 @@ Opening an acquisition gives you an **overview** figure and a **detail** figure
 4. **EMG**, same window as velocity so the two line up exactly.
 5. **Sleep state strip** — one colored box per visible epoch, current epoch outlined
    in yellow, each with its absolute bin number in small print along the bottom.
+
+All five share one ±20 s window by default (adjustable; see 5.8).
    **Click any box to relabel just that epoch.**
 
 Every detail panel is centered on the **center of the current epoch** and labeled
@@ -406,7 +408,7 @@ Keys work when either figure window has focus. All lowercase — no Shift.
 | `o` | Play the **current epoch's** video once |
 | `p` | Play **previous + current + next** epoch's video once |
 | `g` | Toggle magnify mode (detail view follows the cursor live) |
-| `v` | **View settings** — detail spectrogram x-span, magnify window, EMG y-limits. Each has a slider *and* a box for typing an exact number; click **Apply**. |
+| `v` | **View settings** — detail spectrogram window, detail trace window, detail EMG y-limits, magnify window. Each has a slider *and* a box for typing an exact number; click **Apply**. **Remembered** for your next session. |
 | `l` | Drop / remove a dashed reference line at the cursor across all overview panels |
 | `c` | Move the current-epoch marker to the cursor |
 | `←` `→` | Move the current bin one bin left / right (stops at the end of real data) |
@@ -442,7 +444,57 @@ epochs for an hour) regardless. Epochs past the end of real data stay `0`/unscor
 The recovery folder is deliberately a subdirectory so it never gets mistaken for real
 scoring by the "which acquisitions are scored" scan.
 
-### 5.8 Updating the model and logs
+### 5.8 Detail-pane view settings
+
+The detail pane opens at **±20 s** around the current epoch for every panel —
+spectrograms, velocity, EMG and the state strip — with the detail **EMG axis at ±1**.
+Change any of them with `v` → **Apply**; they apply immediately and are **remembered**
+for your next session (saved per user account, alongside the window positions), so
+you set them once.
+
+| Setting | Default | Applies to |
+|---|---|---|
+| Detail spectrograms | ±20 s | both detail spectrograms |
+| Detail traces | ±20 s | velocity, EMG and the state strip |
+| Detail EMG y-limits | −1 … 1 (blank = auto) | the detail EMG only — the overview EMG is left alone |
+| Magnify window | ±90 s | magnify mode (`g`) |
+
+At narrow windows the detail spectrograms are drawn at full time resolution (0.1 s
+columns) rather than reusing the overview's coarser image. They still look streaky at
+±20 s: each column is a 10 s FFT window, so neighbouring columns are nearly identical.
+
+### 5.9 A second scorer (sequestered scoring)
+
+To have someone score an animal **without touching your scoring**, they tick
+**"Score as a separate scorer (sequestered)"** in the launcher and type their name.
+The bold line under the options always says where a save will go:
+
+- `Saving to: MAIN scoring (used by analysis)`
+- `Saving to: scorer 'jsmith' (sequestered, not used by analysis)`
+
+In scorer mode:
+
+- Their files go to `savedir/scorers/<name>/StatesAcq*_hr*.npy`, with their own
+  `recovery/` folder. Every analysis — `PKA_Sleep` and the notebooks — reads only the
+  top level of `*_extracted_data/`, so **sequestered scoring never reaches analysis**.
+- They score **blind**: they never see the main scoring. They start from the model
+  prediction (or blank), and reopening offers only *their own* saved scoring.
+- "Update model after scoring" is disabled — unreviewed scoring never trains the model.
+- The launcher's green buttons show **their** progress (legend: "scored by <name>").
+- The setting is remembered per user account. If they use your account, untick it
+  when you score again — the bold line and the window titles (`scorer: <name>`) show
+  which mode is active, and the save dialog names its destination.
+
+**Comparing and reviewing.** **Compare scorings…** in the launcher lists every
+acquisition scored by both sources you pick (main or any scorer) with agreement,
+Cohen's kappa, the number of disagreeing bins and the most common disagreement;
+epochs unscored by either side are left out. **Show selected** draws both hypnograms,
+where they differ, and the confusion matrix. **Review B in the scoring GUI** opens the
+scorer's version as your starting point; fix what you disagree with and **Save** to
+write it into the **main** scoring (the save dialog says so, and warns that it replaces
+the existing file). The scorer's own file is never changed.
+
+### 5.10 Updating the model and logs
 
 After you exit, depending on the launcher checkboxes:
 
