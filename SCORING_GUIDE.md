@@ -312,6 +312,12 @@ The JSON path is optional — without it, the launcher opens with a **Browse** b
 
 The **launcher** window shows every acquisition as a button:
 
+Each button shows the acquisition number and its **ZT start**, e.g. `ZT 10.4 +1d`:
+ZT 10.4 at the start of the acquisition, recorded one day after the first acquisition
+at that ZT in the recording. ZT is computed exactly as `FLiPExperiment.ZeitTime` is
+(`PKA_Sleep.get_zeit_time`, lights-on 06:00, from the acquisition trigger time), and
+cached in `spectrogram_cache/acq_trigger_times.json` after the first read.
+
 - 🟩 **green** — already has a `StatesAcq*.npy` file (scored)
 - 🟦 **blue** — spectrogram cache ready (will open fast)
 - ⬜ **grey** — neither
@@ -350,7 +356,8 @@ Opening an acquisition gives you an **overview** figure and a **detail** figure
 3. **Velocity**, zoomed to the trace window.
 4. **EMG**, same window as velocity so the two line up exactly.
 5. **Sleep state strip** — one colored box per visible epoch, current epoch outlined
-   in yellow. **Click any box to relabel just that epoch.**
+   in yellow, each with its absolute bin number in small print along the bottom.
+   **Click any box to relabel just that epoch.**
 
 Every detail panel is centered on the **center of the current epoch** and labeled
 *relative* to it: `0` is the middle of the epoch you're on, negative is earlier.
@@ -402,7 +409,9 @@ Keys work when either figure window has focus. All lowercase — no Shift.
 | `v` | **View settings** — detail spectrogram x-span, magnify window, EMG y-limits. Each has a slider *and* a box for typing an exact number; click **Apply**. |
 | `l` | Drop / remove a dashed reference line at the cursor across all overview panels |
 | `c` | Move the current-epoch marker to the cursor |
-| `←` `→` | Nudge the selection start (after the first click) |
+| `←` `→` | Move the current bin one bin left / right (stops at the end of real data) |
+| `space` | Play the video of the **current** bin (the dark cursor) — `o` plays the bin under the mouse |
+| `shift`+`←` `→` | Nudge the selection start (after the first click) |
 | `r` / `Esc` | Cancel a pending selection or an armed microarousal |
 | `i` | Show the shortcut list |
 | `d` | **Done** — leave scoring and get the save prompt |

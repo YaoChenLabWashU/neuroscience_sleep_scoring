@@ -142,6 +142,15 @@ class ScoringLauncher:
         scored = set(_scored_acquisitions(self.d))
         cached = set(a for a in self.d.get('Acquisition', [])
                      if SWS_utils.spectrogram_cached(self.d, a))
+        # ZT start of each acquisition, e.g. "ZT 10.4 +1d" = one day after the
+        # first acquisition at that ZT. Cached after the first read (~3 s cold).
+        self.status.set('Reading acquisition start times...')
+        self.root.update_idletasks()
+        try:
+            zt = SWS_utils.acq_zeit_labels(self.d)
+        except Exception as e:
+            print(f'Could not compute ZT labels: {e}')
+            zt = {}
         for w in self.grid_frame.winfo_children():
             w.destroy()
         self._acq_order = list(self.d.get('Acquisition', []))
@@ -152,7 +161,8 @@ class ScoringLauncher:
             # why they stayed correct). Labels are drawn by Tk and honor the color
             # everywhere, so they get click and hover bindings instead of -command.
             color = self._acq_color(a, scored, cached)
-            b = tk.Label(self.grid_frame, text=str(a), width=5, bg=color,
+            text = f'{a}\n{zt[a][2]}' if a in zt else str(a)
+            b = tk.Label(self.grid_frame, text=text, width=11, bg=color,
                 relief='raised', bd=2, padx=2, pady=3, cursor='hand2')
             b.grid(row=i // GRID_COLS, column=i % GRID_COLS, padx=2, pady=2, sticky='nsew')
             b.bind('<Button-1>', lambda e, a=a: self.launch_acq(a))

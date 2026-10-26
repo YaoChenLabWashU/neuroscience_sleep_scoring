@@ -898,7 +898,8 @@ def create_scoring_figure(extracted_dir, a, this_eeg, this_emg, EEG_t, fsd,
         return fig, ax1, ax2, axx, button
 
 def update_raw_trace(fig1, fig2, line1, line2, line3, line4, line5, long_emg, long_emg_t, long_ThD,
- long_ThD_t, long_v, long_v_t, markers, this_epoch_t, start_trace, end_trace, epochlen):
+ long_ThD_t, long_v, long_v_t, markers, this_epoch_t, start_trace, end_trace, epochlen,
+ redraw_fig1=True):
 
     start_idx_ThD = np.where(long_ThD_t>=start_trace)[0][0]
     end_idx_ThD = np.where(long_ThD_t<=end_trace)[0][-1]
@@ -932,8 +933,16 @@ def update_raw_trace(fig1, fig2, line1, line2, line3, line4, line5, long_emg, lo
     fig2.axes[1].set_xlim([this_epoch_t-600, this_epoch_t+600])
     line4.set_xdata([this_epoch_t,this_epoch_t])
     line5.set_xdata([this_epoch_t,this_epoch_t])
-    fig1.canvas.draw()
-    fig2.canvas.draw()
+    # draw_idle, not draw: the only caller (New_SWS.do_replot) changes fig2 again
+    # right after this and requests its own redraw, so a synchronous fig2.draw()
+    # here was thrown away on every replot. Idle draws are also coalesced by the
+    # GUI toolkit, so holding an arrow key skips frames instead of queueing a
+    # ~0.75 s double redraw per bin.
+    # redraw_fig1=False when the markers are animated and the caller blits them
+    # (New_SWS.do_replot): nothing else in the overview changes on a replot.
+    if redraw_fig1:
+        fig1.canvas.draw_idle()
+    fig2.canvas.draw_idle()
 def make_marker(fig, x, epochlen):
     markers = []
     for i,a in enumerate(fig.axes):
@@ -1481,6 +1490,106 @@ def get_AcqStart(d, a, acq_len):
             EEG_datetime = datetime.strptime(EEG_datestring, ts_format)
             acq_start = EEG_datetime-timedelta(seconds=acq_len)
     return acq_start
+
+# ---------------------------------------------------------------------------
+# Zeitgeber time of each acquisition
+#
+# ZT is NOT re-derived here. Lab rule: ZT comes from FLiPExperiment.ZeitTime.
+# That attribute is built by PKA_Sleep.get_zeit_time (lights-on 06:00) from each
+# acquisition's trigger timestamp, read from trigger_times.mat or else from
+# cont*data_<a>.mat 'triggerTime'. acq_trigger_time() reads the timestamp the
+# same way, and acq_zeit_labels() hands it to get_zeit_time itself, so the GUI
+# and any FLiPExperiment-based analysis report the same ZT.
+# ---------------------------------------------------------------------------
+def acq_trigger_time(d, a):
+    """Wall-clock trigger time of acquisition `a`, or None if unavailable.
+
+    Mirrors FLiPExperiment: cont*data_<a>.mat 'triggerTime' with microseconds.
+    For recordings with a trigger_times.mat, defers to get_AcqStart, which is
+    what the GUI already uses to sync video. Deliberately does NOT fall back to
+    file modification times -- a wrong ZT is worse than none.
+    """
+    raw = d['rawdat_dir']
+    f = glob.glob(os.path.join(raw, 'cont*data_' + str(a) + '.mat'))
+    if f:
+        tt = io.loadmat(f[0], variable_names='triggerTime')['triggerTime'][0]
+        return datetime(*tt.astype(int), microsecond=int((tt[-1] % 1) * 1e6))
+    if os.path.exists(os.path.join(raw, 'trigger_times.mat')):
+        return get_AcqStart(d, a, 0)
+    return None
+
+def acq_trigger_times(d, acqs=None):
+    """{acq: trigger datetime or None}, cached in spectrogram_cache/.
+
+    Reading ~50 .mat headers over the network takes several seconds, which
+    would stall the launcher on every refresh. A trigger time never changes for
+    a given acquisition, so the cache needs no invalidation; missing values are
+    not cached and are retried next time.
+    """
+    acqs = list(d['Acquisition']) if acqs is None else list(acqs)
+    path = os.path.join(spect_cache_dir(d['savedir']), 'acq_trigger_times.json')
+    try:
+        with open(path) as fh:
+            cache = json.load(fh)
+    except Exception:
+        cache = {}
+    out, dirty = {}, False
+    for a in acqs:
+        key = str(a)
+        if key in cache:
+            try:
+                out[a] = datetime.fromisoformat(cache[key])
+                continue
+            except Exception:
+                pass
+        try:
+            T = acq_trigger_time(d, a)
+        except Exception as e:
+            print(f'Could not read the trigger time for Acq {a}: {e}')
+            T = None
+        out[a] = T
+        if T is not None:
+            cache[key] = T.isoformat()
+            dirty = True
+    if dirty:
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, 'w') as fh:
+                json.dump(cache, fh, indent=1)
+        except Exception as e:
+            print(f'Could not write {path}: {e}')
+    return out
+
+def acq_zeit_labels(d, acqs=None):
+    """{acq: (zt, day_offset, label)} for every acquisition with a trigger time.
+
+    zt is ZT at acquisition start in hours, from PKA_Sleep.get_zeit_time.
+    day_offset counts days since the FIRST acquisition in the recording at the
+    same ZT (within +/-0.5 h, wrapping at 24 h), so "+0d" always means "the first
+    time this ZT was recorded" -- the reading that matches baseline and stim
+    days at a given circadian hour.
+
+    The label keeps one decimal on purpose: acquisition starts drift ~8 s/h, and
+    in zbrDFFMbP002_20260713 they cross the half hour (13.49, 14.50, 15.50), so
+    integer rounding would label consecutive hours ZT 13, 14, 16, 16.
+    """
+    times = acq_trigger_times(d, acqs)
+    zt = {}
+    for a, T in times.items():
+        if T is None:
+            continue
+        dd = PKA.get_zeit_time({'timestamps': [T], 'Acqs_all': np.array([a]),
+            'time_all': np.array([0.0])})
+        zt[a] = float(dd['Zeit Time'][0])
+    labels = {}
+    for a, z in zt.items():
+        T = times[a]
+        same = [b for b in zt if times[b] <= T
+            and min(abs(zt[b] - z), 24 - abs(zt[b] - z)) < 0.5]
+        first = min(same, key=lambda b: times[b])
+        k = int(round((T - times[first]).total_seconds() / 86400.0))
+        labels[a] = (z, k, f'ZT {z:.1f} +{k}d')
+    return labels
 
 def pulling_timestamp(timestamp_df, acq_start, this_eeg, fsd):
     acq_len = int(np.size(this_eeg)/fsd)

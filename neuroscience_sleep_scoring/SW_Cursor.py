@@ -123,6 +123,10 @@ class Cursor(object):
         # Blitting support
         self.background = None
         self.background_fig2 = None
+        # Extra animated (ax, artist) pairs blitted on fig1 with the crosshair.
+        # New_SWS puts the current-bin markers and bin label here, so stepping a
+        # bin moves them with a blit instead of a ~0.9 s full overview redraw.
+        self.extra_animated = []
 
         # Create vertical lines for ALL fig1 axes (for full-height crosshair)
         self.vertical_lines = []
@@ -266,14 +270,26 @@ class Cursor(object):
                 self.clicked = False
                 self.bins = []
                 print('Selection cancelled')
-        elif event.key == 'left':
+        elif event.key in ('left', 'right'):
+            # Step the current-bin cursor one bin. Aim at the middle of the target
+            # bin so floor() in do_replot lands on it; New_SWS's key dispatcher
+            # does the replot and clamps to the recording.
+            step = -self.epochlen if event.key == 'left' else self.epochlen
+            self.replotx = self.current_epoch_t + step + self.epochlen / 2.0
+            self.replot = True
+        elif event.key in ('shift+left', 'shift+right'):
+            # Nudge a pending selection's start bin (was plain left/right).
             if self.clicked and len(self.bins) == 1:
-                self.bins[0] = max(0, self.bins[0] - 1)
+                d_bin = -1 if event.key == 'shift+left' else 1
+                self.bins[0] = max(0, self.bins[0] + d_bin)
                 print(f'Selection start: bin {self.bins[0]}')
-        elif event.key == 'right':
-            if self.clicked and len(self.bins) == 1:
-                self.bins[0] = self.bins[0] + 1
-                print(f'Selection start: bin {self.bins[0]}')
+        elif event.key == ' ':
+            # Space: play the video of the CURRENT bin (the dark cursor), unlike
+            # 'o', which plays the bin under the mouse. Pairs with the arrows.
+            if self.video_cap is not None and self.video_timestamp is not None:
+                self._play_current_bin(at_sec=self.current_epoch_t)
+            else:
+                print('No video available')
         elif event.key in [1,2,3,4]:
             self.STATE.append(event.key)
         elif event.key == 'l':
@@ -430,7 +446,9 @@ class Cursor(object):
                 ('v', 'View settings (detail spectrogram x-span, magnify, EMG y-lim)'),
                 ('l', 'Toggle a dashed reference line at the cursor'),
                 ('c', 'Move current bin marker to cursor'),
-                ('←/→', 'Nudge selection start (after 1st click)'),
+                ('←/→', 'Move the current bin one bin left/right'),
+                ('space', 'Play the video of the current bin'),
+                ('shift ←/→', 'Nudge selection start (after 1st click)'),
                 ('r', 'Cancel current selection'),
                 ('1/2/3/4', 'Set state (Wake/NREM/REM/Other)'),
                 ('i', 'Show this help'),
@@ -484,7 +502,7 @@ class Cursor(object):
             (0, 255, 255), 1, cv2.LINE_AA)
         return frame
 
-    def _play_current_bin(self, n_before=0, n_after=0):
+    def _play_current_bin(self, n_before=0, n_after=0, at_sec=None):
         """Play the video around the bin under the cursor exactly once (no loop).
 
         n_before / n_after add that many extra bins before/after the current bin
@@ -496,8 +514,10 @@ class Cursor(object):
             return
         try:
             epochlen = self.epochlen
-            # Snap to the start of the bin under the cursor, then widen by n_before/after.
-            bin_start = math.floor(max(self.current_x_sec, 0) / epochlen) * epochlen
+            # Snap to the start of the bin under the mouse (or at at_sec, which the
+            # space bar uses for the current bin), then widen by n_before/after.
+            ref = self.current_x_sec if at_sec is None else at_sec
+            bin_start = math.floor(max(ref, 0) / epochlen) * epochlen
             time_sec = max(0.0, bin_start - n_before * epochlen)
             clip_end = bin_start + epochlen + n_after * epochlen
             offset_times = self.video_timestamp['Offset_Time'].values
@@ -642,6 +662,7 @@ class Cursor(object):
             self.ax2.figure.canvas.restore_region(self.background)
             self.ax2.draw_artist(self.horizontal_line)
             self.ax2.draw_artist(self.epoch_marker)
+            self._draw_extra_animated()
             for i, vline in enumerate(self.vertical_lines):
                 self.all_axes[i].draw_artist(vline)
             self.ax2.draw_artist(self.text)
@@ -673,10 +694,20 @@ class Cursor(object):
         for i, vline in enumerate(self.vertical_lines):
             self.all_axes[i].draw_artist(vline)
         self.ax2.draw_artist(self.epoch_marker)
+        self._draw_extra_animated()
         if self.horizontal_line.get_visible():
             self.ax2.draw_artist(self.horizontal_line)
         self.ax2.draw_artist(self.text)
         fig.canvas.blit(fig.bbox)
+
+    def _draw_extra_animated(self):
+        """Draw the extra animated fig1 artists (current-bin markers and label).
+        Must be called from every fig1 blit, or they vanish until the next one."""
+        for ax, art in self.extra_animated:
+            try:
+                ax.draw_artist(art)
+            except Exception:
+                pass
 
     def on_mouse_move(self, event):
         if event.inaxes:
@@ -817,6 +848,7 @@ class Cursor(object):
                     self.all_axes[i].draw_artist(vline)
                 self.ax2.draw_artist(self.horizontal_line)
                 self.ax2.draw_artist(self.epoch_marker)
+                self._draw_extra_animated()
                 self.ax2.draw_artist(self.text)
                 fig.canvas.blit(fig.bbox)
             except Exception:

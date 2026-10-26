@@ -212,6 +212,12 @@ def draw_state_strip(ax_state, State, this_epoch_t, start_trace, end_trace, epoc
 		x = rel * epochlen
 		color = _state_strip_color(State[abs_idx]) if 0 <= abs_idx < len(State) else 'white'
 		ax_state.add_patch(patch.Rectangle((x, 0), epochlen, 1, color=color, ec='k', lw=0.5))
+		if 0 <= abs_idx < len(State):
+			# Absolute bin number, small, at the bottom of the bin. White reads on
+			# the saturated state colors; black on white/grey (unscored).
+			ink = 'k' if color in ('white', 'grey') else 'white'
+			ax_state.text(x + epochlen / 2.0, 0.04, str(abs_idx), ha='center',
+				va='bottom', fontsize=7, color=ink)
 	ax_state.add_patch(patch.Rectangle((0, 0), epochlen, 1, fill=False, ec='#fac205', lw=2.5))
 	ax_state.set_xlim([start_trace, end_trace])
 	ax_state.set_ylim([0, 1])
@@ -464,9 +470,28 @@ def update_model(d, FeatureDict):
 	SWS_utils.retrain_model(Sleep_Model, x_features, d['model_dir'], jobname)
 
 
+# Keys this GUI handles itself. matplotlib's default keymap binds most of them
+# too, and those bindings were LIVE: 'o'/'p' (play video) also toggled the
+# toolbar's zoom/pan mode, so the next click zoomed or panned instead of moving
+# the cursor; 'l' toggled a log y-axis; 'r' reset the view; 'q' closed the
+# figure mid-session; and left/right stepped the toolbar's view history.
+GUI_KEYS = {'left', 'right', 'shift+left', 'shift+right', ' ', 'c', 'v', 'g', 'r',
+	'p', 'o', 'l', 'q', 'd', 'm', 'i', '1', '2', '3', 'escape'}
+
+def _release_matplotlib_keys(keys=GUI_KEYS):
+	"""Remove the GUI's keys from matplotlib's default keymap (process-wide).
+
+	Only the colliding keys are removed; everything else (h/home, s, f,
+	ctrl+w, ...) keeps its default meaning.
+	"""
+	for name in list(plt.rcParams):
+		if name.startswith('keymap.'):
+			plt.rcParams[name] = [k for k in plt.rcParams[name] if k not in keys]
+
 def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, Features, this_video,
 	acq_start, v = None, movement_df = None, buffer = 4):
 	plt.ion()
+	_release_matplotlib_keys()
 	# Restore saved window layout: seed the video window props before it opens,
 	# and remember the figure geometries to reapply once the figures exist.
 	_layout = SWS_utils.load_layout()
@@ -490,6 +515,10 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 	this_emg = np.asarray(this_emg)[:real_end]
 
 	EEG_t = np.arange(np.size(eeg_AD0))/d['fsd'] #time array for EEG data
+	# Start time of the last epoch that has real data. The display is trimmed to
+	# real_end, so the zoomed traces have no samples past it; arrow steps must
+	# stop here (clicks already can, since the axes end at real_end).
+	last_epoch_t = max((int((np.size(eeg_AD0) / d['fsd']) // d['epochlen']) - 1) * d['epochlen'], 0)
 	start_trace = int(i-(4*d['epochlen'])) #timepoint in seconds that the plotted trace will start
 	end_trace = int(i + (5*d['epochlen'])) #timepoint in seconds that the plotted trace will end
 
@@ -552,6 +581,17 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 	# a bold figure title, and small print at the top of the dark cursor line in
 	# each detail spectrogram. Both are refreshed by align_detail_xaxes().
 	fig2_title = fig2.suptitle('', fontweight='bold', fontsize=13)
+	# "Acq 26 \u00b7 ZT 10.4 +1d" -- the same label as the launcher (cached).
+	try:
+		_zt = SWS_utils.acq_zeit_labels(d).get(int(a))
+	except Exception:
+		_zt = None
+	acq_label = f'Acq {a}' + (f' \u00b7 {_zt[2]}' if _zt else '')
+	for _f, _what in ((fig1, 'overview'), (fig2, 'detail')):
+		try:
+			_f.canvas.manager.set_window_title(f'{acq_label} \u2014 {_what}')
+		except Exception:
+			pass
 	# Small bin label beside the dark cursor, on the TOP spectrogram only. Placed
 	# just INSIDE the panel: above the axes it would land on the tick labels (and
 	# on fig1, ax1's ticks sit on top of the axes).
@@ -564,7 +604,11 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 	cursor_bin_labels = [_cursor_bin_label(ax6)]
 
 	fig2.tight_layout()
-	markers = SWS_utils.make_marker(fig1, this_bin/d['fsd'], d['epochlen'])
+	# Start at the START of epoch 0 (where update_raw_trace puts the markers on
+	# every replot). this_bin/fsd here evaluated to epochlen -- the start of
+	# epoch 1 -- so on open the overview marker sat one bin right of the
+	# detail pane until the first click.
+	markers = SWS_utils.make_marker(fig1, 0, d['epochlen'])
 	# Matching label on the main acquisition overview, beside its dark epoch
 	# marker in the top spectrogram (ax1's x-axis is in seconds).
 	fig1_bin_label = _cursor_bin_label(ax1)
@@ -606,6 +650,14 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 	all_fig1_axes = [ax1, ax2, ax3, ax4, ax5]
 	all_fig2_axes = [ax6, ax7, ax8, ax9, ax10]
 	cursor = Cursor(ax1, ax2, ax5, all_axes=all_fig1_axes, epochlen=d['epochlen'], fig2_axes=all_fig2_axes)
+	# The current-bin markers and bin label are the ONLY things in the overview
+	# that change when the current bin moves. Animate them and let the cursor
+	# blit them with the crosshair, so a click or arrow step no longer redraws
+	# the whole overview (~0.9 s at full window size).
+	for _m in markers:
+		_m.set_animated(True)
+	fig1_bin_label.set_animated(True)
+	cursor.extra_animated = [(_m.axes, _m) for _m in markers] + [(ax1, fig1_bin_label)]
 	
 	# Set up video data for preview mode
 	if d['vid']:
@@ -705,7 +757,7 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 		cur_bin = int(round(this_epoch_t / d['epochlen']))
 		center_t = this_epoch_t + d['epochlen'] / 2.0
 		try:
-			fig2_title.set_text(f'Detailed view \u2014 bin {cur_bin} of {len(State)}')
+			fig2_title.set_text(f'{acq_label} \u2014 bin {cur_bin} of {len(State)}')
 			for _t in cursor_bin_labels:
 				_t.xy = (center_t, 1.0)
 				_t.set_text(f'bin {cur_bin}')
@@ -765,6 +817,8 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 		nonlocal this_epoch_t
 		print("Replot of fig 1. called!")
 		this_epoch_t = math.floor(cursor.replotx/d['epochlen'])*d['epochlen']
+		# Keep arrow steps (and any stray click) inside the real data.
+		this_epoch_t = min(max(this_epoch_t, 0), last_epoch_t, (len(State) - 1) * d['epochlen'])
 		replot_start = start_trace + this_epoch_t
 		replot_end = end_trace + this_epoch_t
 		cursor.current_epoch_t = this_epoch_t
@@ -773,7 +827,8 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 		set_bin_labels()  # before the redraw below, so fig1 picks it up for free
 		SWS_utils.update_raw_trace(fig1, fig2, line1, line2, line3, line4, line5, long_emg,
 			long_emg_t, long_ThD, long_ThD_t, long_v, long_v_t, markers, this_epoch_t,
-			replot_start, replot_end, d['epochlen'])
+			replot_start, replot_end, d['epochlen'], redraw_fig1=False)
+		cursor._redraw_crosshair()  # blit the moved markers/label onto the overview
 		# Center + relatively-label all detail panels (also applies the View
 		# Settings x-span). update_raw_trace set absolute limits/labels first.
 		align_detail_xaxes()
@@ -820,6 +875,10 @@ def display_and_fix_scoring(d, a, h, this_emg, State_input, is_predicted, clf, F
 			do_change_bins()
 
 	def on_key_dispatch(event):
+		# Arrow keys set cursor.replot (one bin left/right); act on it here, as
+		# on_click_dispatch does for clicks.
+		if cursor.replot:
+			do_replot()
 		# cursor.on_press sets DONE on 'd'; stop the loop so we can return State.
 		if cursor.DONE:
 			try:
